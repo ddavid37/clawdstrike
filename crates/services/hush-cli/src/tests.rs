@@ -2824,6 +2824,7 @@ mod remote_extends_contract {
     use std::thread::JoinHandle;
     use std::time::Duration;
 
+    use clawdstrike::policy::{PolicyLocation, PolicyResolver};
     use clawdstrike::Policy;
     use hush_core::sha256;
 
@@ -3032,6 +3033,154 @@ extends: {}#sha256={}
             msg.contains("allowlisted") || msg.contains("disabled"),
             "unexpected error: {msg}"
         );
+    }
+
+    #[test]
+    fn remote_extends_git_scp_host_must_be_allowlisted() {
+        let cfg = RemoteExtendsConfig::new(["github.com".to_string()]);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!(
+            "git+git@evil.example:org/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("SCP-style disallowed host should be rejected before fetch");
+        assert!(
+            err.to_string().contains("allowlisted"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn remote_extends_git_userless_scp_host_must_be_allowlisted() {
+        let cfg = RemoteExtendsConfig::new(["github.com".to_string()]);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!(
+            "git+evil.example:org/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("userless SCP-style disallowed host should be rejected before fetch");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("allowlisted"),
+            "unexpected error for userless SCP remote: {msg}"
+        );
+    }
+
+    #[test]
+    fn remote_extends_git_file_scheme_is_rejected() {
+        let cfg = RemoteExtendsConfig::new(["github.com".to_string()]);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!(
+            "git+file:///tmp/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("file:// git remote should be rejected");
+        assert!(
+            err.to_string()
+                .contains("Unsupported git remote scheme for remote extends"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn remote_extends_rejects_dash_prefixed_commit_ref() {
+        let cfg = RemoteExtendsConfig::new(["github.com".to_string()]);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!(
+            "git+https://github.com/backbay-labs/clawdstrike.git@-not-a-ref:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("dash-prefixed commit/ref must be rejected before any git invocation");
+        assert!(
+            err.to_string().contains("must not start with '-'"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn remote_extends_git_private_ip_blocked_when_disallowed() {
+        let cfg = RemoteExtendsConfig::new(["127.0.0.1".to_string()])
+            .with_https_only(false)
+            .with_allow_private_ips(false);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!(
+            "git+ssh://127.0.0.1/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("private IP git remote should be rejected");
+        assert!(
+            err.to_string().contains("non-public IPs"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn remote_extends_git_ipv4_mapped_ipv6_private_ip_blocked_when_disallowed() {
+        let cfg = RemoteExtendsConfig::new(["::ffff:7f00:1".to_string()])
+            .with_https_only(false)
+            .with_allow_private_ips(false);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!(
+            "git+ssh://[::ffff:127.0.0.1]/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("ipv4-mapped loopback git remote should be rejected");
+        assert!(
+            err.to_string().contains("non-public IPs"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn remote_extends_git_cache_hit_does_not_require_dns_resolution() {
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hush-cli-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let repo = "https://offline-cache.example.invalid/org/repo.git";
+        let commit = "deadbeef";
+        let path = "policy.yaml";
+        let yaml_bytes = br#"
+version: "1.1.0"
+name: cached
+settings:
+  fail_fast: true
+"#;
+        let expected_sha = sha256(yaml_bytes).to_hex();
+        let key = format!("git:{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
+        let digest = sha256(key.as_bytes()).to_hex();
+        let cache_path = cache_dir.join(format!("{}.yaml", digest));
+        std::fs::write(&cache_path, yaml_bytes).expect("write cached bytes");
+
+        let cfg = RemoteExtendsConfig::new(["offline-cache.example.invalid".to_string()])
+            .with_cache_dir(&cache_dir)
+            .with_allow_private_ips(false);
+        let resolver = RemotePolicyResolver::new(cfg).expect("resolver");
+        let reference = format!("git+{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
+
+        let resolved = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect("cached git policy should resolve without DNS");
+        assert!(
+            resolved.yaml.contains("name: cached"),
+            "expected cached YAML payload"
+        );
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
     }
 
     #[test]

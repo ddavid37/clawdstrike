@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 use std::io::Read as _;
-use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -127,6 +127,29 @@ impl RemotePolicyResolver {
                 host
             )));
         }
+        Ok(())
+    }
+
+    fn ensure_git_host_ip_policy(&self, host: &str) -> Result<()> {
+        if self.cfg.allow_private_ips {
+            return Ok(());
+        }
+
+        let addrs = resolve_host_addrs(host, 9418)?;
+        if addrs.is_empty() {
+            return Err(Error::ConfigError(format!(
+                "Remote extends host resolved to no addresses: {}",
+                host
+            )));
+        }
+
+        if addrs.iter().any(|addr| !is_public_ip(addr.ip())) {
+            return Err(Error::ConfigError(format!(
+                "Remote extends host resolved to non-public IPs (blocked): {}",
+                host
+            )));
+        }
+
         Ok(())
     }
 
@@ -348,21 +371,10 @@ impl RemotePolicyResolver {
                 "Invalid git extends (empty repo/commit/path)".into(),
             ));
         }
+        validate_git_commit_ref(commit)?;
 
-        if let Ok(repo_url) = Url::parse(repo) {
-            if matches!(repo_url.scheme(), "http" | "https") {
-                if self.cfg.https_only && repo_url.scheme() != "https" {
-                    return Err(Error::ConfigError(format!(
-                        "Remote extends require https:// URLs (got {}://)",
-                        repo_url.scheme()
-                    )));
-                }
-                let host = repo_url.host_str().ok_or_else(|| {
-                    Error::ConfigError(format!("Invalid URL host in remote extends: {}", repo))
-                })?;
-                self.ensure_host_allowed(host)?;
-            }
-        }
+        let repo_host = parse_git_remote_host(repo, self.cfg.https_only)?;
+        self.ensure_host_allowed(&repo_host)?;
 
         if !self.cfg.remote_enabled() {
             return Err(Error::ConfigError(
@@ -390,6 +402,7 @@ impl RemotePolicyResolver {
             let _ = std::fs::remove_file(&cache_path);
         }
 
+        self.ensure_git_host_ip_policy(&repo_host)?;
         let bytes = self.git_show_file(repo, commit, path)?;
         verify_sha256_pin(&bytes, expected_sha)?;
         self.write_cache(&cache_path, &bytes)?;
@@ -414,6 +427,7 @@ impl RemotePolicyResolver {
         commit: &str,
         base_path: &str,
     ) -> Result<ResolvedPolicySource> {
+        validate_git_commit_ref(commit)?;
         let (rel_path, expected_sha) = split_sha256_pin(reference)?;
         let joined = normalize_git_join(base_path, rel_path)?;
         let absolute = format!("git+{}@{}:{}#sha256={}", repo, commit, joined, expected_sha);
@@ -425,7 +439,10 @@ impl RemotePolicyResolver {
 
         run_git(&temp.path, &["init"])?;
         run_git(&temp.path, &["remote", "add", "origin", repo])?;
-        run_git(&temp.path, &["fetch", "--depth", "1", "origin", commit])?;
+        run_git(
+            &temp.path,
+            &["fetch", "--depth", "1", "origin", "--", commit],
+        )?;
 
         let output = Command::new("git")
             .arg("-C")
@@ -539,6 +556,53 @@ fn verify_sha256_pin(bytes: &[u8], expected_hex: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_git_commit_ref(token: &str) -> Result<()> {
+    if token.starts_with('-') {
+        return Err(Error::ConfigError(
+            "Invalid git extends commit/ref: token must not start with '-'".to_string(),
+        ));
+    }
+
+    if is_hex_oid(token) || is_valid_git_refname(token) {
+        return Ok(());
+    }
+
+    Err(Error::ConfigError(format!(
+        "Invalid git extends commit/ref: {}",
+        token
+    )))
+}
+
+fn is_hex_oid(token: &str) -> bool {
+    (7..=40).contains(&token.len()) && token.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn is_valid_git_refname(token: &str) -> bool {
+    if token.is_empty()
+        || token.starts_with('/')
+        || token.ends_with('/')
+        || token.ends_with('.')
+        || token.ends_with(".lock")
+        || token.contains("//")
+        || token.contains("..")
+        || token.contains("@{")
+    {
+        return false;
+    }
+
+    if token.bytes().any(|b| {
+        b.is_ascii_control()
+            || b == b' '
+            || matches!(b, b'~' | b'^' | b':' | b'?' | b'*' | b'[' | b'\\')
+    }) {
+        return false;
+    }
+
+    token
+        .split('/')
+        .all(|seg| !seg.is_empty() && seg != "." && seg != ".." && !seg.starts_with('.'))
+}
+
 fn parse_remote_url(url: &str, https_only: bool) -> std::result::Result<Url, String> {
     let parsed =
         Url::parse(url).map_err(|e| format!("Invalid URL in remote extends: {url}: {e}"))?;
@@ -564,6 +628,71 @@ fn parse_remote_url(url: &str, https_only: bool) -> std::result::Result<Url, Str
     }
 
     Ok(parsed)
+}
+
+fn parse_git_remote_host(repo: &str, https_only: bool) -> Result<String> {
+    if let Some(host) = parse_scp_like_git_host(repo) {
+        return Ok(host);
+    }
+
+    if let Ok(repo_url) = Url::parse(repo) {
+        let scheme = repo_url.scheme();
+        if !matches!(scheme, "http" | "https" | "ssh" | "git") {
+            return Err(Error::ConfigError(format!(
+                "Unsupported git remote scheme for remote extends: {}",
+                scheme
+            )));
+        }
+        if https_only && scheme == "http" {
+            return Err(Error::ConfigError(format!(
+                "Remote extends require https:// URLs (got {}://)",
+                scheme
+            )));
+        }
+
+        let host = repo_url.host_str().ok_or_else(|| {
+            Error::ConfigError(format!("Invalid URL host in remote extends: {}", repo))
+        })?;
+        return Ok(normalize_host(host));
+    }
+
+    Err(Error::ConfigError(format!(
+        "Invalid git remote in remote extends (expected URL or scp-style host:path): {}",
+        repo
+    )))
+}
+
+fn parse_scp_like_git_host(repo: &str) -> Option<String> {
+    if repo.contains("://") {
+        return None;
+    }
+
+    let (lhs, rhs) = repo.split_once(':')?;
+    if rhs.is_empty() {
+        return None;
+    }
+    if lhs.contains('/') || lhs.contains('\\') {
+        return None;
+    }
+
+    let host = lhs.rsplit_once('@').map(|(_, host)| host).unwrap_or(lhs);
+    let host = normalize_host(host);
+    if host.is_empty() {
+        None
+    } else {
+        Some(host)
+    }
+}
+
+fn resolve_host_addrs(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Ok(vec![SocketAddr::new(ip, port)]);
+    }
+
+    (host, port)
+        .to_socket_addrs()
+        .map(|addrs| addrs.collect())
+        .map_err(|e| Error::ConfigError(format!("Failed to resolve host {}: {}", host, e)))
 }
 
 fn join_url(base: &str, reference: &str) -> Result<String> {
@@ -621,7 +750,7 @@ fn build_pinned_blocking_http_client(
 fn is_public_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_public_ipv4(v4.octets()),
-        IpAddr::V6(v6) => is_public_ipv6(v6.segments()),
+        IpAddr::V6(v6) => is_public_ipv6(v6),
     }
 }
 
@@ -690,7 +819,12 @@ fn is_public_ipv4(octets: [u8; 4]) -> bool {
     true
 }
 
-fn is_public_ipv6(segments: [u16; 8]) -> bool {
+fn is_public_ipv6(addr: Ipv6Addr) -> bool {
+    if let Some(v4) = addr.to_ipv4() {
+        return is_public_ipv4(v4.octets());
+    }
+
+    let segments = addr.segments();
     let [s0, s1, s2, s3, _s4, _s5, _s6, _s7] = segments;
 
     // ::/128 (unspecified)

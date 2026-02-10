@@ -100,6 +100,29 @@ impl RemotePolicyResolver {
         Ok(())
     }
 
+    fn ensure_git_host_ip_policy(&self, host: &str) -> Result<()> {
+        if self.cfg.allow_private_ips {
+            return Ok(());
+        }
+
+        let addrs = resolve_host_addrs(host, 9418)?;
+        if addrs.is_empty() {
+            return Err(Error::ConfigError(format!(
+                "Remote extends host resolved to no addresses: {}",
+                host
+            )));
+        }
+
+        if addrs.iter().any(|addr| !is_public_ip(addr.ip())) {
+            return Err(Error::ConfigError(format!(
+                "Remote extends host resolved to non-public IPs (blocked): {}",
+                host
+            )));
+        }
+
+        Ok(())
+    }
+
     fn validate_and_resolve_http_target(
         &self,
         url: &Url,
@@ -324,8 +347,9 @@ impl RemotePolicyResolver {
                 "Invalid git extends (empty repo/commit/path)".into(),
             ));
         }
+        validate_git_commit_ref(commit)?;
 
-        let repo_host = parse_git_remote_host(repo)?;
+        let repo_host = parse_git_remote_host(repo, self.cfg.https_only)?;
         self.ensure_host_allowed(&repo_host)?;
 
         let key = format!("git:{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
@@ -348,6 +372,7 @@ impl RemotePolicyResolver {
             let _ = std::fs::remove_file(&cache_path);
         }
 
+        self.ensure_git_host_ip_policy(&repo_host)?;
         let bytes = self.git_show_file(repo, commit, path)?;
         verify_sha256_pin(&bytes, expected_sha)?;
         self.write_cache(&cache_path, &bytes)?;
@@ -372,6 +397,7 @@ impl RemotePolicyResolver {
         commit: &str,
         base_path: &str,
     ) -> Result<ResolvedPolicySource> {
+        validate_git_commit_ref(commit)?;
         let (rel_path, expected_sha) = split_sha256_pin(reference)?;
         let joined = normalize_git_join(base_path, rel_path)?;
         let absolute = format!("git+{}@{}:{}#sha256={}", repo, commit, joined, expected_sha);
@@ -383,7 +409,10 @@ impl RemotePolicyResolver {
 
         run_git(&temp.path, &["init"])?;
         run_git(&temp.path, &["remote", "add", "origin", repo])?;
-        run_git(&temp.path, &["fetch", "--depth", "1", "origin", commit])?;
+        run_git(
+            &temp.path,
+            &["fetch", "--depth", "1", "origin", "--", commit],
+        )?;
 
         let output = Command::new("git")
             .arg("-C")
@@ -497,6 +526,53 @@ fn verify_sha256_pin(bytes: &[u8], expected_hex: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_git_commit_ref(token: &str) -> Result<()> {
+    if token.starts_with('-') {
+        return Err(Error::ConfigError(
+            "Invalid git extends commit/ref: token must not start with '-'".to_string(),
+        ));
+    }
+
+    if is_hex_oid(token) || is_valid_git_refname(token) {
+        return Ok(());
+    }
+
+    Err(Error::ConfigError(format!(
+        "Invalid git extends commit/ref: {}",
+        token
+    )))
+}
+
+fn is_hex_oid(token: &str) -> bool {
+    (7..=40).contains(&token.len()) && token.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn is_valid_git_refname(token: &str) -> bool {
+    if token.is_empty()
+        || token.starts_with('/')
+        || token.ends_with('/')
+        || token.ends_with('.')
+        || token.ends_with(".lock")
+        || token.contains("//")
+        || token.contains("..")
+        || token.contains("@{")
+    {
+        return false;
+    }
+
+    if token.bytes().any(|b| {
+        b.is_ascii_control()
+            || b == b' '
+            || matches!(b, b'~' | b'^' | b':' | b'?' | b'*' | b'[' | b'\\')
+    }) {
+        return false;
+    }
+
+    token
+        .split('/')
+        .all(|seg| !seg.is_empty() && seg != "." && seg != ".." && !seg.starts_with('.'))
+}
+
 fn parse_remote_url(url: &str, https_only: bool) -> std::result::Result<Url, String> {
     let parsed =
         Url::parse(url).map_err(|e| format!("Invalid URL in remote extends: {url}: {e}"))?;
@@ -524,12 +600,22 @@ fn parse_remote_url(url: &str, https_only: bool) -> std::result::Result<Url, Str
     Ok(parsed)
 }
 
-fn parse_git_remote_host(repo: &str) -> Result<String> {
+fn parse_git_remote_host(repo: &str, https_only: bool) -> Result<String> {
+    if let Some(host) = parse_scp_like_git_host(repo) {
+        return Ok(host);
+    }
+
     if let Ok(repo_url) = Url::parse(repo) {
         let scheme = repo_url.scheme();
         if !matches!(scheme, "http" | "https" | "ssh" | "git") {
             return Err(Error::ConfigError(format!(
                 "Unsupported git remote scheme for remote extends: {}",
+                scheme
+            )));
+        }
+        if https_only && scheme == "http" {
+            return Err(Error::ConfigError(format!(
+                "Remote extends require https:// URLs (got {}://)",
                 scheme
             )));
         }
@@ -539,15 +625,32 @@ fn parse_git_remote_host(repo: &str) -> Result<String> {
         return Ok(normalize_host(host));
     }
 
-    parse_scp_like_git_host(repo).ok_or_else(|| {
-        Error::ConfigError(format!(
-            "Invalid git remote in remote extends (expected URL or scp-style host:path): {}",
-            repo
-        ))
-    })
+    Err(Error::ConfigError(format!(
+        "Invalid git remote in remote extends (expected URL or scp-style host:path): {}",
+        repo
+    )))
+}
+
+#[doc(hidden)]
+pub fn security_validate_git_commit_ref(token: &str) -> Result<()> {
+    validate_git_commit_ref(token)
+}
+
+#[doc(hidden)]
+pub fn security_parse_remote_url(url: &str, https_only: bool) -> std::result::Result<Url, String> {
+    parse_remote_url(url, https_only)
+}
+
+#[doc(hidden)]
+pub fn security_parse_git_remote_host(repo: &str, https_only: bool) -> Result<String> {
+    parse_git_remote_host(repo, https_only)
 }
 
 fn parse_scp_like_git_host(repo: &str) -> Option<String> {
+    if repo.contains("://") {
+        return None;
+    }
+
     let (lhs, rhs) = repo.split_once(':')?;
     if rhs.is_empty() {
         return None;
@@ -563,6 +666,17 @@ fn parse_scp_like_git_host(repo: &str) -> Option<String> {
     } else {
         Some(host)
     }
+}
+
+fn resolve_host_addrs(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Ok(vec![SocketAddr::new(ip, port)]);
+    }
+
+    (host, port)
+        .to_socket_addrs()
+        .map(|addrs| addrs.collect())
+        .map_err(|e| Error::ConfigError(format!("Failed to resolve host {}: {}", host, e)))
 }
 
 fn join_url(base: &str, reference: &str) -> Result<String> {
@@ -923,9 +1037,26 @@ mod tests {
 
     #[test]
     fn parse_git_remote_host_accepts_scp_style() {
-        let host = parse_git_remote_host("git@github.com:backbay-labs/clawdstrike.git")
+        let host = parse_git_remote_host("git@github.com:backbay-labs/clawdstrike.git", true)
             .expect("scp-like git remote should parse");
         assert_eq!(host, "github.com");
+    }
+
+    #[test]
+    fn parse_git_remote_host_accepts_userless_scp_style() {
+        let host = parse_git_remote_host("github.com:backbay-labs/clawdstrike.git", true)
+            .expect("userless scp-like git remote should parse");
+        assert_eq!(host, "github.com");
+    }
+
+    #[test]
+    fn parse_git_remote_host_rejects_unsupported_scheme() {
+        let err = parse_git_remote_host("file:///tmp/repo.git", true).expect_err("must reject");
+        assert!(
+            err.to_string()
+                .contains("Unsupported git remote scheme for remote extends"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
@@ -1087,6 +1218,122 @@ mod tests {
         assert!(
             err.to_string().contains("non-public IPs"),
             "expected private-IP rejection, got: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn private_ip_git_remote_is_blocked_by_default() {
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["127.0.0.1".to_string()].into_iter().collect(),
+            cache_dir: cache_dir.clone(),
+            https_only: false,
+            allow_private_ips: false,
+            allow_cross_host_redirects: false,
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+
+        let reference = format!(
+            "git+ssh://127.0.0.1/repo.git@deadbeef:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("private IP git remotes should be rejected by default");
+        assert!(
+            err.to_string().contains("non-public IPs"),
+            "expected private-IP rejection, got: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn remote_extends_rejects_dash_prefixed_commit_ref() {
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["github.com".to_string()].into_iter().collect(),
+            cache_dir: cache_dir.clone(),
+            https_only: true,
+            allow_private_ips: true,
+            allow_cross_host_redirects: false,
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+
+        let reference = format!(
+            "git+https://github.com/backbay-labs/clawdstrike.git@-badref:policy.yaml#sha256={}",
+            "0".repeat(64)
+        );
+        let err = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect_err("dash-prefixed commit/ref must be rejected before any git invocation");
+        assert!(
+            err.to_string().contains("must not start with '-'"),
+            "unexpected error: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn git_cached_policy_resolves_without_dns_lookup() {
+        let cache_dir = std::env::temp_dir().join(format!(
+            "hushd-remote-extends-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+
+        let repo = "https://offline-cache.example.invalid/org/repo.git";
+        let commit = "deadbeef";
+        let path = "policy.yaml";
+        let yaml_bytes = br#"
+version: "1.1.0"
+name: cached
+settings:
+  fail_fast: true
+"#;
+        let expected_sha = sha256(yaml_bytes).to_hex();
+        let key = format!("git:{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
+        let digest = sha256(key.as_bytes()).to_hex();
+        let cache_path = cache_dir.join(format!("{}.yaml", digest));
+        std::fs::write(&cache_path, yaml_bytes).expect("write cached bytes");
+
+        let cfg = RemoteExtendsResolverConfig {
+            allowed_hosts: ["offline-cache.example.invalid".to_string()]
+                .into_iter()
+                .collect(),
+            cache_dir: cache_dir.clone(),
+            https_only: true,
+            allow_private_ips: false,
+            allow_cross_host_redirects: false,
+            max_fetch_bytes: 1024 * 1024,
+            max_cache_bytes: 1024 * 1024,
+        };
+        let resolver = RemotePolicyResolver::new(cfg).expect("create resolver");
+        let reference = format!("git+{}@{}:{}#sha256={}", repo, commit, path, expected_sha);
+
+        let resolved = resolver
+            .resolve(&reference, &PolicyLocation::None)
+            .expect("cached git policy should resolve without DNS");
+        assert!(
+            resolved.yaml.contains("name: cached"),
+            "expected cached YAML payload"
         );
 
         let _ = std::fs::remove_dir_all(&cache_dir);

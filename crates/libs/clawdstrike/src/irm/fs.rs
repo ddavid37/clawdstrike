@@ -102,14 +102,12 @@ impl FilesystemIrm {
         // Remove trailing slashes
         let trimmed = expanded.trim_end_matches('/');
 
-        // Resolve .. and . (simple implementation)
+        // Resolve "." but preserve ".." so security checks do not silently change path meaning.
         let mut parts: Vec<&str> = Vec::new();
         for part in trimmed.split('/') {
             match part {
                 "" | "." => {}
-                ".." => {
-                    parts.pop();
-                }
+                ".." => parts.push(".."),
                 other => {
                     parts.push(other);
                 }
@@ -137,24 +135,81 @@ impl FilesystemIrm {
 
     /// Extract path from host call arguments
     fn extract_path(&self, call: &HostCall) -> Option<String> {
+        let allow_bare_string_paths = call.function.contains("path");
+
         for arg in &call.args {
             if let Some(s) = arg.as_str() {
-                if s.starts_with('/') || s.starts_with("~/") || s.starts_with("./") {
+                if self.looks_like_path(s)
+                    || (allow_bare_string_paths && self.looks_like_bare_filename(s))
+                {
                     return Some(s.to_string());
                 }
             }
-        }
 
-        // Check for named path argument
-        if let Some(first) = call.args.first() {
-            if let Some(obj) = first.as_object() {
-                if let Some(path) = obj.get("path") {
-                    return path.as_str().map(|s| s.to_string());
+            if let Some(obj) = arg.as_object() {
+                for key in ["path", "file_path", "target_path"] {
+                    if let Some(path) = obj.get(key).and_then(|value| value.as_str()) {
+                        if self.looks_like_path(path)
+                            || self.has_parent_traversal(path)
+                            || self.looks_like_bare_filename(path)
+                        {
+                            return Some(path.to_string());
+                        }
+                    }
                 }
             }
         }
 
         None
+    }
+
+    fn looks_like_path(&self, value: &str) -> bool {
+        if value.is_empty() {
+            return false;
+        }
+
+        if value.starts_with('/') || value.starts_with("~/") || value.starts_with("./") {
+            return true;
+        }
+
+        if value == ".." || value.starts_with("../") {
+            return true;
+        }
+
+        if value.contains('\\') {
+            return true;
+        }
+
+        value.contains('/') && !value.contains("://")
+    }
+
+    fn looks_like_bare_filename(&self, value: &str) -> bool {
+        let value = value.trim();
+        if value.is_empty() {
+            return false;
+        }
+
+        if value.contains("://") {
+            return false;
+        }
+
+        if value == "." || value == ".." {
+            return false;
+        }
+
+        if value.contains('/') || value.contains('\\') {
+            return false;
+        }
+
+        if value.bytes().all(|b| b.is_ascii_digit()) {
+            return false;
+        }
+
+        !value.chars().any(|ch| ch.is_control())
+    }
+
+    fn has_parent_traversal(&self, path: &str) -> bool {
+        path.replace('\\', "/").split('/').any(|seg| seg == "..")
     }
 }
 
@@ -181,12 +236,22 @@ impl Monitor for FilesystemIrm {
         let path = match self.extract_path(call) {
             Some(p) => p,
             None => {
-                debug!("FilesystemIrm: no path found in call {:?}", call.function);
-                return Decision::Allow;
+                let reason = format!(
+                    "Cannot determine filesystem path for call {}",
+                    call.function
+                );
+                debug!("FilesystemIrm: {}", reason);
+                return Decision::Deny { reason };
             }
         };
 
         debug!("FilesystemIrm checking path: {}", path);
+
+        if self.has_parent_traversal(&path) {
+            return Decision::Deny {
+                reason: format!("Path contains parent traversal segment: {}", path),
+            };
+        }
 
         // Check forbidden paths
         if let Some(pattern) = self.is_forbidden(&path, policy) {
@@ -222,7 +287,7 @@ mod tests {
 
         assert_eq!(irm.normalize_path("/foo/bar"), "/foo/bar");
         assert_eq!(irm.normalize_path("/foo/bar/"), "/foo/bar");
-        assert_eq!(irm.normalize_path("/foo/../bar"), "/bar");
+        assert_eq!(irm.normalize_path("/foo/../bar"), "/foo/../bar");
         assert_eq!(irm.normalize_path("/foo/./bar"), "/foo/bar");
         assert_eq!(irm.normalize_path("~/test"), "/home/user/test");
     }
@@ -307,8 +372,96 @@ mod tests {
         let call = HostCall::new("fd_read", vec![serde_json::json!({"path": "/app/main.rs"})]);
         assert_eq!(irm.extract_path(&call), Some("/app/main.rs".to_string()));
 
+        let call = HostCall::new("fd_read", vec![serde_json::json!("../../etc/passwd")]);
+        assert_eq!(
+            irm.extract_path(&call),
+            Some("../../etc/passwd".to_string())
+        );
+
+        let call = HostCall::new("path_open", vec![serde_json::json!("README.md")]);
+        assert_eq!(irm.extract_path(&call), Some("README.md".to_string()));
+
+        let call = HostCall::new(
+            "fd_write",
+            vec![serde_json::json!({"target_path": "config.json"})],
+        );
+        assert_eq!(irm.extract_path(&call), Some("config.json".to_string()));
+
         let call = HostCall::new("fd_read", vec![serde_json::json!(123)]);
         assert_eq!(irm.extract_path(&call), None);
+    }
+
+    #[tokio::test]
+    async fn filesystem_irm_allows_bare_filename_for_path_style_calls() {
+        let irm = FilesystemIrm::new();
+        let policy = Policy::default();
+        let call = HostCall::new("path_open", vec![serde_json::json!("README.md")]);
+        let decision = irm.evaluate(&call, &policy).await;
+
+        assert!(
+            decision.is_allowed(),
+            "bare filename should be treated as a valid filesystem path in path-style calls"
+        );
+    }
+
+    #[tokio::test]
+    async fn filesystem_irm_denies_parent_traversal_relative_paths() {
+        let irm = FilesystemIrm::new();
+        let policy = Policy::default();
+
+        let call = HostCall::new("fd_read", vec![serde_json::json!("../../etc/passwd")]);
+        let decision = irm.evaluate(&call, &policy).await;
+        assert!(
+            !decision.is_allowed(),
+            "string traversal path should be denied"
+        );
+
+        let call = HostCall::new(
+            "fd_write",
+            vec![serde_json::json!({"path": "./../..//etc/passwd"})],
+        );
+        let decision = irm.evaluate(&call, &policy).await;
+        assert!(
+            !decision.is_allowed(),
+            "object traversal path should be denied"
+        );
+    }
+
+    #[tokio::test]
+    async fn filesystem_irm_denies_traversal_when_path_is_in_nonfirst_object_arg() {
+        let irm = FilesystemIrm::new();
+        let policy = Policy::default();
+        let call = HostCall::new(
+            "fd_read",
+            vec![
+                serde_json::json!({"fd": 3}),
+                serde_json::json!({"path": "../../etc/passwd"}),
+            ],
+        );
+
+        let decision = irm.evaluate(&call, &policy).await;
+        match decision {
+            Decision::Deny { reason } => {
+                assert!(
+                    reason.contains("parent traversal"),
+                    "deny reason should explain traversal rejection: {reason}"
+                );
+            }
+            other => panic!("expected deny, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn filesystem_irm_denies_when_no_path_can_be_extracted() {
+        let irm = FilesystemIrm::new();
+        let policy = Policy::default();
+        let call = HostCall::new("fd_read", vec![serde_json::json!({"fd": 3})]);
+        let decision = irm.evaluate(&call, &policy).await;
+
+        assert!(
+            !decision.is_allowed(),
+            "filesystem calls without extractable paths must fail closed"
+        );
     }
 
     #[test]

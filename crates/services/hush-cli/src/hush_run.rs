@@ -1,10 +1,12 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
+use std::collections::HashMap;
+use std::future::Future;
 use std::io::Write;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use anyhow::Context as _;
@@ -12,7 +14,7 @@ use chrono::Utc;
 use clawdstrike::{GuardContext, GuardResult, HushEngine, Severity};
 use hush_core::{sha256, Keypair, PublicKey, Receipt, SignedReceipt, Signer, Verdict};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{lookup_host, TcpListener, TcpStream};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -24,6 +26,56 @@ use crate::policy_event::{
 };
 use crate::remote_extends;
 use crate::ExitCode;
+
+const EVENT_QUEUE_CAPACITY_DEFAULT: usize = 1024;
+const PROXY_MAX_IN_FLIGHT_CONNECTIONS_DEFAULT: usize = 256;
+const PROXY_HEADER_READ_TIMEOUT_DEFAULT: Duration = Duration::from_secs(5);
+const PROXY_TLS_SNI_TIMEOUT: Duration = Duration::from_secs(3);
+const PROXY_DNS_RESOLVE_TIMEOUT_DEFAULT: Duration = Duration::from_secs(2);
+const HUSHD_FORWARD_TIMEOUT_DEFAULT: Duration = Duration::from_secs(3);
+
+static TEST_RESOLVER_CALLS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
+
+fn parse_test_override_usize(name: &str) -> Option<usize> {
+    let raw = std::env::var(name).ok()?;
+    raw.parse::<usize>().ok()
+}
+
+fn parse_test_override_duration_ms(name: &str) -> Option<Duration> {
+    let raw = std::env::var(name).ok()?;
+    let ms = raw.parse::<u64>().ok()?;
+    Some(Duration::from_millis(ms))
+}
+
+fn event_queue_capacity() -> usize {
+    parse_test_override_usize("HUSH_TEST_EVENT_QUEUE_CAPACITY")
+        .filter(|v| *v > 0)
+        .unwrap_or(EVENT_QUEUE_CAPACITY_DEFAULT)
+}
+
+fn proxy_max_in_flight_connections() -> usize {
+    parse_test_override_usize("HUSH_TEST_PROXY_MAX_IN_FLIGHT")
+        .filter(|v| *v > 0)
+        .unwrap_or(PROXY_MAX_IN_FLIGHT_CONNECTIONS_DEFAULT)
+}
+
+fn proxy_header_read_timeout() -> Duration {
+    parse_test_override_duration_ms("HUSH_TEST_PROXY_HEADER_TIMEOUT_MS")
+        .filter(|v| !v.is_zero())
+        .unwrap_or(PROXY_HEADER_READ_TIMEOUT_DEFAULT)
+}
+
+fn proxy_dns_resolve_timeout() -> Duration {
+    parse_test_override_duration_ms("HUSH_TEST_PROXY_DNS_TIMEOUT_MS")
+        .filter(|v| !v.is_zero())
+        .unwrap_or(PROXY_DNS_RESOLVE_TIMEOUT_DEFAULT)
+}
+
+fn hushd_forward_timeout() -> Duration {
+    parse_test_override_duration_ms("HUSH_TEST_FORWARD_TIMEOUT_MS")
+        .filter(|v| !v.is_zero())
+        .unwrap_or(HUSHD_FORWARD_TIMEOUT_DEFAULT)
+}
 
 #[derive(Clone, Debug)]
 struct RunOutcome {
@@ -95,10 +147,27 @@ struct HushdForwarder {
 
 impl HushdForwarder {
     fn new(base_url: String, token: Option<String>) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(hushd_forward_timeout())
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             token,
-            client: reqwest::Client::new(),
+            client,
+        }
+    }
+
+    #[cfg(test)]
+    fn new_with_timeout(base_url: String, token: Option<String>, timeout: Duration) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        Self {
+            base_url: base_url.trim_end_matches('/').to_string(),
+            token,
+            client,
         }
     }
 
@@ -106,7 +175,8 @@ impl HushdForwarder {
         let mut req = self
             .client
             .post(format!("{}/api/v1/eval", self.base_url))
-            .json(event);
+            .json(event)
+            .timeout(hushd_forward_timeout());
 
         if let Some(token) = self.token.as_ref() {
             req = req.bearer_auth(token);
@@ -118,6 +188,36 @@ impl HushdForwarder {
 }
 
 #[derive(Clone, Debug)]
+struct EventEmitter {
+    tx: mpsc::Sender<PolicyEvent>,
+    dropped_full: Arc<AtomicUsize>,
+}
+
+impl EventEmitter {
+    fn new(tx: mpsc::Sender<PolicyEvent>) -> Self {
+        Self {
+            tx,
+            dropped_full: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn emit(&self, event: PolicyEvent) {
+        if let Err(err) = self.tx.try_send(event) {
+            match err {
+                mpsc::error::TrySendError::Full(_) => {
+                    self.dropped_full.fetch_add(1, Ordering::Relaxed);
+                }
+                mpsc::error::TrySendError::Closed(_) => {}
+            }
+        }
+    }
+
+    fn dropped_count(&self) -> usize {
+        self.dropped_full.load(Ordering::Relaxed)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct RunArgs {
     pub policy: String,
     pub events_out: String,
@@ -125,6 +225,7 @@ pub struct RunArgs {
     pub signing_key: String,
     pub no_proxy: bool,
     pub proxy_port: u16,
+    pub proxy_allow_private_ips: bool,
     pub sandbox: bool,
     pub hushd_url: Option<String>,
     pub hushd_token: Option<String>,
@@ -144,6 +245,7 @@ pub async fn cmd_run(
         signing_key,
         no_proxy,
         proxy_port,
+        proxy_allow_private_ips,
         sandbox,
         hushd_url,
         hushd_token,
@@ -196,7 +298,12 @@ pub async fn cmd_run(
     let events_path = PathBuf::from(&events_out);
     let receipt_path = PathBuf::from(&receipt_out);
 
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<PolicyEvent>();
+    let event_queue_capacity = event_queue_capacity();
+    let proxy_max_in_flight_connections = proxy_max_in_flight_connections();
+    let proxy_header_timeout = proxy_header_read_timeout();
+
+    let (event_tx, mut event_rx) = mpsc::channel::<PolicyEvent>(event_queue_capacity);
+    let event_emitter = EventEmitter::new(event_tx);
 
     let writer_forwarder = forwarder.clone();
     let writer_handle = tokio::spawn(async move {
@@ -232,11 +339,12 @@ pub async fn cmd_run(
         metadata: None,
         context: None,
     };
-    let _ = event_tx.send(command_event);
+    event_emitter.emit(command_event);
 
     let outcome = RunOutcome::new();
 
     let mut env_proxy_url = None;
+    let mut proxy_rejected_connections: Option<Arc<AtomicUsize>> = None;
     let proxy_handle = if no_proxy {
         None
     } else {
@@ -244,14 +352,18 @@ pub async fn cmd_run(
             proxy_port,
             engine.clone(),
             base_context.clone(),
-            event_tx.clone(),
+            event_emitter.clone(),
             outcome.clone(),
+            proxy_max_in_flight_connections,
+            proxy_header_timeout,
+            proxy_allow_private_ips,
             stderr,
         )
         .await
         {
-            Ok((listen_url, handle)) => {
+            Ok((listen_url, handle, rejected_connections)) => {
                 env_proxy_url = Some(listen_url);
+                proxy_rejected_connections = Some(rejected_connections);
                 Some(handle)
             }
             Err(e) => {
@@ -281,7 +393,7 @@ pub async fn cmd_run(
         Ok(status) => status,
         Err(e) => {
             let _ = writeln!(stderr, "Error: {}", e);
-            drop(event_tx);
+            drop(event_emitter);
             let _ = writer_handle.await;
             if let Some(h) = proxy_handle {
                 h.abort();
@@ -310,8 +422,21 @@ pub async fn cmd_run(
         "proxy".to_string(),
         serde_json::Value::Bool(env_proxy_url.is_some()),
     );
+    let dropped_events = event_emitter.dropped_count();
+    extra.insert(
+        "droppedEventCount".to_string(),
+        serde_json::Value::Number((dropped_events as u64).into()),
+    );
+    let rejected_proxy_connections = proxy_rejected_connections
+        .as_ref()
+        .map(|count| count.load(Ordering::Relaxed))
+        .unwrap_or(0);
+    extra.insert(
+        "proxyRejectedConnections".to_string(),
+        serde_json::Value::Number((rejected_proxy_connections as u64).into()),
+    );
 
-    let _ = event_tx.send(PolicyEvent {
+    event_emitter.emit(PolicyEvent {
         event_id: Uuid::new_v4().to_string(),
         event_type: PolicyEventType::Custom,
         timestamp: Utc::now(),
@@ -329,7 +454,7 @@ pub async fn cmd_run(
         h.abort();
     }
 
-    drop(event_tx);
+    drop(event_emitter);
     match writer_handle.await {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {
@@ -338,6 +463,20 @@ pub async fn cmd_run(
         Err(e) => {
             let _ = writeln!(stderr, "Warning: event writer task failed: {}", e);
         }
+    }
+    if dropped_events > 0 {
+        let _ = writeln!(
+            stderr,
+            "Warning: dropped {} policy events because the event queue is full (capacity={})",
+            dropped_events, event_queue_capacity
+        );
+    }
+    if rejected_proxy_connections > 0 {
+        let _ = writeln!(
+            stderr,
+            "Warning: rejected {} proxy connections due to in-flight limit ({})",
+            rejected_proxy_connections, proxy_max_in_flight_connections
+        );
     }
 
     let events_bytes = match tokio::fs::read(&events_out).await {
@@ -664,14 +803,18 @@ async fn spawn_and_wait_child(
     Ok(status)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn start_connect_proxy(
     port: u16,
     engine: Arc<HushEngine>,
     context: GuardContext,
-    event_tx: mpsc::UnboundedSender<PolicyEvent>,
+    event_emitter: EventEmitter,
     outcome: RunOutcome,
+    max_in_flight_connections: usize,
+    header_read_timeout: Duration,
+    allow_private_ips: bool,
     stderr: &mut dyn Write,
-) -> anyhow::Result<(String, tokio::task::JoinHandle<()>)> {
+) -> anyhow::Result<(String, tokio::task::JoinHandle<()>, Arc<AtomicUsize>)> {
     let listener = TcpListener::bind(("127.0.0.1", port))
         .await
         .context("bind proxy listener")?;
@@ -680,38 +823,73 @@ async fn start_connect_proxy(
     let url = format!("http://127.0.0.1:{}", local.port());
     let _ = writeln!(stderr, "Proxy listening on {}", url);
 
+    let rejected_connections = Arc::new(AtomicUsize::new(0));
+    let in_flight = Arc::new(tokio::sync::Semaphore::new(max_in_flight_connections));
+    let rejected_connections_for_loop = rejected_connections.clone();
     let handle = tokio::spawn(async move {
         loop {
-            let (socket, _) = match listener.accept().await {
+            let (mut socket, _) = match listener.accept().await {
                 Ok(v) => v,
                 Err(_) => return,
             };
 
+            let permit = match in_flight.clone().try_acquire_owned() {
+                Ok(permit) => permit,
+                Err(_) => {
+                    rejected_connections_for_loop.fetch_add(1, Ordering::Relaxed);
+                    let _ = socket
+                        .write_all(b"HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n")
+                        .await;
+                    continue;
+                }
+            };
+
             let engine = engine.clone();
             let context = context.clone();
-            let event_tx = event_tx.clone();
+            let event_emitter = event_emitter.clone();
             let outcome = outcome.clone();
 
             tokio::spawn(async move {
-                let _ =
-                    handle_connect_proxy_client(socket, engine, context, event_tx, outcome).await;
+                let _permit = permit;
+                let _ = handle_connect_proxy_client(
+                    socket,
+                    engine,
+                    context,
+                    event_emitter,
+                    outcome,
+                    header_read_timeout,
+                    allow_private_ips,
+                )
+                .await;
             });
         }
     });
 
-    Ok((url, handle))
+    Ok((url, handle, rejected_connections))
 }
 
 async fn handle_connect_proxy_client(
     mut client: TcpStream,
     engine: Arc<HushEngine>,
     context: GuardContext,
-    event_tx: mpsc::UnboundedSender<PolicyEvent>,
+    event_emitter: EventEmitter,
     outcome: RunOutcome,
+    header_read_timeout: Duration,
+    allow_private_ips: bool,
 ) -> anyhow::Result<()> {
-    let header = read_http_header(&mut client, 8 * 1024)
-        .await
-        .context("read proxy request header")?;
+    let header =
+        match tokio::time::timeout(header_read_timeout, read_http_header(&mut client, 8 * 1024))
+            .await
+        {
+            Ok(Ok(header)) => header,
+            Ok(Err(err)) => return Err(err).context("read proxy request header"),
+            Err(_) => {
+                let _ = client
+                    .write_all(b"HTTP/1.1 408 Request Timeout\r\nConnection: close\r\n\r\n")
+                    .await;
+                return Ok(());
+            }
+        };
 
     let header_str = std::str::from_utf8(&header).context("proxy request header must be UTF-8")?;
     let mut lines = header_str.split("\r\n");
@@ -731,69 +909,488 @@ async fn handle_connect_proxy_client(
     }
 
     let (connect_host, connect_port) = parse_connect_target(target)?;
-
-    // If the CONNECT target is an IP address, try to use TLS SNI as the policy host.
-    let mut sni_buf = Vec::new();
-    let host_for_policy = if connect_host.parse::<IpAddr>().is_ok() {
-        client
-            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-            .await?;
-
-        // Best-effort: read one TLS record to extract SNI.
-        match tokio::time::timeout(Duration::from_secs(3), read_tls_record(&mut client)).await {
-            Ok(Ok(record)) => {
-                sni_buf = record.clone();
-                match hush_proxy::sni::extract_sni(&record) {
-                    Ok(Some(host)) => host,
-                    _ => connect_host.clone(),
-                }
-            }
-            _ => connect_host.clone(),
-        }
-    } else {
-        connect_host.clone()
-    };
-
-    let result = engine
-        .check_egress(&host_for_policy, connect_port, &context)
+    let connect_result = engine
+        .check_egress(&connect_host, connect_port, &context)
         .await
         .context("check egress policy")?;
 
-    outcome.observe_guard_result(&result);
+    outcome.observe_guard_result(&connect_result);
 
-    let _ = event_tx.send(network_event(
+    event_emitter.emit(network_event(
         &context,
-        host_for_policy.clone(),
+        connect_host.clone(),
         connect_port,
-        &result,
+        &connect_result,
     ));
 
-    if !result.allowed {
-        // If we already sent 200 (IP + SNI path), we can only close the tunnel.
-        if sni_buf.is_empty() {
-            client.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await?;
-        }
+    if !connect_result.allowed {
+        client.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await?;
         return Ok(());
     }
 
-    // Connect to the requested endpoint.
-    let mut upstream = TcpStream::connect((connect_host.as_str(), connect_port))
-        .await
-        .context("connect upstream")?;
-
-    // If we used the SNI path, forward the already-read TLS bytes.
-    if !sni_buf.is_empty() {
-        upstream.write_all(&sni_buf).await?;
+    let connect_ip = connect_host.parse::<IpAddr>().ok();
+    let pinned_target = if let Some(ip) = connect_ip {
+        PinnedConnectTarget::for_ip(ip, connect_port)
     } else {
+        match resolve_connect_hostname_target(&connect_host, connect_port, allow_private_ips).await
+        {
+            Ok(target) => {
+                let resolution_result = GuardResult::allow("connect_proxy_resolution").with_details(
+                    serde_json::json!({
+                        "host": connect_host.clone(),
+                        "port": connect_port,
+                        "allow_private_ips": allow_private_ips,
+                        "resolved_ips": target.resolved_ips.iter().map(IpAddr::to_string).collect::<Vec<_>>(),
+                        "pinned_ip": target.selected_addr.ip().to_string(),
+                    }),
+                );
+                outcome.observe_guard_result(&resolution_result);
+                event_emitter.emit(network_event(
+                    &context,
+                    connect_host.clone(),
+                    connect_port,
+                    &resolution_result,
+                ));
+                target
+            }
+            Err(result) => {
+                outcome.observe_guard_result(&result);
+                event_emitter.emit(network_event(
+                    &context,
+                    connect_host.clone(),
+                    connect_port,
+                    &result,
+                ));
+                client.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await?;
+                return Ok(());
+            }
+        }
+    };
+    let mut buffered_tls_record: Option<Vec<u8>> = None;
+
+    if let Some(ip) = connect_ip {
         client
             .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             .await?;
+
+        // Best-effort: read one TLS record to extract SNI and enforce CONNECT target consistency.
+        if let Ok(Ok(record)) =
+            tokio::time::timeout(PROXY_TLS_SNI_TIMEOUT, read_tls_record(&mut client)).await
+        {
+            buffered_tls_record = Some(record.clone());
+            if let Ok(Some(sni_host)) = hush_proxy::sni::extract_sni(&record) {
+                let sni_result = engine
+                    .check_egress(&sni_host, connect_port, &context)
+                    .await
+                    .context("check egress policy for SNI host")?;
+
+                outcome.observe_guard_result(&sni_result);
+                event_emitter.emit(network_event(
+                    &context,
+                    sni_host.clone(),
+                    connect_port,
+                    &sni_result,
+                ));
+
+                if !sni_result.allowed {
+                    return Ok(());
+                }
+
+                if !sni_host_matches_connect_ip(&sni_host, connect_port, ip).await {
+                    let mismatch = GuardResult::block(
+                        "connect_proxy_sni_consistency",
+                        Severity::Error,
+                        format!(
+                            "CONNECT target {} does not match SNI host {}",
+                            connect_host, sni_host
+                        ),
+                    );
+                    outcome.observe_guard_result(&mismatch);
+                    event_emitter.emit(network_event(&context, sni_host, connect_port, &mismatch));
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    // Connect to one of the policy-approved, pinned resolution candidates.
+    let mut upstream = connect_to_pinned_target(&pinned_target).await?;
+
+    // If we already answered CONNECT for IP targets, do not send it twice.
+    if connect_ip.is_none() {
+        client
+            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            .await?;
+    }
+
+    // Forward the already-read TLS bytes, if any.
+    if let Some(sni_buf) = buffered_tls_record {
+        upstream.write_all(&sni_buf).await?;
     }
 
     // Tunnel bytes both ways until EOF.
     let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
 
     Ok(())
+}
+
+async fn sni_host_matches_connect_ip(host: &str, port: u16, connect_ip: IpAddr) -> bool {
+    let lookup = tokio::time::timeout(Duration::from_secs(2), lookup_host((host, port))).await;
+    let Ok(Ok(addrs)) = lookup else {
+        return false;
+    };
+
+    addrs.into_iter().any(|addr| addr.ip() == connect_ip)
+}
+
+#[derive(Clone, Debug)]
+struct PinnedConnectTarget {
+    selected_addr: SocketAddr,
+    candidate_addrs: Vec<SocketAddr>,
+    resolved_ips: Vec<IpAddr>,
+}
+
+impl PinnedConnectTarget {
+    fn for_ip(ip: IpAddr, port: u16) -> Self {
+        let selected_addr = SocketAddr::new(ip, port);
+        Self {
+            selected_addr,
+            candidate_addrs: vec![selected_addr],
+            resolved_ips: vec![ip],
+        }
+    }
+}
+
+async fn resolve_connect_hostname_target(
+    host: &str,
+    port: u16,
+    allow_private_ips: bool,
+) -> Result<PinnedConnectTarget, GuardResult> {
+    resolve_connect_hostname_target_with_resolver(
+        host,
+        port,
+        allow_private_ips,
+        |hostname, port| async move { resolve_socket_addrs(&hostname, port).await },
+    )
+    .await
+}
+
+async fn resolve_connect_hostname_target_with_resolver<R, Fut>(
+    host: &str,
+    port: u16,
+    allow_private_ips: bool,
+    mut resolver: R,
+) -> Result<PinnedConnectTarget, GuardResult>
+where
+    R: FnMut(String, u16) -> Fut,
+    Fut: Future<Output = anyhow::Result<Vec<SocketAddr>>>,
+{
+    let resolved_addrs = match resolver(host.to_string(), port).await {
+        Ok(addrs) => addrs,
+        Err(err) => {
+            return Err(connect_resolution_block_result(
+                host,
+                port,
+                format!("CONNECT target DNS resolution failed: {}", err),
+                Vec::new(),
+                allow_private_ips,
+            ));
+        }
+    };
+
+    if resolved_addrs.is_empty() {
+        return Err(connect_resolution_block_result(
+            host,
+            port,
+            "CONNECT target DNS resolution returned no addresses",
+            Vec::new(),
+            allow_private_ips,
+        ));
+    }
+
+    let resolved_ips = collect_unique_ips(&resolved_addrs);
+    let candidate_addrs: Vec<SocketAddr> = resolved_addrs
+        .into_iter()
+        .filter(|addr| allow_private_ips || is_public_ip(addr.ip()))
+        .collect();
+
+    let Some(selected_addr) = candidate_addrs.first().copied() else {
+        return Err(connect_resolution_block_result(
+            host,
+            port,
+            "CONNECT target resolved only to non-public IP addresses",
+            resolved_ips,
+            allow_private_ips,
+        ));
+    };
+
+    Ok(PinnedConnectTarget {
+        selected_addr,
+        candidate_addrs,
+        resolved_ips,
+    })
+}
+
+async fn connect_to_pinned_target(target: &PinnedConnectTarget) -> anyhow::Result<TcpStream> {
+    let mut errors = Vec::new();
+    for addr in &target.candidate_addrs {
+        match TcpStream::connect(*addr).await {
+            Ok(stream) => return Ok(stream),
+            Err(err) => errors.push(format!("{addr}: {err}")),
+        }
+    }
+
+    let attempted = target
+        .candidate_addrs
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    anyhow::bail!(
+        "connect upstream failed for pinned candidates [{}] (attempted: [{}])",
+        errors.join("; "),
+        attempted
+    )
+}
+
+fn connect_resolution_block_result(
+    host: &str,
+    port: u16,
+    message: impl Into<String>,
+    resolved_ips: Vec<IpAddr>,
+    allow_private_ips: bool,
+) -> GuardResult {
+    GuardResult::block("connect_proxy_resolution", Severity::Error, message).with_details(
+        serde_json::json!({
+            "host": host,
+            "port": port,
+            "allow_private_ips": allow_private_ips,
+            "resolved_ips": resolved_ips.into_iter().map(|ip| ip.to_string()).collect::<Vec<_>>(),
+        }),
+    )
+}
+
+fn collect_unique_ips(addrs: &[SocketAddr]) -> Vec<IpAddr> {
+    let mut ips = Vec::new();
+    for addr in addrs {
+        let ip = addr.ip();
+        if !ips.contains(&ip) {
+            ips.push(ip);
+        }
+    }
+    ips
+}
+
+async fn resolve_socket_addrs(host: &str, port: u16) -> anyhow::Result<Vec<SocketAddr>> {
+    if let Some(hook_result) = resolve_socket_addrs_from_test_hook(host, port) {
+        return hook_result;
+    }
+
+    let lookup = tokio::time::timeout(proxy_dns_resolve_timeout(), lookup_host((host, port))).await;
+    match lookup {
+        Ok(Ok(addrs)) => Ok(addrs.into_iter().collect()),
+        Ok(Err(err)) => Err(err).with_context(|| format!("lookup host {}:{}", host, port)),
+        Err(_) => anyhow::bail!("lookup host {}:{} timed out", host, port),
+    }
+}
+
+fn resolve_socket_addrs_from_test_hook(
+    host: &str,
+    port: u16,
+) -> Option<anyhow::Result<Vec<SocketAddr>>> {
+    let raw = std::env::var("HUSH_TEST_RESOLVER_SEQUENCE").ok()?;
+    let host_lc = host.to_ascii_lowercase();
+    let key_with_port = format!("{}:{}", host_lc, port);
+
+    for entry in raw.split(';').map(str::trim).filter(|e| !e.is_empty()) {
+        let (target, stages) = match entry.split_once('=') {
+            Some(parts) => parts,
+            None => {
+                return Some(Err(anyhow::anyhow!(
+                    "invalid HUSH_TEST_RESOLVER_SEQUENCE entry: {}",
+                    entry
+                )));
+            }
+        };
+
+        let target_lc = target.trim().to_ascii_lowercase();
+        if target_lc != host_lc && target_lc != key_with_port {
+            continue;
+        }
+
+        let stage_list: Vec<&str> = stages
+            .split('|')
+            .map(str::trim)
+            .filter(|stage| !stage.is_empty())
+            .collect();
+        if stage_list.is_empty() {
+            return Some(Err(anyhow::anyhow!(
+                "empty resolver stage list in HUSH_TEST_RESOLVER_SEQUENCE for {}",
+                target
+            )));
+        }
+
+        let calls = TEST_RESOLVER_CALLS.get_or_init(|| Mutex::new(HashMap::new()));
+        let stage_idx = {
+            let mut guard = match calls.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            let idx = guard.entry(key_with_port.clone()).or_insert(0);
+            let out = *idx;
+            *idx = idx.saturating_add(1);
+            out
+        };
+
+        let selected_stage = stage_list
+            .get(stage_idx)
+            .copied()
+            .or_else(|| stage_list.last().copied())
+            .unwrap_or("");
+
+        let mut addrs = Vec::new();
+        for item in selected_stage
+            .split(',')
+            .map(str::trim)
+            .filter(|it| !it.is_empty())
+        {
+            if let Ok(addr) = item.parse::<SocketAddr>() {
+                addrs.push(addr);
+                continue;
+            }
+            if let Ok(ip) = item.parse::<IpAddr>() {
+                addrs.push(SocketAddr::new(ip, port));
+                continue;
+            }
+            return Some(Err(anyhow::anyhow!(
+                "invalid resolver address '{}' in HUSH_TEST_RESOLVER_SEQUENCE",
+                item
+            )));
+        }
+
+        if addrs.is_empty() {
+            return Some(Err(anyhow::anyhow!(
+                "resolver stage for {} produced no addresses",
+                target
+            )));
+        }
+
+        return Some(Ok(addrs));
+    }
+
+    None
+}
+
+fn is_public_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => is_public_ipv4(v4.octets()),
+        IpAddr::V6(v6) => is_public_ipv6(v6),
+    }
+}
+
+fn is_public_ipv4(octets: [u8; 4]) -> bool {
+    let [a, b, c, d] = octets;
+
+    // 0.0.0.0/8 (this host / "current network")
+    if a == 0 {
+        return false;
+    }
+    // 10.0.0.0/8
+    if a == 10 {
+        return false;
+    }
+    // 100.64.0.0/10 (shared address space / CGNAT)
+    if a == 100 && (64..=127).contains(&b) {
+        return false;
+    }
+    // 127.0.0.0/8 (loopback)
+    if a == 127 {
+        return false;
+    }
+    // 169.254.0.0/16 (link-local)
+    if a == 169 && b == 254 {
+        return false;
+    }
+    // 172.16.0.0/12
+    if a == 172 && (16..=31).contains(&b) {
+        return false;
+    }
+    // 192.0.0.0/24 (IETF protocol assignments), except 192.0.0.9/32 and 192.0.0.10/32.
+    if a == 192 && b == 0 && c == 0 && d != 9 && d != 10 {
+        return false;
+    }
+    // 192.0.2.0/24 (TEST-NET-1)
+    if a == 192 && b == 0 && c == 2 {
+        return false;
+    }
+    // 192.88.99.0/24 (deprecated 6to4 relay anycast)
+    if a == 192 && b == 88 && c == 99 {
+        return false;
+    }
+    // 192.168.0.0/16
+    if a == 192 && b == 168 {
+        return false;
+    }
+    // 198.18.0.0/15 (benchmarking)
+    if a == 198 && (18..=19).contains(&b) {
+        return false;
+    }
+    // 198.51.100.0/24 (TEST-NET-2)
+    if a == 198 && b == 51 && c == 100 {
+        return false;
+    }
+    // 203.0.113.0/24 (TEST-NET-3)
+    if a == 203 && b == 0 && c == 113 {
+        return false;
+    }
+    // 224.0.0.0/4 (multicast) and 240.0.0.0/4 (reserved)
+    if a >= 224 {
+        return false;
+    }
+    // 255.255.255.255 (limited broadcast)
+    if a == 255 && b == 255 && c == 255 && d == 255 {
+        return false;
+    }
+    true
+}
+
+fn is_public_ipv6(addr: Ipv6Addr) -> bool {
+    if let Some(v4) = addr.to_ipv4() {
+        return is_public_ipv4(v4.octets());
+    }
+
+    let segments = addr.segments();
+    let [s0, s1, s2, s3, _s4, _s5, _s6, _s7] = segments;
+
+    // ::/128 (unspecified)
+    if segments == [0, 0, 0, 0, 0, 0, 0, 0] {
+        return false;
+    }
+    // ::1/128 (loopback)
+    if segments == [0, 0, 0, 0, 0, 0, 0, 1] {
+        return false;
+    }
+    // fc00::/7 (unique local)
+    if (s0 & 0xfe00) == 0xfc00 {
+        return false;
+    }
+    // fe80::/10 (link-local unicast)
+    if (s0 & 0xffc0) == 0xfe80 {
+        return false;
+    }
+    // ff00::/8 (multicast)
+    if (s0 & 0xff00) == 0xff00 {
+        return false;
+    }
+    // 2001:db8::/32 (documentation)
+    if s0 == 0x2001 && s1 == 0x0db8 {
+        return false;
+    }
+    // 100::/64 (discard-only)
+    if s0 == 0x0100 && s1 == 0 && s2 == 0 && s3 == 0 {
+        return false;
+    }
+    true
 }
 
 async fn read_http_header(stream: &mut TcpStream, max_bytes: usize) -> anyhow::Result<Vec<u8>> {
@@ -884,6 +1481,7 @@ fn network_event(
                 "guard": result.guard,
                 "severity": severity,
                 "message": result.message,
+                "details": result.details.clone(),
             }
         })),
         context: None,
@@ -960,6 +1558,22 @@ fn generate_bwrap_args(workspace: &Path) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clawdstrike::Policy;
+
+    fn test_custom_event(id: usize) -> PolicyEvent {
+        PolicyEvent {
+            event_id: format!("event-{id}"),
+            event_type: PolicyEventType::Custom,
+            timestamp: Utc::now(),
+            session_id: Some("session-test".to_string()),
+            data: PolicyEventData::Custom(CustomEventData {
+                custom_type: "test_event".to_string(),
+                extra: serde_json::Map::new(),
+            }),
+            metadata: None,
+            context: None,
+        }
+    }
 
     #[test]
     #[cfg(target_os = "macos")]
@@ -1027,5 +1641,410 @@ guards:
         let joined = args.join(" ");
         assert!(joined.contains("--bind /work/project /work/project"));
         assert!(joined.contains("--tmpfs /tmp"));
+    }
+
+    #[test]
+    fn event_emitter_drops_events_when_queue_is_full() {
+        let (tx, mut rx) = mpsc::channel::<PolicyEvent>(2);
+        let emitter = EventEmitter::new(tx);
+
+        for i in 0..10 {
+            emitter.emit(test_custom_event(i));
+        }
+
+        assert_eq!(emitter.dropped_count(), 8);
+
+        let mut queued = 0usize;
+        while rx.try_recv().is_ok() {
+            queued += 1;
+        }
+        assert_eq!(queued, 2, "queue must stay bounded at channel capacity");
+    }
+
+    #[tokio::test]
+    async fn proxy_rejects_connections_when_in_flight_limit_is_reached() {
+        let policy_yaml = r#"
+version: "1.1.0"
+name: "proxy-limit"
+"#;
+        let policy = Policy::from_yaml(policy_yaml).expect("policy");
+        let engine = Arc::new(HushEngine::builder(policy).build().expect("engine"));
+        let context = GuardContext::new().with_session_id("session-1");
+        let (tx, _rx) = mpsc::channel::<PolicyEvent>(32);
+        let emitter = EventEmitter::new(tx);
+        let outcome = RunOutcome::new();
+        let mut stderr = Vec::<u8>::new();
+
+        let (url, handle, rejected_counter) = match start_connect_proxy(
+            0,
+            engine,
+            context,
+            emitter,
+            outcome,
+            1,
+            Duration::from_secs(2),
+            false,
+            &mut stderr,
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(err) => {
+                if err.to_string().contains("Permission denied") {
+                    eprintln!("skipping proxy limit test: {}", err);
+                    return;
+                }
+                panic!("failed to start proxy: {err}");
+            }
+        };
+
+        let addr = url.trim_start_matches("http://");
+        let mut first = TcpStream::connect(addr).await.expect("first connect");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let mut second = TcpStream::connect(addr).await.expect("second connect");
+        let mut buf = [0u8; 128];
+        let read_result = tokio::time::timeout(Duration::from_secs(2), second.read(&mut buf))
+            .await
+            .expect("read timeout")
+            .expect("read");
+        let response = String::from_utf8_lossy(&buf[..read_result]).to_string();
+        assert!(
+            response.contains("503 Service Unavailable"),
+            "expected 503 when proxy is saturated, got: {response}"
+        );
+        assert!(
+            rejected_counter.load(Ordering::Relaxed) >= 1,
+            "rejected connection counter must increment when limit is reached"
+        );
+
+        let _ = first.shutdown().await;
+        let _ = second.shutdown().await;
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn connect_proxy_rejects_ip_target_with_allowlisted_sni_mismatch() {
+        let policy_yaml = r#"
+version: "1.1.0"
+name: "sni-mismatch"
+guards:
+  egress_allowlist:
+    allow: ["example.com"]
+    default_action: block
+"#;
+        let policy = Policy::from_yaml(policy_yaml).expect("policy");
+        let engine = Arc::new(HushEngine::builder(policy).build().expect("engine"));
+        let context = GuardContext::new().with_session_id("session-sni");
+        let (tx, _rx) = mpsc::channel::<PolicyEvent>(32);
+        let emitter = EventEmitter::new(tx);
+        let outcome = RunOutcome::new();
+        let mut stderr = Vec::<u8>::new();
+
+        let upstream = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind upstream");
+        let upstream_port = upstream.local_addr().expect("upstream addr").port();
+
+        let (url, handle, _rejected_counter) = start_connect_proxy(
+            0,
+            engine,
+            context,
+            emitter,
+            outcome,
+            4,
+            Duration::from_secs(2),
+            false,
+            &mut stderr,
+        )
+        .await
+        .expect("start proxy");
+
+        let addr = url.trim_start_matches("http://");
+        let mut client = TcpStream::connect(addr).await.expect("proxy connect");
+
+        let req = format!(
+            "CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n",
+            upstream_port, upstream_port
+        );
+        client
+            .write_all(req.as_bytes())
+            .await
+            .expect("write connect");
+
+        let mut buf = [0u8; 256];
+        let n = tokio::time::timeout(Duration::from_secs(1), client.read(&mut buf))
+            .await
+            .expect("read timeout")
+            .expect("read response");
+        let response = String::from_utf8_lossy(&buf[..n]).to_string();
+        assert!(
+            response.contains("403 Forbidden"),
+            "blocked IP CONNECT target must not be bypassed by allowlisted SNI, got: {response}"
+        );
+
+        let hello = include_bytes!("../../../libs/hush-proxy/testdata/client_hello_example.bin");
+        let _ = client.write_all(hello).await;
+
+        let upstream_accept =
+            tokio::time::timeout(Duration::from_millis(300), upstream.accept()).await;
+        assert!(
+            upstream_accept.is_err(),
+            "proxy must not connect upstream when CONNECT IP target is blocked"
+        );
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn connect_proxy_hostname_target_is_ip_pinned_after_policy_check() {
+        let check_phase_addr = SocketAddr::from(([93, 184, 216, 34], 443));
+        let dial_phase_addr = SocketAddr::from(([1, 1, 1, 1], 443));
+        let resolver_calls = Arc::new(AtomicUsize::new(0));
+        let resolver_calls_for_resolver = resolver_calls.clone();
+
+        let pinned = resolve_connect_hostname_target_with_resolver(
+            "example.com",
+            443,
+            true,
+            move |_host, _port| {
+                let resolver_calls = resolver_calls_for_resolver.clone();
+                async move {
+                    let call_idx = resolver_calls.fetch_add(1, Ordering::Relaxed);
+                    if call_idx == 0 {
+                        Ok(vec![check_phase_addr])
+                    } else {
+                        Ok(vec![dial_phase_addr])
+                    }
+                }
+            },
+        )
+        .await
+        .expect("resolve and pin CONNECT hostname target");
+
+        assert_eq!(
+            resolver_calls.load(Ordering::Relaxed),
+            1,
+            "CONNECT hostname resolution must happen exactly once before dialing"
+        );
+        assert_eq!(
+            pinned.selected_addr, check_phase_addr,
+            "dial target must stay pinned to check-phase resolution"
+        );
+        assert_ne!(
+            pinned.selected_addr, dial_phase_addr,
+            "dial target must not switch to a rebind address"
+        );
+        assert_eq!(
+            pinned.candidate_addrs,
+            vec![check_phase_addr],
+            "pinned candidate set must remain tied to check-phase resolution"
+        );
+    }
+
+    #[tokio::test]
+    async fn connect_proxy_hostname_target_retries_within_pinned_candidate_set() {
+        let dead_listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind dead listener");
+        let dead_addr = dead_listener.local_addr().expect("dead listener addr");
+        drop(dead_listener);
+
+        let live_listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind live listener");
+        let live_addr = live_listener.local_addr().expect("live listener addr");
+        let accept_task = tokio::spawn(async move { live_listener.accept().await });
+
+        let target = PinnedConnectTarget {
+            selected_addr: dead_addr,
+            candidate_addrs: vec![dead_addr, live_addr],
+            resolved_ips: vec![dead_addr.ip(), live_addr.ip()],
+        };
+
+        let stream = connect_to_pinned_target(&target)
+            .await
+            .expect("should connect to healthy pinned candidate");
+        drop(stream);
+
+        let accepted = tokio::time::timeout(Duration::from_secs(1), accept_task)
+            .await
+            .expect("accept timeout")
+            .expect("accept join")
+            .expect("accept connection");
+        assert_eq!(accepted.1.ip(), IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+    }
+
+    #[tokio::test]
+    async fn connect_proxy_hostname_target_rejects_non_public_resolution_when_private_disallowed() {
+        let result = resolve_connect_hostname_target_with_resolver(
+            "example.com",
+            443,
+            false,
+            |_host, _port| async { Ok(vec![SocketAddr::from(([127, 0, 0, 1], 443))]) },
+        )
+        .await;
+
+        let denied = result.expect_err("non-public resolution should be denied");
+        assert!(
+            !denied.allowed,
+            "hostname targets resolving only to non-public IPs must be blocked"
+        );
+        assert!(
+            denied.message.contains("non-public"),
+            "deny reason should mention non-public IP policy: {}",
+            denied.message
+        );
+    }
+
+    #[test]
+    fn is_public_ipv4_classifies_ietf_special_use_ranges() {
+        assert!(!is_public_ipv4([192, 0, 0, 1]));
+        assert!(
+            is_public_ipv4([192, 0, 0, 9]),
+            "192.0.0.9 is a global anycast exception in 192.0.0.0/24"
+        );
+        assert!(!is_public_ipv4([198, 51, 100, 42]));
+        assert!(is_public_ipv4([8, 8, 8, 8]));
+    }
+
+    #[tokio::test]
+    async fn connect_proxy_hostname_target_rejects_192_0_0_1_when_private_disallowed() {
+        let result = resolve_connect_hostname_target_with_resolver(
+            "example.com",
+            443,
+            false,
+            |_host, _port| async { Ok(vec![SocketAddr::from(([192, 0, 0, 1], 443))]) },
+        )
+        .await;
+
+        let denied = result.expect_err("192.0.0.1 must be treated as non-public");
+        assert!(
+            !denied.allowed,
+            "hostname targets resolving to 192.0.0.1 must be blocked when private IPs are disallowed"
+        );
+        assert!(
+            denied.message.contains("non-public"),
+            "deny reason should mention non-public IP policy: {}",
+            denied.message
+        );
+    }
+
+    #[tokio::test]
+    async fn proxy_slowloris_does_not_exceed_connection_cap() {
+        let policy_yaml = r#"
+version: "1.1.0"
+name: "slowloris-cap"
+"#;
+        let policy = Policy::from_yaml(policy_yaml).expect("policy");
+        let engine = Arc::new(HushEngine::builder(policy).build().expect("engine"));
+        let context = GuardContext::new().with_session_id("session-slowloris");
+        let (tx, _rx) = mpsc::channel::<PolicyEvent>(32);
+        let emitter = EventEmitter::new(tx);
+        let outcome = RunOutcome::new();
+        let mut stderr = Vec::<u8>::new();
+
+        let (url, handle, rejected_counter) = start_connect_proxy(
+            0,
+            engine,
+            context,
+            emitter,
+            outcome,
+            1,
+            Duration::from_millis(150),
+            false,
+            &mut stderr,
+        )
+        .await
+        .expect("start proxy");
+
+        let addr = url.trim_start_matches("http://");
+        let mut slow = TcpStream::connect(addr).await.expect("slow connect");
+        slow.write_all(b"CON").await.expect("write partial header");
+
+        let mut second = TcpStream::connect(addr).await.expect("second connect");
+        let mut second_buf = [0u8; 128];
+        let second_n = tokio::time::timeout(Duration::from_secs(1), second.read(&mut second_buf))
+            .await
+            .expect("second read timeout")
+            .expect("second read");
+        let second_response = String::from_utf8_lossy(&second_buf[..second_n]).to_string();
+        assert!(
+            second_response.contains("503 Service Unavailable"),
+            "expected 503 while slowloris connection holds the only slot, got: {second_response}"
+        );
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+
+        let mut third = TcpStream::connect(addr).await.expect("third connect");
+        third
+            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await
+            .expect("write full request");
+        let mut third_buf = [0u8; 128];
+        let third_n = tokio::time::timeout(Duration::from_secs(1), third.read(&mut third_buf))
+            .await
+            .expect("third read timeout")
+            .expect("third read");
+        let third_response = String::from_utf8_lossy(&third_buf[..third_n]).to_string();
+        assert!(
+            third_response.contains("501 Not Implemented"),
+            "proxy should remain responsive after slowloris timeout, got: {third_response}"
+        );
+        assert!(
+            rejected_counter.load(Ordering::Relaxed) >= 1,
+            "rejected connection counter should increment under slowloris saturation"
+        );
+
+        let _ = slow.shutdown().await;
+        let _ = second.shutdown().await;
+        let _ = third.shutdown().await;
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn event_forwarding_backpressure_keeps_memory_bounded() {
+        let stalled_listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind stalled target");
+        let stalled_addr = stalled_listener.local_addr().expect("stalled addr");
+        let stalled_handle = tokio::spawn(async move {
+            while let Ok((mut stream, _)) = stalled_listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    let _ =
+                        tokio::time::timeout(Duration::from_secs(1), stream.read(&mut buf)).await;
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                });
+            }
+        });
+
+        let (tx, mut rx) = mpsc::channel::<PolicyEvent>(4);
+        let emitter = EventEmitter::new(tx);
+        let forwarder = HushdForwarder::new_with_timeout(
+            format!("http://{}", stalled_addr),
+            None,
+            Duration::from_millis(50),
+        );
+
+        let writer = tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                forwarder.forward_event(&event).await;
+            }
+        });
+
+        for i in 0..200 {
+            emitter.emit(test_custom_event(i));
+        }
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert!(
+            emitter.dropped_count() > 0,
+            "bounded queue should drop events under stalled forwarding pressure"
+        );
+
+        drop(emitter);
+        let _ = tokio::time::timeout(Duration::from_secs(2), writer).await;
+        stalled_handle.abort();
     }
 }
