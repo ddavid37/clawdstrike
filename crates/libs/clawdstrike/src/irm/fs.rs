@@ -138,24 +138,31 @@ impl FilesystemIrm {
         let allow_bare_string_paths = call.function.contains("path");
 
         for arg in &call.args {
-            if let Some(s) = arg.as_str() {
-                if self.looks_like_path(s)
-                    || (allow_bare_string_paths && self.looks_like_bare_filename(s))
-                {
-                    return Some(s.to_string());
-                }
-            }
-
             if let Some(obj) = arg.as_object() {
                 for key in ["path", "file_path", "target_path"] {
                     if let Some(path) = obj.get(key).and_then(|value| value.as_str()) {
-                        if self.looks_like_path(path)
-                            || self.has_parent_traversal(path)
-                            || self.looks_like_bare_filename(path)
+                        let trimmed = path.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        if self.looks_like_path(trimmed)
+                            || self.has_parent_traversal(trimmed)
+                            || self.looks_like_bare_filename(trimmed)
                         {
-                            return Some(path.to_string());
+                            return Some(trimmed.to_string());
                         }
                     }
+                }
+            }
+        }
+
+        for arg in &call.args {
+            if let Some(s) = arg.as_str() {
+                let trimmed = s.trim();
+                if self.looks_like_path(trimmed)
+                    || (allow_bare_string_paths && self.looks_like_bare_filename(trimmed))
+                {
+                    return Some(trimmed.to_string());
                 }
             }
         }
@@ -180,7 +187,40 @@ impl FilesystemIrm {
             return true;
         }
 
-        value.contains('/') && !value.contains("://")
+        value.contains('/') && !value.contains("://") && !self.looks_like_mime_type(value)
+    }
+
+    fn looks_like_mime_type(&self, value: &str) -> bool {
+        let mut parts = value.split('/');
+        let Some(kind) = parts.next() else {
+            return false;
+        };
+        let Some(subtype) = parts.next() else {
+            return false;
+        };
+        if parts.next().is_some() {
+            return false;
+        }
+        if kind.is_empty() || subtype.is_empty() {
+            return false;
+        }
+        // Preserve common relative file paths such as "image/logo.png".
+        if subtype.contains('.') {
+            return false;
+        }
+
+        matches!(
+            kind.to_ascii_lowercase().as_str(),
+            "application"
+                | "audio"
+                | "font"
+                | "image"
+                | "message"
+                | "model"
+                | "multipart"
+                | "text"
+                | "video"
+        )
     }
 
     fn looks_like_bare_filename(&self, value: &str) -> bool {
@@ -381,11 +421,30 @@ mod tests {
         let call = HostCall::new("path_open", vec![serde_json::json!("README.md")]);
         assert_eq!(irm.extract_path(&call), Some("README.md".to_string()));
 
+        let call = HostCall::new("fd_read", vec![serde_json::json!("image/logo.png")]);
+        assert_eq!(irm.extract_path(&call), Some("image/logo.png".to_string()));
+
         let call = HostCall::new(
             "fd_write",
             vec![serde_json::json!({"target_path": "config.json"})],
         );
         assert_eq!(irm.extract_path(&call), Some("config.json".to_string()));
+
+        let call = HostCall::new(
+            "fd_read",
+            vec![
+                serde_json::json!("text/plain"),
+                serde_json::json!({"path": "../../etc/passwd"}),
+            ],
+        );
+        assert_eq!(
+            irm.extract_path(&call),
+            Some("../../etc/passwd".to_string())
+        );
+
+        assert!(!irm.looks_like_path("text/plain"));
+        assert!(irm.looks_like_path("image/logo.png"));
+        assert!(irm.looks_like_path("src/main.rs"));
 
         let call = HostCall::new("fd_read", vec![serde_json::json!(123)]);
         assert_eq!(irm.extract_path(&call), None);
@@ -424,6 +483,19 @@ mod tests {
         assert!(
             !decision.is_allowed(),
             "object traversal path should be denied"
+        );
+
+        let call = HostCall::new(
+            "fd_read",
+            vec![
+                serde_json::json!("text/plain"),
+                serde_json::json!({"path": "../../etc/passwd"}),
+            ],
+        );
+        let decision = irm.evaluate(&call, &policy).await;
+        assert!(
+            !decision.is_allowed(),
+            "object traversal path must not be bypassed by slash-containing non-path tokens"
         );
     }
 
