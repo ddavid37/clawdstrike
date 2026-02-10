@@ -1542,11 +1542,11 @@ impl RuleSet {
         let id = name.strip_prefix("clawdstrike:").unwrap_or(name);
 
         let yaml = match id {
-            "default" => Some(include_str!("../../../../rulesets/default.yaml")),
-            "strict" => Some(include_str!("../../../../rulesets/strict.yaml")),
-            "ai-agent" => Some(include_str!("../../../../rulesets/ai-agent.yaml")),
-            "cicd" => Some(include_str!("../../../../rulesets/cicd.yaml")),
-            "permissive" => Some(include_str!("../../../../rulesets/permissive.yaml")),
+            "default" => Some(include_str!("../rulesets/default.yaml")),
+            "strict" => Some(include_str!("../rulesets/strict.yaml")),
+            "ai-agent" => Some(include_str!("../rulesets/ai-agent.yaml")),
+            "cicd" => Some(include_str!("../rulesets/cicd.yaml")),
+            "permissive" => Some(include_str!("../rulesets/permissive.yaml")),
             _ => None,
         }?;
 

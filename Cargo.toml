@@ -28,7 +28,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/backbay-labs/clawdstrike"
@@ -121,7 +121,7 @@ jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_r
 # Internal crates
 hush-core = { path = "crates/libs/hush-core", version = "0.1.0" }
 hush-proxy = { path = "crates/libs/hush-proxy", version = "0.1.0" }
-clawdstrike = { path = "crates/libs/clawdstrike", version = "0.1.0" }
+clawdstrike = { path = "crates/libs/clawdstrike", version = "0.1.1" }
 hush-certification = { path = "crates/libs/hush-certification", version = "0.1.0" }
 spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.1.0" }
 

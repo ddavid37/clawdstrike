@@ -1599,7 +1599,7 @@ checksum = "c3e64b0cc0439b12df2fa678eae89a1c56a529fd067a9115f7827f1fffd22b32"
 
 [[package]]
 name = "clawdstrike"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -1635,7 +1635,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike-cloud-api"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-nats",
  "axum",
@@ -2319,7 +2319,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "eas-anchor"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "alloy",
  "anyhow",
@@ -3192,7 +3192,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hubble-bridge"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3225,7 +3225,7 @@ dependencies = [
 
 [[package]]
 name = "hush-certification"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3243,7 +3243,7 @@ dependencies = [
 
 [[package]]
 name = "hush-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3269,7 +3269,7 @@ dependencies = [
 
 [[package]]
 name = "hush-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "criterion",
@@ -3290,7 +3290,7 @@ dependencies = [
 
 [[package]]
 name = "hush-multi-agent"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "hush-core",
@@ -3319,7 +3319,7 @@ dependencies = [
 
 [[package]]
 name = "hush-proxy"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "globset",
  "proptest",
@@ -3329,7 +3329,7 @@ dependencies = [
 
 [[package]]
 name = "hush-spine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -3352,7 +3352,7 @@ dependencies = [
 
 [[package]]
 name = "hush-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "console_error_panic_hook",
  "getrandom 0.4.1",
@@ -3369,7 +3369,7 @@ dependencies = [
 
 [[package]]
 name = "hushd"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5790,7 +5790,7 @@ dependencies = [
 
 [[package]]
 name = "sdr-integration-tests"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "hubble-bridge",
  "hush-core",
@@ -6230,7 +6230,7 @@ checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
 name = "spine-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -6514,7 +6514,7 @@ dependencies = [
 
 [[package]]
 name = "tetragon-bridge"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-nats",
