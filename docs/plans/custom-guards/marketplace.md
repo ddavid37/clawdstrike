@@ -820,12 +820,12 @@ const reportThresholds = {
 +------------------------------------------------------------------+
 |                                                                    |
 |  1. Developer creates guard using SDK                             |
-|     $ npx @clawdstrike/cli guard init my-guard                   |
+|     $ npx @backbay/cli guard init my-guard                   |
 |     │                                                              |
 |     v                                                              |
 |  2. Develop and test guard locally                                |
 |     $ npm test                                                     |
-|     $ npx @clawdstrike/cli guard validate                        |
+|     $ npx @backbay/cli guard validate                        |
 |     │                                                              |
 |     v                                                              |
 |  3. Create npm account (if needed)                                |
@@ -847,7 +847,7 @@ const reportThresholds = {
 |     │                                                              |
 |     v                                                              |
 |  7. Developer can request verification                            |
-|     $ npx @clawdstrike/cli guard request-verification            |
+|     $ npx @backbay/cli guard request-verification            |
 |                                                                    |
 +------------------------------------------------------------------+
 ```

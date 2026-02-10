@@ -1178,7 +1178,7 @@ impl BlocklistManager for DefaultBlocklistManager {
 
 ```typescript
 /**
- * @clawdstrike/openclaw - Blocklist Management
+ * @backbay/openclaw - Blocklist Management
  */
 
 /** Indicator types */

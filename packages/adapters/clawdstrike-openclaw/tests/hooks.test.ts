@@ -1,5 +1,5 @@
 /**
- * @clawdstrike/openclaw - Hook Handler Tests
+ * @backbay/openclaw - Hook Handler Tests
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';

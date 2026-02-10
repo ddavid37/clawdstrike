@@ -1,5 +1,5 @@
 /**
- * @clawdstrike/openclaw - Policy Check Tool Tests
+ * @backbay/openclaw - Policy Check Tool Tests
  */
 
 import { describe, it, expect } from 'vitest';

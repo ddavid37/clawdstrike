@@ -1,5 +1,5 @@
 /**
- * @clawdstrike/openclaw - Secret Leak Guard
+ * @backbay/openclaw - Secret Leak Guard
  *
  * Detects and blocks exposure of secrets in tool outputs and patches.
  */

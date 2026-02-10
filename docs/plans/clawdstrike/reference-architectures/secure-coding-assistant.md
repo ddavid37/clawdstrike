@@ -63,7 +63,7 @@ Organizations want to leverage AI coding assistants (Claude, GPT, etc.) for deve
 ```json
 // openclaw.plugin.json
 {
-  "name": "@clawdstrike/openclaw",
+  "name": "@backbay/openclaw",
   "version": "0.1.0",
   "description": "Security controls for AI coding assistants",
   "hooks": {
@@ -294,8 +294,8 @@ on_violation: cancel
 
 ```typescript
 // src/secure-assistant.ts
-import { PolicyEngine, loadPolicy, generateSecurityPrompt } from '@clawdstrike/openclaw';
-import type { PolicyEvent, Decision, ClawdstrikeConfig } from '@clawdstrike/openclaw';
+import { PolicyEngine, loadPolicy, generateSecurityPrompt } from '@backbay/openclaw';
+import type { PolicyEvent, Decision, ClawdstrikeConfig } from '@backbay/openclaw';
 
 export interface SecureAssistantConfig extends ClawdstrikeConfig {
   projectRoot: string;
@@ -556,7 +556,7 @@ export function deactivate() {}
 
 import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
-import { PolicyEngine } from '@clawdstrike/openclaw';
+import { PolicyEngine } from '@backbay/openclaw';
 
 async function main() {
   const engine = new PolicyEngine({
@@ -642,7 +642,7 @@ main().catch(e => {
 import { Command } from 'commander';
 import { glob } from 'glob';
 import { readFileSync } from 'fs';
-import { PolicyEngine } from '@clawdstrike/openclaw';
+import { PolicyEngine } from '@backbay/openclaw';
 import chalk from 'chalk';
 
 const program = new Command();
@@ -767,7 +767,7 @@ displayToUser(safeResponse);
 
 ```typescript
 // Wrap untrusted content before sending to AI
-import { wrap_user_content } from '@clawdstrike/openclaw';
+import { wrap_user_content } from '@backbay/openclaw';
 
 const fileContent = await readFile(userSelectedFile);
 const safeContent = wrap_user_content(fileContent, 'file');
@@ -781,7 +781,7 @@ ${safeContent}
 
 ```typescript
 // Log all AI interactions for compliance
-import { AuditStore } from '@clawdstrike/openclaw';
+import { AuditStore } from '@backbay/openclaw';
 
 const audit = new AuditStore('./audit.db');
 
@@ -848,7 +848,7 @@ services:
 
 1. **Install the plugin**
    ```bash
-   npm install -g @clawdstrike/openclaw
+   npm install -g @backbay/openclaw
    ```
 
 2. **Create project policy**
@@ -897,7 +897,7 @@ services:
        steps:
          - uses: actions/checkout@v4
          - uses: actions/setup-node@v4
-         - run: npm install -g @clawdstrike/openclaw
+         - run: npm install -g @backbay/openclaw
          - run: clawdstrike scan . --policy ai-agent
    ```
 

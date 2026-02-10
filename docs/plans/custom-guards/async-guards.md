@@ -179,7 +179,7 @@ export interface AsyncGuardConfig {
 ### 3.1 Async Guard Interface (TypeScript)
 
 ```typescript
-// @clawdstrike/guard-sdk
+// @backbay/guard-sdk
 
 import { Guard, GuardResult, PolicyEvent, Policy, GuardContext } from './types';
 
@@ -424,7 +424,7 @@ import {
   Policy,
   GuardResult,
   EventType,
-} from '@clawdstrike/guard-sdk';
+} from '@backbay/guard-sdk';
 import * as crypto from 'crypto';
 
 interface VirusTotalConfig {
@@ -645,7 +645,7 @@ import {
   Policy,
   GuardResult,
   EventType,
-} from '@clawdstrike/guard-sdk';
+} from '@backbay/guard-sdk';
 
 interface SnykConfig {
   apiToken: string;
@@ -827,7 +827,7 @@ import {
   Policy,
   GuardResult,
   EventType,
-} from '@clawdstrike/guard-sdk';
+} from '@backbay/guard-sdk';
 
 interface SafeBrowsingConfig {
   apiKey: string;
@@ -1136,7 +1136,7 @@ guards:
 ### 6.1 Async Guard Test Utilities
 
 ```typescript
-// @clawdstrike/guard-sdk/testing
+// @backbay/guard-sdk/testing
 
 import { AsyncGuard, PolicyEvent, GuardResult } from '../types';
 
@@ -1286,7 +1286,7 @@ interface MockError {
 // tests/virustotal-guard.test.ts
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AsyncGuardTestHarness, fileWriteEvent } from '@clawdstrike/guard-sdk/testing';
+import { AsyncGuardTestHarness, fileWriteEvent } from '@backbay/guard-sdk/testing';
 import { VirusTotalGuard } from '../src/guard';
 
 describe('VirusTotalGuard', () => {

@@ -517,7 +517,7 @@ import {
   CompatibilityChecker,
   VersionBumper,
   DeprecationChecker
-} from '@clawdstrike/openclaw';
+} from '@backbay/openclaw';
 
 // Parse version from policy
 const policy = await loadPolicy('policy.yaml');

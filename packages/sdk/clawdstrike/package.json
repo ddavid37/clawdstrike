@@ -1,0 +1,51 @@
+{
+  "name": "clawdstrike",
+  "version": "0.1.0",
+  "description": "Official Clawdstrike TypeScript SDK",
+  "type": "module",
+  "main": "./index.cjs",
+  "module": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "require": "./index.cjs"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.cjs",
+    "index.d.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node -e \"console.log('clawdstrike re-export package: no build step')\"",
+    "test": "node -e \"import('./index.js').then(() => console.log('ok'))\""
+  },
+  "dependencies": {
+    "@backbay/sdk": "^0.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "clawdstrike",
+    "security",
+    "sdk"
+  ],
+  "author": "Clawdstrike Contributors",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backbay-labs/clawdstrike.git",
+    "directory": "packages/sdk/clawdstrike"
+  },
+  "homepage": "https://github.com/backbay-labs/clawdstrike",
+  "bugs": {
+    "url": "https://github.com/backbay-labs/clawdstrike/issues"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}

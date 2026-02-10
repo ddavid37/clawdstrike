@@ -172,7 +172,7 @@ Token used at time T+2 (after revocation)
 ### TypeScript Interface
 
 ```typescript
-import { SigningKey, VerifyingKey } from '@clawdstrike/crypto';
+import { SigningKey, VerifyingKey } from '@backbay/crypto';
 
 /**
  * Delegation token claims

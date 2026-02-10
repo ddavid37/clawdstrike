@@ -1,11 +1,11 @@
-import { createSecurityContext } from '@clawdstrike/adapter-core';
+import { createSecurityContext } from '@backbay/adapter-core';
 import type {
   AdapterConfig,
   Decision,
   PolicyEngineLike,
   SecurityContext,
   ToolInterceptor,
-} from '@clawdstrike/adapter-core';
+} from '@backbay/adapter-core';
 
 import { createLangChainInterceptor } from './interceptor.js';
 

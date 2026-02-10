@@ -755,7 +755,7 @@ import {
   LintResult,
   LintRule,
   Severity
-} from '@clawdstrike/openclaw';
+} from '@backbay/openclaw';
 
 // Create linter with custom config
 const linter = new PolicyLinter({

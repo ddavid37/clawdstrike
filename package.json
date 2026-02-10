@@ -3,6 +3,7 @@
   "workspaces": [
     "packages/adapters/clawdstrike-adapter-core",
     "packages/sdk/hush-ts",
+    "packages/sdk/clawdstrike",
     "packages/policy/clawdstrike-policy",
     "packages/adapters/clawdstrike-claude-code",
     "packages/adapters/clawdstrike-codex",

@@ -523,7 +523,7 @@ class CompatibilityWrapper implements Guard {
 |     - Bug fixes on `main` branch                                 |
 |                                                                    |
 |  2. Release Candidate                                             |
-|     - RC published: @clawdstrike/guard-sdk@2.0.0-rc.1           |
+|     - RC published: @backbay/guard-sdk@2.0.0-rc.1           |
 |     - Guard authors can test compatibility                        |
 |     - Minimum 2 weeks RC period for major versions               |
 |                                                                    |
@@ -543,22 +543,22 @@ class CompatibilityWrapper implements Guard {
 
 ```bash
 # Latest stable
-npm install @clawdstrike/guard-sdk@latest
+npm install @backbay/guard-sdk@latest
 # → 1.5.2
 
 # Next major (pre-release)
-npm install @clawdstrike/guard-sdk@next
+npm install @backbay/guard-sdk@next
 # → 2.0.0-rc.1
 
 # Specific version
-npm install @clawdstrike/guard-sdk@1.5.2
+npm install @backbay/guard-sdk@1.5.2
 
 # Latest in major version
-npm install @clawdstrike/guard-sdk@^1.0.0
+npm install @backbay/guard-sdk@^1.0.0
 # → 1.5.2
 
 # Previous major (maintenance)
-npm install @clawdstrike/guard-sdk@legacy-1
+npm install @backbay/guard-sdk@legacy-1
 # → 0.9.5 (security fixes only)
 ```
 
@@ -568,7 +568,7 @@ npm install @clawdstrike/guard-sdk@legacy-1
 // SDK versions are synchronized between TypeScript and Rust
 
 // TypeScript
-// @clawdstrike/guard-sdk@1.5.0
+// @backbay/guard-sdk@1.5.0
 
 // Rust
 // clawdstrike-guard-sdk = "1.5.0"
@@ -794,7 +794,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - name: Install SDK ${{ matrix.sdk-version }}
-        run: npm install @clawdstrike/guard-sdk@${{ matrix.sdk-version }}
+        run: npm install @backbay/guard-sdk@${{ matrix.sdk-version }}
 
       - name: Run compatibility tests
         run: npm run test:compat
@@ -812,7 +812,7 @@ jobs:
 // tests/sdk-compat.test.ts
 
 import { describe, it, expect } from 'vitest';
-import * as sdk from '@clawdstrike/guard-sdk';
+import * as sdk from '@backbay/guard-sdk';
 
 describe('SDK Compatibility', () => {
   it('should have required exports', () => {

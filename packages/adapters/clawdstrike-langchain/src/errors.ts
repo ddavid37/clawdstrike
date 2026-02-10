@@ -1,4 +1,4 @@
-import type { Decision } from '@clawdstrike/adapter-core';
+import type { Decision } from '@backbay/adapter-core';
 
 export class ClawdstrikeViolationError extends Error {
   readonly toolName: string;

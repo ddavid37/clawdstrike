@@ -1,4 +1,4 @@
-# Spec 05: Publish 11 TypeScript Packages to npm Under @clawdstrike/
+# Spec 05: Publish 11 TypeScript Packages to npm Under @backbay/
 
 **Status:** Draft
 **Author:** spec-writers
@@ -10,9 +10,9 @@
 
 ## Summary / Objective
 
-Publish 11 TypeScript packages to the npm registry under the `@clawdstrike` scope. Currently, all packages use `file:` protocol dependencies for inter-package references and several are marked `"private": true`, preventing npm publication. This spec migrates inter-package dependencies to semver ranges (e.g., `"@clawdstrike/adapter-core": "^0.1.0"`) and removes the `private` flag, enabling public npm publishing.
+Publish 11 TypeScript packages to the npm registry under the `@clawdstrike` scope. Currently, all packages use `file:` protocol dependencies for inter-package references and several are marked `"private": true`, preventing npm publication. This spec migrates inter-package dependencies to semver ranges (e.g., `"@backbay/adapter-core": "^0.1.0"`) and removes the `private` flag, enabling public npm publishing.
 
-This implements the npm publishing track from Section 4.6 of `docs/research/open-source-strategy.md`, which targets `npm publish` as `@clawdstrike/*` packages coordinated with the 0.1.0 initial public release.
+This implements the npm publishing track from Section 4.6 of `docs/research/open-source-strategy.md`, which targets `npm publish` as `@backbay/*` packages coordinated with the 0.1.0 initial public release.
 
 ---
 
@@ -22,17 +22,17 @@ This implements the npm publishing track from Section 4.6 of `docs/research/open
 
 | # | Package Dir | npm Name | Private? | file: Deps | Peer Deps |
 |---|-------------|----------|----------|------------|-----------|
-| 1 | `packages/sdk/hush-ts` | `@clawdstrike/sdk` | No | `@clawdstrike/adapter-core` | None |
-| 2 | `packages/adapters/clawdstrike-adapter-core` | `@clawdstrike/adapter-core` | No | None | None |
-| 3 | `packages/policy/clawdstrike-policy` | `@clawdstrike/policy` | Yes | `@clawdstrike/adapter-core` | None |
-| 4 | `packages/adapters/clawdstrike-claude-code` | `@clawdstrike/claude-code` | Yes | `@clawdstrike/adapter-core` | None |
-| 5 | `packages/adapters/clawdstrike-codex` | `@clawdstrike/codex` | Yes | `@clawdstrike/adapter-core` | None |
-| 6 | `packages/adapters/clawdstrike-vercel-ai` | `@clawdstrike/vercel-ai` | Yes | `@clawdstrike/adapter-core`, `@clawdstrike/sdk` | `ai`, `@ai-sdk/react`, `react` |
-| 7 | `packages/adapters/clawdstrike-langchain` | `@clawdstrike/langchain` | Yes | `@clawdstrike/adapter-core` | `@langchain/core` |
-| 8 | `packages/adapters/clawdstrike-openclaw` | `@clawdstrike/clawdstrike-security` | No | `@clawdstrike/adapter-core`, `@clawdstrike/policy` | (to verify) |
-| 9 | `packages/adapters/clawdstrike-opencode` | `@clawdstrike/opencode` | Yes | `@clawdstrike/adapter-core` | (to verify) |
-| 10 | `packages/adapters/clawdstrike-hush-cli-engine` | `@clawdstrike/hush-cli-engine` | (to verify) | (to verify) | (to verify) |
-| 11 | `packages/adapters/clawdstrike-hushd-engine` | `@clawdstrike/hushd-engine` | (to verify) | (to verify) | (to verify) |
+| 1 | `packages/sdk/hush-ts` | `@backbay/sdk` | No | `@backbay/adapter-core` | None |
+| 2 | `packages/adapters/clawdstrike-adapter-core` | `@backbay/adapter-core` | No | None | None |
+| 3 | `packages/policy/clawdstrike-policy` | `@backbay/policy` | Yes | `@backbay/adapter-core` | None |
+| 4 | `packages/adapters/clawdstrike-claude-code` | `@backbay/claude-code` | Yes | `@backbay/adapter-core` | None |
+| 5 | `packages/adapters/clawdstrike-codex` | `@backbay/codex` | Yes | `@backbay/adapter-core` | None |
+| 6 | `packages/adapters/clawdstrike-vercel-ai` | `@backbay/vercel-ai` | Yes | `@backbay/adapter-core`, `@backbay/sdk` | `ai`, `@ai-sdk/react`, `react` |
+| 7 | `packages/adapters/clawdstrike-langchain` | `@backbay/langchain` | Yes | `@backbay/adapter-core` | `@langchain/core` |
+| 8 | `packages/adapters/clawdstrike-openclaw` | `@backbay/clawdstrike-security` | No | `@backbay/adapter-core`, `@backbay/policy` | (to verify) |
+| 9 | `packages/adapters/clawdstrike-opencode` | `@backbay/opencode` | Yes | `@backbay/adapter-core` | (to verify) |
+| 10 | `packages/adapters/clawdstrike-hush-cli-engine` | `@backbay/hush-cli-engine` | (to verify) | (to verify) | (to verify) |
+| 11 | `packages/adapters/clawdstrike-hushd-engine` | `@backbay/hushd-engine` | (to verify) | (to verify) | (to verify) |
 
 A potential 12th package: the desktop app may have a publishable subset, but this is out of scope. The 11 packages listed above plus any additional adapter packages found during implementation constitute the target set.
 
@@ -46,15 +46,15 @@ Three packages from the `@backbay` scope (`standalone/backbay-sdk/packages/`) ar
 | `@backbay/witness` | Specs 07, 13 | Browser-side Ed25519/Merkle verification, EAS verification |
 | `@backbay/witness-react` | Spec 07 | React verification UI components (`VerificationBadge`, `VerificationDetails`) |
 
-When publishing `@clawdstrike/*` packages, consider whether shared crypto utilities (RFC 8785 canonical JSON, SHA-256 hashing) should be extracted from `@backbay/notary` into a shared `@backbay/crypto` or `@clawdstrike/crypto` package to avoid duplicating the canonical JSON implementation across `@clawdstrike/sdk` (hush-ts) and `@backbay/notary`.
+When publishing `@backbay/*` packages, consider whether shared crypto utilities (RFC 8785 canonical JSON, SHA-256 hashing) should be extracted from `@backbay/notary` into a shared `@backbay/crypto` or `@backbay/crypto` package to avoid duplicating the canonical JSON implementation across `@backbay/sdk` (hush-ts) and `@backbay/notary`.
 
 ### Key issues blocking npm publish
 
 1. **`"private": true`** -- 7 of 11 packages are marked private, preventing `npm publish`.
 
-2. **`file:` protocol dependencies** -- 10 of 11 packages use `"@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core"` (or similar) for inter-package dependencies. npm resolves `file:` references relative to the filesystem, which fails when installed from the registry.
+2. **`file:` protocol dependencies** -- 10 of 11 packages use `"@backbay/adapter-core": "file:../clawdstrike-adapter-core"` (or similar) for inter-package dependencies. npm resolves `file:` references relative to the filesystem, which fails when installed from the registry.
 
-3. **Missing `repository` field** -- Only `@clawdstrike/sdk` has a `repository` field. npm packages should include this for discoverability.
+3. **Missing `repository` field** -- Only `@backbay/sdk` has a `repository` field. npm packages should include this for discoverability.
 
 4. **Missing `homepage` and `bugs` fields** -- Standard npm metadata for public packages.
 
@@ -65,27 +65,27 @@ When publishing `@clawdstrike/*` packages, consider whether shared crypto utilit
 ### Dependency graph
 
 ```
-@clawdstrike/adapter-core (leaf -- no internal deps)
+@backbay/adapter-core (leaf -- no internal deps)
     ^
     |
-    +-- @clawdstrike/sdk (depends on adapter-core)
+    +-- @backbay/sdk (depends on adapter-core)
     |       ^
     |       |
-    |       +-- @clawdstrike/vercel-ai (depends on adapter-core + sdk)
+    |       +-- @backbay/vercel-ai (depends on adapter-core + sdk)
     |
-    +-- @clawdstrike/policy (depends on adapter-core)
-    +-- @clawdstrike/claude-code (depends on adapter-core)
-    +-- @clawdstrike/codex (depends on adapter-core)
-    +-- @clawdstrike/langchain (depends on adapter-core)
-    +-- @clawdstrike/clawdstrike-security (depends on adapter-core + policy)
-    +-- @clawdstrike/opencode (depends on adapter-core)
-    +-- @clawdstrike/hush-cli-engine (depends on adapter-core)
-    +-- @clawdstrike/hushd-engine (depends on adapter-core)
+    +-- @backbay/policy (depends on adapter-core)
+    +-- @backbay/claude-code (depends on adapter-core)
+    +-- @backbay/codex (depends on adapter-core)
+    +-- @backbay/langchain (depends on adapter-core)
+    +-- @backbay/clawdstrike-security (depends on adapter-core + policy)
+    +-- @backbay/opencode (depends on adapter-core)
+    +-- @backbay/hush-cli-engine (depends on adapter-core)
+    +-- @backbay/hushd-engine (depends on adapter-core)
 ```
 
 **Publish order** (topological sort):
-1. `@clawdstrike/adapter-core` (leaf)
-2. `@clawdstrike/sdk` (depends on 1)
+1. `@backbay/adapter-core` (leaf)
+2. `@backbay/sdk` (depends on 1)
 3. All remaining packages (depend on 1, some on 2)
 
 ---
@@ -93,21 +93,21 @@ When publishing `@clawdstrike/*` packages, consider whether shared crypto utilit
 ## Target State
 
 All 11+ packages are published to npmjs.com under the `@clawdstrike` scope:
-- `@clawdstrike/adapter-core@0.1.0`
-- `@clawdstrike/sdk@0.1.0`
-- `@clawdstrike/policy@0.1.0`
-- `@clawdstrike/claude-code@0.1.0`
-- `@clawdstrike/codex@0.1.0`
-- `@clawdstrike/vercel-ai@0.1.0`
-- `@clawdstrike/langchain@0.1.0`
-- `@clawdstrike/clawdstrike-security@0.1.0`
-- `@clawdstrike/opencode@0.1.0`
-- `@clawdstrike/hush-cli-engine@0.1.0`
-- `@clawdstrike/hushd-engine@0.1.0`
+- `@backbay/adapter-core@0.1.0`
+- `@backbay/sdk@0.1.0`
+- `@backbay/policy@0.1.0`
+- `@backbay/claude-code@0.1.0`
+- `@backbay/codex@0.1.0`
+- `@backbay/vercel-ai@0.1.0`
+- `@backbay/langchain@0.1.0`
+- `@backbay/clawdstrike-security@0.1.0`
+- `@backbay/opencode@0.1.0`
+- `@backbay/hush-cli-engine@0.1.0`
+- `@backbay/hushd-engine@0.1.0`
 
 Each package:
 - Has `"private"` removed (or set to `false`)
-- Uses semver range for internal deps: `"@clawdstrike/adapter-core": "^0.1.0"`
+- Uses semver range for internal deps: `"@backbay/adapter-core": "^0.1.0"`
 - Has complete npm metadata (`repository`, `homepage`, `bugs`, `keywords`)
 - Has a minimal `README.md` with installation instructions
 - Builds successfully via `npm run build` (or `tsup`)
@@ -140,17 +140,17 @@ For each package, replace `file:` references with caret ranges:
 
 ```diff
   "dependencies": {
--   "@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core"
-+   "@clawdstrike/adapter-core": "^0.1.0"
+-   "@backbay/adapter-core": "file:../clawdstrike-adapter-core"
++   "@backbay/adapter-core": "^0.1.0"
   }
 ```
 
 ```diff
   "dependencies": {
--   "@clawdstrike/adapter-core": "file:../clawdstrike-adapter-core",
--   "@clawdstrike/sdk": "file:../hush-ts"
-+   "@clawdstrike/adapter-core": "^0.1.0",
-+   "@clawdstrike/sdk": "^0.1.0"
+-   "@backbay/adapter-core": "file:../clawdstrike-adapter-core",
+-   "@backbay/sdk": "file:../hush-ts"
++   "@backbay/adapter-core": "^0.1.0",
++   "@backbay/sdk": "^0.1.0"
   }
 ```
 
@@ -158,18 +158,18 @@ For each package, replace `file:` references with caret ranges:
 
 | Package | Dependency | Before | After |
 |---------|-----------|--------|-------|
-| `@clawdstrike/sdk` | `@clawdstrike/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
-| `@clawdstrike/policy` | `@clawdstrike/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
-| `@clawdstrike/claude-code` | `@clawdstrike/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
-| `@clawdstrike/codex` | `@clawdstrike/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
-| `@clawdstrike/vercel-ai` | `@clawdstrike/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
-| `@clawdstrike/vercel-ai` | `@clawdstrike/sdk` | `file:../hush-ts` | `^0.1.0` |
-| `@clawdstrike/langchain` | `@clawdstrike/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
-| `@clawdstrike/clawdstrike-security` | `@clawdstrike/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
-| `@clawdstrike/clawdstrike-security` | `@clawdstrike/policy` | `file:../clawdstrike-policy` | `^0.1.0` |
-| `@clawdstrike/opencode` | `@clawdstrike/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
-| `@clawdstrike/hush-cli-engine` | (to verify) | `file:...` | `^0.1.0` |
-| `@clawdstrike/hushd-engine` | (to verify) | `file:...` | `^0.1.0` |
+| `@backbay/sdk` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
+| `@backbay/policy` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
+| `@backbay/claude-code` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
+| `@backbay/codex` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
+| `@backbay/vercel-ai` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
+| `@backbay/vercel-ai` | `@backbay/sdk` | `file:../hush-ts` | `^0.1.0` |
+| `@backbay/langchain` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
+| `@backbay/clawdstrike-security` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
+| `@backbay/clawdstrike-security` | `@backbay/policy` | `file:../clawdstrike-policy` | `^0.1.0` |
+| `@backbay/opencode` | `@backbay/adapter-core` | `file:../clawdstrike-adapter-core` | `^0.1.0` |
+| `@backbay/hush-cli-engine` | (to verify) | `file:...` | `^0.1.0` |
+| `@backbay/hushd-engine` | (to verify) | `file:...` | `^0.1.0` |
 
 ### Step 4: Add standard npm metadata to all packages
 
@@ -227,14 +227,14 @@ This excludes source files, tests, and config files from the published tarball. 
 Each package needs a minimal `README.md`:
 
 ```markdown
-# @clawdstrike/<package-name>
+# @backbay/<package-name>
 
 <One-line description from package.json>
 
 ## Installation
 
 ```bash
-npm install @clawdstrike/<package-name>
+npm install @backbay/<package-name>
 ```
 
 ## Usage
@@ -303,12 +303,12 @@ jobs:
       - run: npm test -w
 
       # Publish in topological order
-      - name: Publish @clawdstrike/adapter-core
+      - name: Publish @backbay/adapter-core
         run: npm publish -w packages/adapters/clawdstrike-adapter-core --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @clawdstrike/sdk
+      - name: Publish @backbay/sdk
         run: npm publish -w packages/sdk/hush-ts --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -395,13 +395,13 @@ Total: ~13 package.json files modified, 1 root package.json created, 1 GHA workf
    # Should return nothing
    ```
 
-3. **Cross-package resolution test** -- After publishing to a local registry (verdaccio) or using `npm link`, verify that installing `@clawdstrike/sdk` in a fresh project correctly resolves `@clawdstrike/adapter-core`:
+3. **Cross-package resolution test** -- After publishing to a local registry (verdaccio) or using `npm link`, verify that installing `@backbay/sdk` in a fresh project correctly resolves `@backbay/adapter-core`:
    ```bash
    mkdir /tmp/test-install
    cd /tmp/test-install
    npm init -y
-   npm install @clawdstrike/sdk
-   node -e "const sdk = require('@clawdstrike/sdk'); console.log('OK')"
+   npm install @backbay/sdk
+   node -e "const sdk = require('@backbay/sdk'); console.log('OK')"
    ```
 
 4. **Build from clean state** -- Clone the repo fresh, `npm install`, `npm run build -w`, `npm test -w`.
@@ -410,13 +410,13 @@ Total: ~13 package.json files modified, 1 root package.json created, 1 GHA workf
 
 5. **npm view** -- After publishing, verify package metadata:
    ```bash
-   npm view @clawdstrike/sdk
-   npm view @clawdstrike/adapter-core
+   npm view @backbay/sdk
+   npm view @backbay/adapter-core
    ```
 
 6. **Fresh install test** -- In a new directory, install published packages and verify they work:
    ```bash
-   npm install @clawdstrike/sdk @clawdstrike/claude-code
+   npm install @backbay/sdk @backbay/claude-code
    ```
 
 7. **Provenance verification** -- Check that SLSA provenance is attached:
@@ -442,9 +442,9 @@ If issues are found before publishing, simply revert the `package.json` changes:
 ### After publish
 
 Published npm packages cannot be unpublished after 72 hours (npm policy). However:
-1. **Deprecate**: `npm deprecate @clawdstrike/sdk@0.1.0 "Withdrawn, please wait for 0.1.1"`
+1. **Deprecate**: `npm deprecate @backbay/sdk@0.1.0 "Withdrawn, please wait for 0.1.1"`
 2. **Publish fix**: Publish a corrected 0.1.1 version
-3. **Unpublish** (within 72 hours): `npm unpublish @clawdstrike/sdk@0.1.0`
+3. **Unpublish** (within 72 hours): `npm unpublish @backbay/sdk@0.1.0`
 
 ### Maintaining local development
 
@@ -460,7 +460,7 @@ If semver deps break local development (packages pulling from registry instead o
 | NPM_TOKEN GitHub secret | To be created | Automation token for CI publishing |
 | Spec 04 (Apache 2.0 license) | Recommended | Published packages should have correct license |
 | GitHub Actions | Available | Repository already on GitHub |
-| Node.js >= 20.19.0 | Required | Per engines field in `@clawdstrike/sdk` |
+| Node.js >= 20.19.0 | Required | Per engines field in `@backbay/sdk` |
 | All packages build + test green | Required | `npm run build -w && npm test -w` must pass |
 
 ---
@@ -506,6 +506,6 @@ Plan: Free (open source)
 - [ ] Root `package.json` with npm workspaces config exists (private: true)
 - [ ] `npm install && npm run build -w && npm test -w` succeeds from a clean checkout
 - [ ] `.github/workflows/npm-publish.yml` exists with topological publish order
-- [ ] (After publish) `npm view @clawdstrike/sdk` returns valid metadata
-- [ ] (After publish) Fresh `npm install @clawdstrike/sdk` in a new project resolves correctly
+- [ ] (After publish) `npm view @backbay/sdk` returns valid metadata
+- [ ] (After publish) Fresh `npm install @backbay/sdk` in a new project resolves correctly
 - [ ] (After publish) All packages show SLSA provenance attestation

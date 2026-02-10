@@ -829,7 +829,7 @@ app.post('/clawdstrike-webhook', (req, res) => {
 ### JavaScript/TypeScript SDK
 
 ```typescript
-import { ClawdstrikeClient } from '@clawdstrike/sdk';
+import { ClawdstrikeClient } from '@backbay/sdk';
 
 const client = new ClawdstrikeClient({
   apiKey: process.env.CLAWDSTRIKE_API_KEY,
@@ -900,7 +900,7 @@ print(f"Download evidence: {export.download_url}")
 
 ```bash
 # Install CLI
-npm install -g @clawdstrike/cli
+npm install -g @backbay/cli
 
 # Configure
 clawdstrike config set api_key cs_live_abc123...

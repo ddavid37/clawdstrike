@@ -593,7 +593,7 @@ Recommendation: Add tests for patch_apply events
 ### TypeScript API
 
 ```typescript
-import { PolicyTestRunner, TestSuite, Coverage } from '@clawdstrike/openclaw';
+import { PolicyTestRunner, TestSuite, Coverage } from '@backbay/openclaw';
 
 // Create test runner
 const runner = new PolicyTestRunner({

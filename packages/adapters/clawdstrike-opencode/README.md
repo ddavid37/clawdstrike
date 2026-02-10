@@ -1,18 +1,18 @@
-# `@clawdstrike/opencode`
+# `@backbay/opencode`
 
 In-process tool-boundary hooks for OpenCode-style coding assistants.
 
 ## Install
 
 ```bash
-npm install @clawdstrike/opencode @clawdstrike/adapter-core @clawdstrike/hush-cli-engine
+npm install @backbay/opencode @backbay/adapter-core @backbay/hush-cli-engine
 ```
 
 ## Usage
 
 ```ts
-import { createHushCliEngine } from '@clawdstrike/hush-cli-engine';
-import { OpenCodeToolBoundary, wrapOpenCodeToolDispatcher } from '@clawdstrike/opencode';
+import { createHushCliEngine } from '@backbay/hush-cli-engine';
+import { OpenCodeToolBoundary, wrapOpenCodeToolDispatcher } from '@backbay/opencode';
 
 const engine = createHushCliEngine({ policyRef: 'default' });
 const boundary = new OpenCodeToolBoundary({ engine });

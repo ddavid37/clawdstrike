@@ -606,7 +606,7 @@ impl Guard for HoneypotGuard {
 
 ```typescript
 /**
- * @clawdstrike/openclaw - Honeypot Guard
+ * @backbay/openclaw - Honeypot Guard
  *
  * Detects access to canary resources indicating reconnaissance or attack.
  */

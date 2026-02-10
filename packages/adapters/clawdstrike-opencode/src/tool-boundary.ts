@@ -1,11 +1,11 @@
-import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
+import { BaseToolInterceptor, createSecurityContext } from '@backbay/adapter-core';
 import type {
   AdapterConfig,
   AuditEvent,
   PolicyEngineLike,
   SecurityContext,
   ToolInterceptor,
-} from '@clawdstrike/adapter-core';
+} from '@backbay/adapter-core';
 
 import { ClawdstrikeBlockedError } from './errors.js';
 

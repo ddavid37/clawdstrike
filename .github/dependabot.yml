@@ -25,7 +25,7 @@ updates:
       - "dependencies"
       - "rust"
 
-  # npm dependencies (@clawdstrike/openclaw plugin)
+  # npm dependencies (@backbay/openclaw plugin)
   - package-ecosystem: "npm"
     directory: "/packages/adapters/clawdstrike-openclaw"
     schedule:

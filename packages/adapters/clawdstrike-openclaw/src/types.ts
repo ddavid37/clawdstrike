@@ -1,5 +1,5 @@
 /**
- * @clawdstrike/openclaw - Type Definitions
+ * @backbay/openclaw - Type Definitions
  *
  * Core types for the Clawdstrike security plugin for OpenClaw.
  */

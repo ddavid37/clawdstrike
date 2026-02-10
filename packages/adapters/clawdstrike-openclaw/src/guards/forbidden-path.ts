@@ -1,5 +1,5 @@
 /**
- * @clawdstrike/openclaw - Forbidden Path Guard
+ * @backbay/openclaw - Forbidden Path Guard
  *
  * Blocks access to sensitive filesystem paths.
  */

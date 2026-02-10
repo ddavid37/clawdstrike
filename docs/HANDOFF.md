@@ -100,7 +100,7 @@ All specs are in `docs/specs/`. They were cross-referenced against the actual co
 | 02 | Cilium Network Policies | 3-4d | 10 CiliumNetworkPolicy manifests for SDR pod network isolation |
 | 03 | Multi-Curator Marketplace | 5-7d | Extend existing `curator_config.rs` with multi-curator trust, weighted quorum, role separation |
 | 04 | Apache 2.0 License | 2-3d | MIT → Apache 2.0 migration plan (headers, NOTICE, Cargo.toml, package.json) |
-| 05 | npm Publishing | 3d | Publish 11 TS packages to npm under `@clawdstrike/` scope |
+| 05 | npm Publishing | 3d | Publish 11 TS packages to npm under `@backbay/` scope |
 
 ### Phase B — Identity & Trust
 
@@ -238,4 +238,4 @@ npm test --workspace=packages/sdk/hush-ts
 2. **Merge PR #40** when ready — it's the SDR foundation + 30 bug fixes + 14 specs
 3. **Start Phase A** — specs 01-05 are all parallelizable and have no dependencies on each other
 4. **Spec 04 (Apache 2.0)** should be decided early since it affects every published package
-5. **Spec 05 (npm publish)** unblocks external consumers of `@clawdstrike/*` packages
+5. **Spec 05 (npm publish)** unblocks external consumers of `@backbay/*` packages

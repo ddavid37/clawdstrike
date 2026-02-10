@@ -197,7 +197,7 @@ import {
   DelegationToken,
   CoordinationChannel,
   CrossAgentPolicy
-} from '@clawdstrike/multi-agent';
+} from '@backbay/multi-agent';
 
 // Create orchestrator with multi-agent policy
 const orchestrator = new MultiAgentOrchestrator({

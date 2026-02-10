@@ -12,9 +12,9 @@ This document details the architecture for integrating Clawdstrike's security en
 |---------|----------------|--------------|-------|
 | **Auto-GPT** | 0.5.0 | 0.5.x | Plugin architecture required |
 | **AgentGPT** | 0.5.0 | Latest | Web-based variant |
-| **@clawdstrike/autogpt** | 1.0.0 | 1.x | TypeScript security layer |
+| **@backbay/autogpt** | 1.0.0 | 1.x | TypeScript security layer |
 
-> **Note**: AutoGPT and its variants have varying plugin/command architectures. This integration targets the standard command registry pattern. Custom forks may require adapter modifications. The TypeScript interfaces shown here are for `@clawdstrike/autogpt` which can wrap AutoGPT-style agents implemented in Node.js or provide security configuration for the Python implementation via JSON/YAML policies.
+> **Note**: AutoGPT and its variants have varying plugin/command architectures. This integration targets the standard command registry pattern. Custom forks may require adapter modifications. The TypeScript interfaces shown here are for `@backbay/autogpt` which can wrap AutoGPT-style agents implemented in Node.js or provide security configuration for the Python implementation via JSON/YAML policies.
 
 ## Problem Statement
 
@@ -144,7 +144,7 @@ This document details the architecture for integrating Clawdstrike's security en
 ```typescript
 // Core integration layer
 ┌─────────────────────────────────────────────────────────────────┐
-│                    @clawdstrike/autogpt                          │
+│                    @backbay/autogpt                          │
 ├─────────────────────────────────────────────────────────────────┤
 │  ClawdstrikeSecurityLayer                                        │
 │  ├── initialize(agent, config) -> SecureAgent                   │
@@ -183,7 +183,7 @@ This document details the architecture for integrating Clawdstrike's security en
 ### TypeScript Interfaces
 
 ```typescript
-import { PolicyEngine, Decision, Policy, ClawdstrikeConfig } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision, Policy, ClawdstrikeConfig } from '@backbay/openclaw';
 
 /**
  * Configuration for AutoGPT integration
@@ -395,7 +395,7 @@ export interface CommandSecurityMetadata {
 ### Security Layer Implementation
 
 ```typescript
-import { PolicyEngine, Decision, PolicyEvent } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision, PolicyEvent } from '@backbay/openclaw';
 
 /**
  * Main security layer for AutoGPT
@@ -856,7 +856,7 @@ When in doubt, request clarification rather than risking a security violation.
 ### Command Interceptor
 
 ```typescript
-import { PolicyEngine, Decision, PolicyEvent } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision, PolicyEvent } from '@backbay/openclaw';
 
 /**
  * Intercepts and validates commands before execution
@@ -1102,7 +1102,7 @@ type PostCommandHook = (
 
 ```typescript
 import { AutoGPT } from 'autogpt';
-import { ClawdstrikeSecurityLayer } from '@clawdstrike/autogpt';
+import { ClawdstrikeSecurityLayer } from '@backbay/autogpt';
 
 // Create security configuration
 const securityConfig: AutoGPTClawdstrikeConfig = {
@@ -1188,7 +1188,7 @@ console.log('Security Events:', auditLog.length);
 ### Plugin Sandbox
 
 ```typescript
-import { PluginSandbox, ClawdstrikeSecurityLayer } from '@clawdstrike/autogpt';
+import { PluginSandbox, ClawdstrikeSecurityLayer } from '@backbay/autogpt';
 
 // Configure plugin sandbox
 const securityConfig: AutoGPTClawdstrikeConfig = {
@@ -1326,7 +1326,7 @@ on_violation: cancel
 
 ```typescript
 import { describe, it, expect, vi } from 'vitest';
-import { ClawdstrikeSecurityLayer, CommandInterceptor } from '@clawdstrike/autogpt';
+import { ClawdstrikeSecurityLayer, CommandInterceptor } from '@backbay/autogpt';
 
 describe('CommandInterceptor', () => {
   it('should block explicitly blocked commands', async () => {
@@ -1398,7 +1398,7 @@ describe('ResourceLimiter', () => {
 ```typescript
 import { describe, it, expect } from 'vitest';
 import { AutoGPT } from 'autogpt';
-import { ClawdstrikeSecurityLayer } from '@clawdstrike/autogpt';
+import { ClawdstrikeSecurityLayer } from '@backbay/autogpt';
 
 describe('AutoGPT Integration', () => {
   it('should block forbidden file access during agent run', async () => {

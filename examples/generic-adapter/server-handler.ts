@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
-import { createHushCliEngine } from '@clawdstrike/hush-cli-engine';
+import { createHushCliEngine } from '@backbay/hush-cli-engine';
 import {
   GenericToolBoundary,
   GenericToolCallBlockedError,
   wrapGenericToolDispatcher,
-} from '@clawdstrike/adapter-core';
+} from '@backbay/adapter-core';
 
 type RequestLike = {
   headers?: Record<string, string | undefined>;

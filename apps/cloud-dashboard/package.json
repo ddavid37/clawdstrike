@@ -1,5 +1,5 @@
 {
-  "name": "@clawdstrike/cloud-dashboard",
+  "name": "@backbay/cloud-dashboard",
   "version": "0.1.0",
   "private": true,
   "description": "ClawdStrike Cloud web dashboard (React SPA)",

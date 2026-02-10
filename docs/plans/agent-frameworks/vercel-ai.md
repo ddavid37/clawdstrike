@@ -13,7 +13,7 @@ This document details the architecture for integrating Clawdstrike's security en
 | **ai** | 3.0.0 | 3.4.x | Core Vercel AI SDK |
 | **@ai-sdk/openai** | 0.0.20 | 0.0.x | OpenAI provider |
 | **@ai-sdk/anthropic** | 0.0.20 | 0.0.x | Anthropic provider |
-| **@clawdstrike/vercel-ai** | 1.0.0 | 1.x | Clawdstrike integration |
+| **@backbay/vercel-ai** | 1.0.0 | 1.x | Clawdstrike integration |
 | **React** | 18.0.0 | 18.x | For useSecureChat hook |
 | **Next.js** | 13.4.0 | 14.x | For API route examples |
 
@@ -131,7 +131,7 @@ This document details the architecture for integrating Clawdstrike's security en
 ```typescript
 // Core integration layer
 ┌─────────────────────────────────────────────────────────────────┐
-│                    @clawdstrike/vercel-ai                        │
+│                    @backbay/vercel-ai                        │
 ├─────────────────────────────────────────────────────────────────┤
 │  createClawdstrikeMiddleware(config) -> Middleware               │
 │  ├── wrapRequest(request) -> SecureRequest                      │
@@ -164,7 +164,7 @@ This document details the architecture for integrating Clawdstrike's security en
 
 ```typescript
 import { CoreTool, LanguageModel, StreamTextResult } from 'ai';
-import { PolicyEngine, Decision, Policy, ClawdstrikeConfig } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision, Policy, ClawdstrikeConfig } from '@backbay/openclaw';
 
 /**
  * Configuration for Vercel AI SDK integration
@@ -308,7 +308,7 @@ export interface MiddlewareConfig {
 // Note: experimental_wrapLanguageModel is stable but may be renamed in future versions
 // Check AI SDK release notes when upgrading
 import { experimental_wrapLanguageModel as wrapLanguageModel, LanguageModelV1 } from 'ai';
-import { PolicyEngine, Decision, PolicyEvent } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision, PolicyEvent } from '@backbay/openclaw';
 
 /**
  * Creates Clawdstrike middleware for Vercel AI SDK
@@ -820,7 +820,7 @@ export class ClawdstrikeBlockedError extends Error {
 ```typescript
 import { useChat, UseChatOptions, Message } from 'ai/react';
 import { useState, useCallback, useMemo } from 'react';
-import { PolicyEngine, Decision } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision } from '@backbay/openclaw';
 
 /**
  * Secure chat hook with security status tracking
@@ -919,7 +919,7 @@ export function useSecureChat(
 ```typescript
 import { generateText, tool } from 'ai';
 import { openai } from '@ai-sdk/openai';
-import { createClawdstrikeMiddleware } from '@clawdstrike/vercel-ai';
+import { createClawdstrikeMiddleware } from '@backbay/vercel-ai';
 import { z } from 'zod';
 
 // Create middleware
@@ -976,7 +976,7 @@ console.log(result.text);
 
 ```typescript
 import { streamText } from 'ai';
-import { createClawdstrikeMiddleware } from '@clawdstrike/vercel-ai';
+import { createClawdstrikeMiddleware } from '@backbay/vercel-ai';
 
 const security = createClawdstrikeMiddleware({
   policy: 'clawdstrike:ai-agent',
@@ -1001,7 +1001,7 @@ for await (const chunk of result.textStream) {
 ### React Component
 
 ```tsx
-import { useSecureChat } from '@clawdstrike/vercel-ai/react';
+import { useSecureChat } from '@backbay/vercel-ai/react';
 
 export function SecureChatUI() {
   const {
@@ -1081,7 +1081,7 @@ export function SecureChatUI() {
 // app/api/chat/route.ts
 import { streamText } from 'ai';
 import { openai } from '@ai-sdk/openai';
-import { createClawdstrikeMiddleware } from '@clawdstrike/vercel-ai';
+import { createClawdstrikeMiddleware } from '@backbay/vercel-ai';
 
 const security = createClawdstrikeMiddleware({
   policy: 'clawdstrike:ai-agent',
@@ -1153,7 +1153,7 @@ on_violation: cancel
 ### Environment-Based Configuration
 
 ```typescript
-import { createClawdstrikeMiddleware } from '@clawdstrike/vercel-ai';
+import { createClawdstrikeMiddleware } from '@backbay/vercel-ai';
 
 const security = createClawdstrikeMiddleware({
   policy: process.env.NODE_ENV === 'production'
@@ -1186,7 +1186,7 @@ const security = createClawdstrikeMiddleware({
 
 ```typescript
 import { describe, it, expect, vi } from 'vitest';
-import { createClawdstrikeMiddleware, ClawdstrikeBlockedError } from '@clawdstrike/vercel-ai';
+import { createClawdstrikeMiddleware, ClawdstrikeBlockedError } from '@backbay/vercel-ai';
 import { tool } from 'ai';
 import { z } from 'zod';
 
@@ -1294,7 +1294,7 @@ describe('StreamingToolGuard', () => {
 import { describe, it, expect } from 'vitest';
 import { generateText } from 'ai';
 import { openai } from '@ai-sdk/openai';
-import { createClawdstrikeMiddleware } from '@clawdstrike/vercel-ai';
+import { createClawdstrikeMiddleware } from '@backbay/vercel-ai';
 
 describe('Full Pipeline Integration', () => {
   it('should enforce policy in complete generation', async () => {

@@ -59,7 +59,7 @@ clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 - `hush-multi-agent` - Multi-agent orchestration
 
 **TypeScript Packages (`packages/`):**
-- `hush-ts` - Core TypeScript SDK (`@clawdstrike/sdk`)
+- `hush-ts` - Core TypeScript SDK (`@backbay/sdk`)
 - `clawdstrike-policy` - Canonical policy engine (TS)
 - `clawdstrike-adapter-core` - Base adapter interface
 - Framework adapters: `clawdstrike-openclaw`, `clawdstrike-vercel-ai`, `clawdstrike-langchain`, `clawdstrike-claude-code`, `clawdstrike-codex`, `clawdstrike-opencode`

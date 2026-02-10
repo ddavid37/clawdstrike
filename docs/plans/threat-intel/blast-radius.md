@@ -835,7 +835,7 @@ impl Guard for BlastRadiusGuard {
 
 ```typescript
 /**
- * @clawdstrike/openclaw - Blast Radius Guard
+ * @backbay/openclaw - Blast Radius Guard
  *
  * Quantifies the potential impact of proposed actions.
  */

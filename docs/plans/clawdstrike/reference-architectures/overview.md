@@ -97,7 +97,7 @@ if !result.allowed {
 TypeScript implementation for agent framework integration:
 
 ```typescript
-import { PolicyEngine, loadPolicy } from '@clawdstrike/openclaw';
+import { PolicyEngine, loadPolicy } from '@backbay/openclaw';
 
 const engine = new PolicyEngine({
   policy: 'ai-agent',  // Built-in ruleset
@@ -220,7 +220,7 @@ settings:
 ```typescript
 // openclaw.plugin.json
 {
-  "name": "@clawdstrike/openclaw",
+  "name": "@backbay/openclaw",
   "hooks": {
     "agent:bootstrap": "./hooks/agent-bootstrap/handler.js",
     "tool_result_persist": "./hooks/tool-guard/handler.js",

@@ -1,5 +1,5 @@
 /**
- * @clawdstrike/openclaw - Configuration
+ * @backbay/openclaw - Configuration
  *
  * Configuration handling and defaults for the Clawdstrike plugin.
  */

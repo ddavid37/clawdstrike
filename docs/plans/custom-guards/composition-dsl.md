@@ -294,7 +294,7 @@ async function evaluateOr(guards: Guard[], event: PolicyEvent): Promise<GuardRes
 ### 4.1 TypeScript Interface
 
 ```typescript
-// @clawdstrike/guard-sdk
+// @backbay/guard-sdk
 
 /**
  * Composition rule types
@@ -1097,7 +1097,7 @@ guards:
 ### 7.1 Composition Test Utilities
 
 ```typescript
-// @clawdstrike/guard-sdk/testing
+// @backbay/guard-sdk/testing
 
 import { CompositionRule, CompositionResult, EvaluationContext, PolicyEvent } from '../types';
 
@@ -1219,7 +1219,7 @@ interface MockGuardBehavior {
 // tests/composition.test.ts
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CompositionTestHarness, fileWriteEvent } from '@clawdstrike/guard-sdk/testing';
+import { CompositionTestHarness, fileWriteEvent } from '@backbay/guard-sdk/testing';
 
 describe('Guard Composition', () => {
   let harness: CompositionTestHarness;

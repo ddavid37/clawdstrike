@@ -675,7 +675,7 @@ import {
   PolicyMigrator,
   BreakingChangeDetector,
   ImpactAnalyzer
-} from '@clawdstrike/openclaw';
+} from '@backbay/openclaw';
 
 // Diff two policies
 const oldPolicy = await loadPolicy('old.yaml');

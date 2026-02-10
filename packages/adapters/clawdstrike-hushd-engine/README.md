@@ -1,4 +1,4 @@
-# @clawdstrike/hushd-engine
+# @backbay/hushd-engine
 
 Policy engine adapter that calls a running `hushd` daemon for evaluation.
 
@@ -8,7 +8,7 @@ for ruleset parsing and evaluation, without spawning the `hush` CLI per request.
 ## Usage
 
 ```ts
-import { createHushdEngine } from "@clawdstrike/hushd-engine";
+import { createHushdEngine } from "@backbay/hushd-engine";
 
 const engine = createHushdEngine({
   baseUrl: "http://127.0.0.1:9876",

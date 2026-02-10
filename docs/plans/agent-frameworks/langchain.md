@@ -11,7 +11,7 @@ LangChain is the most widely adopted framework for building LLM-powered applicat
 | **@langchain/core** | 0.2.0 | 0.3.x | Required for callback handler API |
 | **@langchain/langgraph** | 0.0.20 | 0.2.x | Required for StateGraph integration |
 | **langchain** | 0.2.0 | 0.3.x | Agent executor and chain utilities |
-| **@clawdstrike/openclaw** | 0.1.0 | 0.x | Core policy engine |
+| **@backbay/openclaw** | 0.1.0 | 0.x | Core policy engine |
 
 > **Note**: LangChain's API evolves rapidly. The `BaseCallbackHandler` interface has been stable since 0.2.x, but check release notes for breaking changes in minor versions.
 
@@ -89,7 +89,7 @@ LangChain is the most widely adopted framework for building LLM-powered applicat
 ```typescript
 // Core integration layer
 ┌─────────────────────────────────────────────────────────────────┐
-│                    @clawdstrike/langchain                        │
+│                    @backbay/langchain                        │
 ├─────────────────────────────────────────────────────────────────┤
 │  ClawdstrikeCallbackHandler                                      │
 │  ├── onToolStart(tool, input) -> PolicyDecision                 │
@@ -124,7 +124,7 @@ import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { BaseTool, StructuredTool } from '@langchain/core/tools';
 import { RunnableConfig } from '@langchain/core/runnables';
 import { StateGraph, StateGraphNode } from '@langchain/langgraph';
-import { PolicyEngine, Decision, ClawdstrikeConfig } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision, ClawdstrikeConfig } from '@backbay/openclaw';
 
 /**
  * Configuration for the LangChain integration
@@ -230,7 +230,7 @@ import {
   CallbackHandlerMethods,
 } from '@langchain/core/callbacks/base';
 import { Serialized } from '@langchain/core/load/serializable';
-import { PolicyEngine, Decision, PolicyEvent } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision, PolicyEvent } from '@backbay/openclaw';
 
 /**
  * Clawdstrike callback handler for LangChain
@@ -517,7 +517,7 @@ export class ClawdstrikeViolationError extends Error {
 ```typescript
 import { BaseTool, ToolParams } from '@langchain/core/tools';
 import { CallbackManagerForToolRun } from '@langchain/core/callbacks/manager';
-import { PolicyEngine, Decision } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision } from '@backbay/openclaw';
 
 /**
  * Wraps an existing LangChain tool with Clawdstrike security
@@ -617,7 +617,7 @@ export function wrapTools<T extends BaseTool>(
 
 ```typescript
 import { StateGraph, END } from '@langchain/langgraph';
-import { PolicyEngine, Decision, Policy } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision, Policy } from '@backbay/openclaw';
 
 /**
  * Creates a security checkpoint node for LangGraph
@@ -827,7 +827,7 @@ function sanitizeState(
 ```typescript
 import { ChatOpenAI } from '@langchain/openai';
 import { AgentExecutor, createReactAgent } from 'langchain/agents';
-import { ClawdstrikeCallbackHandler } from '@clawdstrike/langchain';
+import { ClawdstrikeCallbackHandler } from '@backbay/langchain';
 
 // Create the security callback
 const securityCallback = new ClawdstrikeCallbackHandler({
@@ -867,7 +867,7 @@ try {
 
 ```typescript
 import { DynamicTool } from '@langchain/core/tools';
-import { wrapTools } from '@clawdstrike/langchain';
+import { wrapTools } from '@backbay/langchain';
 
 // Define tools
 const bashTool = new DynamicTool({
@@ -906,7 +906,7 @@ const agent = await createReactAgent({
 
 ```typescript
 import { StateGraph, END } from '@langchain/langgraph';
-import { createSecureWorkflow } from '@clawdstrike/langchain';
+import { createSecureWorkflow } from '@backbay/langchain';
 
 // Define state
 interface AgentState {
@@ -994,7 +994,7 @@ on_violation: cancel
 ### Environment-Based Configuration
 
 ```typescript
-import { ClawdstrikeCallbackHandler } from '@clawdstrike/langchain';
+import { ClawdstrikeCallbackHandler } from '@backbay/langchain';
 
 const config: LangChainClawdstrikeConfig = {
   // Use stricter policy in production
@@ -1028,7 +1028,7 @@ const config: LangChainClawdstrikeConfig = {
 
 ```typescript
 import { describe, it, expect, vi } from 'vitest';
-import { ClawdstrikeCallbackHandler } from '@clawdstrike/langchain';
+import { ClawdstrikeCallbackHandler } from '@backbay/langchain';
 
 describe('ClawdstrikeCallbackHandler', () => {
   it('should block access to forbidden paths', async () => {
@@ -1082,7 +1082,7 @@ import { describe, it, expect } from 'vitest';
 import { ChatOpenAI } from '@langchain/openai';
 import { DynamicTool } from '@langchain/core/tools';
 import { AgentExecutor, createReactAgent } from 'langchain/agents';
-import { ClawdstrikeCallbackHandler, wrapTools } from '@clawdstrike/langchain';
+import { ClawdstrikeCallbackHandler, wrapTools } from '@backbay/langchain';
 
 describe('LangChain Integration', () => {
   it('should enforce policy in full agent execution', async () => {
@@ -1126,7 +1126,7 @@ describe('LangChain Integration', () => {
 ```typescript
 import { describe, it } from 'vitest';
 import * as fc from 'fast-check';
-import { ClawdstrikeCallbackHandler } from '@clawdstrike/langchain';
+import { ClawdstrikeCallbackHandler } from '@backbay/langchain';
 
 describe('Security Properties', () => {
   it('should always block forbidden paths regardless of encoding', async () => {

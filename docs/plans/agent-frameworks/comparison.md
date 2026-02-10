@@ -8,11 +8,11 @@ This document provides a comprehensive comparison of Clawdstrike integration app
 
 | Framework | Min Version | Package |
 |-----------|------------|---------|
-| LangChain/LangGraph | @langchain/core 0.2.0 | @clawdstrike/langchain |
-| CrewAI | crewai 0.28.0 | @clawdstrike/crewai |
-| AutoGPT | Auto-GPT 0.5.0 | @clawdstrike/autogpt |
-| Vercel AI SDK | ai 3.0.0 | @clawdstrike/vercel-ai |
-| Microsoft AutoGen | autogen 0.2.0 | @clawdstrike/autogen (P2) |
+| LangChain/LangGraph | @langchain/core 0.2.0 | @backbay/langchain |
+| CrewAI | crewai 0.28.0 | @backbay/crewai |
+| AutoGPT | Auto-GPT 0.5.0 | @backbay/autogpt |
+| Vercel AI SDK | ai 3.0.0 | @backbay/vercel-ai |
+| Microsoft AutoGen | autogen 0.2.0 | @backbay/autogen (P2) |
 
 > See individual framework documentation for detailed version compatibility matrices.
 
@@ -425,7 +425,7 @@ If teams need to switch frameworks, the generic adapter provides a migration pat
 
 ```typescript
 // Step 1: Use generic adapter interface
-import { FrameworkAdapter, AdapterConfig } from '@clawdstrike/adapter-core';
+import { FrameworkAdapter, AdapterConfig } from '@backbay/adapter-core';
 
 // Step 2: Create framework-agnostic security layer
 const config: AdapterConfig = {
@@ -434,9 +434,9 @@ const config: AdapterConfig = {
 };
 
 // Step 3: Initialize with specific adapter
-import { LangChainAdapter } from '@clawdstrike/langchain';
+import { LangChainAdapter } from '@backbay/langchain';
 // or
-import { VercelAIAdapter } from '@clawdstrike/vercel-ai';
+import { VercelAIAdapter } from '@backbay/vercel-ai';
 
 const adapter: FrameworkAdapter = new LangChainAdapter();
 // Switching is just changing the import and instantiation

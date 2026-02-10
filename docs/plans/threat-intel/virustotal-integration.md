@@ -1571,7 +1571,7 @@ impl Guard for UrlscanGuard {
 
 ```typescript
 /**
- * @clawdstrike/openclaw - VirusTotal and urlscan.io Integration
+ * @backbay/openclaw - VirusTotal and urlscan.io Integration
  */
 
 /** VirusTotal analysis stats */

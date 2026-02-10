@@ -1,11 +1,11 @@
-import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
+import { BaseToolInterceptor, createSecurityContext } from '@backbay/adapter-core';
 import type {
   AdapterConfig,
   Decision,
   PolicyEngineLike,
   SecurityContext,
   ToolInterceptor,
-} from '@clawdstrike/adapter-core';
+} from '@backbay/adapter-core';
 
 import { ClawdstrikeViolationError } from './errors.js';
 import { createLangChainInterceptor } from './interceptor.js';
@@ -39,8 +39,8 @@ export interface ClawdstrikeLike {
  *
  * @example Using with Clawdstrike (recommended)
  * ```typescript
- * import { Clawdstrike } from '@clawdstrike/sdk';
- * import { secureTool } from '@clawdstrike/langchain';
+ * import { Clawdstrike } from '@backbay/sdk';
+ * import { secureTool } from '@backbay/langchain';
  *
  * const cs = await Clawdstrike.fromPolicy('./policy.yaml');
  * const secureTool = secureTool(myTool, cs);

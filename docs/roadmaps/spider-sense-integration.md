@@ -753,7 +753,7 @@ Four attack types get **entirely new coverage** that ClawdStrike currently lacks
 4. **Implement escalation protocol** — sync guard sets escalation flag in `GuardContext.metadata`, async guard picks it up
 5. **Add SSE event types** — `spider_sense.threat_detected`, `spider_sense.deep_analysis`, `spider_sense.escalated`
 6. **SIEM integration** — Spider-Sense events flow through existing exporters
-7. **TS SDK parity** — mirror Spider-Sense guard configs in `@clawdstrike/sdk`
+7. **TS SDK parity** — mirror Spider-Sense guard configs in `@backbay/sdk`
 
 **Deliverable:** Full two-tier HAS pipeline operational.
 

@@ -1,11 +1,11 @@
-import { BaseToolInterceptor, PolicyEventFactory, createSecurityContext } from '@clawdstrike/adapter-core';
+import { BaseToolInterceptor, PolicyEventFactory, createSecurityContext } from '@backbay/adapter-core';
 import type {
   AdapterConfig,
   AuditEvent,
   Decision,
   PolicyEngineLike,
   SecurityContext,
-} from '@clawdstrike/adapter-core';
+} from '@backbay/adapter-core';
 
 import {
   InstructionHierarchyEnforcer,
@@ -18,7 +18,7 @@ import {
   type JailbreakDetectorConfig,
   type OutputSanitizerConfig,
   type WatermarkConfig,
-} from '@clawdstrike/sdk';
+} from '@backbay/sdk';
 
 import type { VercelAiToolLike } from './tools.js';
 import { secureTools } from './tools.js';
@@ -606,7 +606,7 @@ async function applyPromptWatermark(
   const watermarkText = watermarked.watermarked.trimEnd();
 
   // Lazy import to avoid pulling crypto into environments that never enable watermarking.
-  const { WatermarkExtractor } = await import('@clawdstrike/sdk');
+  const { WatermarkExtractor } = await import('@backbay/sdk');
   const fingerprint = new WatermarkExtractor().fingerprint(watermarked.watermark);
 
   context.addAuditEvent({

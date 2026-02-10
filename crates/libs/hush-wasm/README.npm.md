@@ -1,11 +1,11 @@
-# @clawdstrike/wasm
+# @backbay/wasm
 
 WebAssembly bindings for clawdstrike cryptographic verification.
 
 ## Installation
 
 ```bash
-npm install @clawdstrike/wasm
+npm install @backbay/wasm
 ```
 
 ## Usage
@@ -19,7 +19,7 @@ import init, {
   hash_keccak256,
   verify_receipt,
   verify_merkle_proof
-} from '@clawdstrike/wasm';
+} from '@backbay/wasm';
 
 // Initialize WASM module (required once)
 await init();
@@ -39,7 +39,7 @@ console.log(result.valid, result.signer_valid);
 ### Node.js
 
 ```javascript
-const { verify_ed25519, hash_sha256 } = require('@clawdstrike/wasm');
+const { verify_ed25519, hash_sha256 } = require('@backbay/wasm');
 
 const hash = hash_sha256(Buffer.from('hello'));
 ```

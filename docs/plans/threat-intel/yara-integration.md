@@ -861,7 +861,7 @@ impl Guard for YaraGuard {
 
 ```typescript
 /**
- * @clawdstrike/openclaw - YARA Integration
+ * @backbay/openclaw - YARA Integration
  */
 
 import type { Guard, GuardResult, PolicyEvent, Policy } from '../types.js';

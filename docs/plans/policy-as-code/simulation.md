@@ -577,7 +577,7 @@ import {
   SimulationConfig,
   SimulationResult,
   EventStream
-} from '@clawdstrike/openclaw';
+} from '@backbay/openclaw';
 
 // Create simulator
 const simulator = new PolicySimulator({

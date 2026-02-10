@@ -9,7 +9,7 @@
  *
  * @example Basic usage
  * ```typescript
- * import { Clawdstrike } from '@clawdstrike/sdk';
+ * import { Clawdstrike } from '@backbay/sdk';
  *
  * const cs = await Clawdstrike.fromPolicy('./policy.yaml');
  *

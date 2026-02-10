@@ -133,6 +133,7 @@ jobs:
           packages=(
             packages/adapters/clawdstrike-adapter-core
             packages/sdk/hush-ts
+            packages/sdk/clawdstrike
             packages/policy/clawdstrike-policy
             packages/adapters/clawdstrike-claude-code
             packages/adapters/clawdstrike-codex
@@ -196,6 +197,7 @@ jobs:
 
           publish_workspace packages/adapters/clawdstrike-adapter-core
           publish_workspace packages/sdk/hush-ts
+          publish_workspace packages/sdk/clawdstrike
           publish_workspace packages/policy/clawdstrike-policy
           publish_workspace packages/adapters/clawdstrike-claude-code
           publish_workspace packages/adapters/clawdstrike-codex
@@ -211,7 +213,7 @@ jobs:
         run: echo "All npm package versions already exist; skipping npm publish"
 
   publish-wasm-npm:
-    name: Publish @clawdstrike/wasm (alpha)
+    name: Publish @backbay/wasm (alpha)
     runs-on: ubuntu-latest
     needs: publish-npm
     steps:
@@ -249,7 +251,7 @@ jobs:
         if: steps.detect.outputs.none_missing == 'false'
         run: cargo install wasm-pack --locked --version 0.14.0
 
-      - name: Build and publish @clawdstrike/wasm
+      - name: Build and publish @backbay/wasm
         if: steps.detect.outputs.none_missing == 'false'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -268,7 +270,7 @@ jobs:
 
       - name: wasm package already published
         if: steps.detect.outputs.none_missing == 'true'
-        run: echo "@clawdstrike/wasm version already exists; skipping wasm publish"
+        run: echo "@backbay/wasm version already exists; skipping wasm publish"
 
   publish-pypi:
     name: Publish PyPI package (alpha)

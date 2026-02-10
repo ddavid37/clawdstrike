@@ -14,8 +14,8 @@ By establishing a consistent adapter pattern, we ensure:
 
 | Package | Minimum Version | Notes |
 |---------|----------------|-------|
-| **@clawdstrike/adapter-core** | 1.0.0 | Core adapter interfaces and utilities |
-| **@clawdstrike/openclaw** | 0.1.0 | Policy engine dependency |
+| **@backbay/adapter-core** | 1.0.0 | Core adapter interfaces and utilities |
+| **@backbay/openclaw** | 0.1.0 | Policy engine dependency |
 | **TypeScript** | 5.0.0 | Required for generic type features |
 | **Node.js** | 18.0.0 | Required for async/await patterns |
 
@@ -56,7 +56,7 @@ By establishing a consistent adapter pattern, we ensure:
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Framework Adapter Layer                       │
-│  (@clawdstrike/langchain, @clawdstrike/crewai, etc.)           │
+│  (@backbay/langchain, @backbay/crewai, etc.)           │
 │  - Implements FrameworkAdapter interface                        │
 │  - Translates framework events to Clawdstrike events            │
 │  - Applies security decisions back to framework                 │
@@ -65,7 +65,7 @@ By establishing a consistent adapter pattern, we ensure:
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Generic Adapter Core                         │
-│  (@clawdstrike/adapter-core)                                    │
+│  (@backbay/adapter-core)                                    │
 │  - ToolInterceptor, OutputSanitizer, AuditLogger               │
 │  - SecurityContext, DecisionRouter                              │
 │  - PolicyEventFactory, DecisionHandler                          │
@@ -74,7 +74,7 @@ By establishing a consistent adapter pattern, we ensure:
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Clawdstrike Policy Engine                     │
-│  (@clawdstrike/openclaw)                                        │
+│  (@backbay/openclaw)                                        │
 │  - PolicyEngine, Guards, Validators                             │
 │  - Policy loading, evaluation, caching                          │
 └─────────────────────────────────────────────────────────────────┘
@@ -84,7 +84,7 @@ By establishing a consistent adapter pattern, we ensure:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                   @clawdstrike/adapter-core                      │
+│                   @backbay/adapter-core                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  Interfaces                                                       │
@@ -117,7 +117,7 @@ By establishing a consistent adapter pattern, we ensure:
 ### TypeScript Definitions
 
 ```typescript
-import { PolicyEngine, Decision, PolicyEvent, Policy, ClawdstrikeConfig } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision, PolicyEvent, Policy, ClawdstrikeConfig } from '@backbay/openclaw';
 
 // =============================================================================
 // Framework Adapter Interface
@@ -572,7 +572,7 @@ export interface SessionSummary {
 ### BaseToolInterceptor
 
 ```typescript
-import { PolicyEngine, Decision, PolicyEvent } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision, PolicyEvent } from '@backbay/openclaw';
 
 /**
  * Base implementation of ToolInterceptor
@@ -787,7 +787,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
 ### DefaultOutputSanitizer
 
 ```typescript
-import { PolicyEngine } from '@clawdstrike/openclaw';
+import { PolicyEngine } from '@backbay/openclaw';
 
 /**
  * Default output sanitizer implementation
@@ -849,7 +849,7 @@ export class DefaultOutputSanitizer implements OutputSanitizer {
 ### PolicyEventFactory
 
 ```typescript
-import { PolicyEvent } from '@clawdstrike/openclaw';
+import { PolicyEvent } from '@backbay/openclaw';
 
 // EventType is derived from PolicyEvent for consistency across all adapters
 type EventType = PolicyEvent['eventType'];
@@ -1090,8 +1090,8 @@ import {
   BaseToolInterceptor,
   InMemoryAuditLogger,
   DefaultOutputSanitizer,
-} from '@clawdstrike/adapter-core';
-import { PolicyEngine } from '@clawdstrike/openclaw';
+} from '@backbay/adapter-core';
+import { PolicyEngine } from '@backbay/openclaw';
 
 /**
  * Example: Creating an adapter for a hypothetical framework "AgentX"
@@ -1306,7 +1306,7 @@ class AgentXSecurityCallback {
 ## Usage Example
 
 ```typescript
-import { AgentXAdapter } from '@clawdstrike/agentx';
+import { AgentXAdapter } from '@backbay/agentx';
 import { AgentX, Tool, Conversation } from 'agentx';
 
 // Initialize adapter
@@ -1362,8 +1362,8 @@ import {
   DefaultOutputSanitizer,
   PolicyEventFactory,
   InMemoryAuditLogger,
-} from '@clawdstrike/adapter-core';
-import { PolicyEngine } from '@clawdstrike/openclaw';
+} from '@backbay/adapter-core';
+import { PolicyEngine } from '@backbay/openclaw';
 
 describe('BaseToolInterceptor', () => {
   let engine: PolicyEngine;

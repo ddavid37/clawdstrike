@@ -1,5 +1,5 @@
 /**
- * @clawdstrike/sdk - TypeScript SDK for clawdstrike security verification
+ * @backbay/sdk - TypeScript SDK for clawdstrike security verification
  * @packageDocumentation
  */
 
@@ -180,7 +180,7 @@ export {
 // SIEM/SOAR
 export * as siem from "./siem";
 
-// Adapters (merged from @clawdstrike/adapter-core)
+// Adapters (merged from @backbay/adapter-core)
 // For advanced use cases, these provide direct access to interceptors and adapters
 export * as adapters from "./adapters";
 
@@ -203,7 +203,7 @@ export type {
   SecurityContext,
   SessionSummary as AdapterSessionSummary,
   ToolInterceptor,
-} from "@clawdstrike/adapter-core";
+} from "@backbay/adapter-core";
 
 export {
   allowDecision,
@@ -216,4 +216,4 @@ export {
   InMemoryAuditLogger,
   PolicyEventFactory,
   warnDecision,
-} from "@clawdstrike/adapter-core";
+} from "@backbay/adapter-core";

@@ -206,7 +206,7 @@ sandbox = "wasm"
 ### 3.1 TypeScript Guard Interface
 
 ```typescript
-// @clawdstrike/guard-sdk
+// @backbay/guard-sdk
 
 /**
  * Core Guard interface - must be implemented by all custom guards
@@ -504,7 +504,7 @@ pub enum EventType {
 
 ```typescript
 // src/index.ts
-import { PluginDefinition, Guard } from '@clawdstrike/guard-sdk';
+import { PluginDefinition, Guard } from '@backbay/guard-sdk';
 import { AcmeSecretGuard } from './guard';
 import { AcmeSecretConfig } from './config';
 
@@ -1335,7 +1335,7 @@ guards:
 ### 7.1 Guard Test Utilities (TypeScript)
 
 ```typescript
-// @clawdstrike/guard-sdk/testing
+// @backbay/guard-sdk/testing
 
 import { Guard, PolicyEvent, Policy, GuardResult, GuardContext } from '../types';
 
@@ -1490,7 +1490,7 @@ export function networkEgressEvent(host: string, port: number = 443): PolicyEven
 // tests/acme-secret-guard.test.ts
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { GuardTestHarness, fileWriteEvent } from '@clawdstrike/guard-sdk/testing';
+import { GuardTestHarness, fileWriteEvent } from '@backbay/guard-sdk/testing';
 import { AcmeSecretGuard } from '../src/guard';
 
 describe('AcmeSecretGuard', () => {
@@ -1536,7 +1536,7 @@ describe('AcmeSecretGuard', () => {
 
 ```bash
 # 1. Validate plugin manifest
-npx @clawdstrike/cli plugin validate
+npx @backbay/cli plugin validate
 
 # 2. Build the plugin
 npm run build
@@ -1545,13 +1545,13 @@ npm run build
 npm test
 
 # 4. Build WASM target (optional, for sandboxed execution)
-npx @clawdstrike/cli plugin build-wasm
+npx @backbay/cli plugin build-wasm
 
 # 5. Publish to npm
 npm publish --access public
 
 # 6. Submit for verification (optional)
-npx @clawdstrike/cli plugin submit-verification
+npx @backbay/cli plugin submit-verification
 ```
 
 ### 8.2 crates.io Publishing
@@ -1602,13 +1602,13 @@ jobs:
         run: npm ci
 
       - name: Validate manifest
-        run: npx @clawdstrike/cli plugin validate
+        run: npx @backbay/cli plugin validate
 
       - name: Run tests
         run: npm test
 
       - name: Build WASM
-        run: npx @clawdstrike/cli plugin build-wasm
+        run: npx @backbay/cli plugin build-wasm
 
   security-scan:
     needs: validate
@@ -1617,7 +1617,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run security scan
-        run: npx @clawdstrike/cli plugin security-scan
+        run: npx @backbay/cli plugin security-scan
 
       - name: Upload scan results
         uses: actions/upload-artifact@v4

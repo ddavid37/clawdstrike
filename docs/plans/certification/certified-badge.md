@@ -334,7 +334,7 @@ User clicks badge
 
 ```typescript
 // SDK usage
-import { ClawdstrikeVerifier } from '@clawdstrike/verify';
+import { ClawdstrikeVerifier } from '@backbay/verify';
 
 const verifier = new ClawdstrikeVerifier({
   trustedRoots: ['https://cert.openclaw.dev/.well-known/ca.json'],
@@ -410,7 +410,7 @@ Overall: VALID
 #### React Component
 
 ```jsx
-import { OpenClawBadge } from '@clawdstrike/react';
+import { OpenClawBadge } from '@backbay/react';
 
 function AgentProfile({ agentId }) {
   return (

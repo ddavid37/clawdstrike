@@ -20,10 +20,10 @@ The Clawdstrike Guard SDK provides everything developers need to build, test, an
 
 | Component | TypeScript | Rust | Description |
 |-----------|------------|------|-------------|
-| Core types | `@clawdstrike/guard-sdk` | `clawdstrike-guard-sdk` | Guard interfaces, event types |
-| Testing utilities | `@clawdstrike/guard-sdk/testing` | `clawdstrike-guard-sdk-test` | Test harnesses, mocks |
-| CLI tools | `@clawdstrike/cli` | `cargo-clawdstrike` | Project scaffolding, validation |
-| Build tools | `@clawdstrike/build` | (built-in) | WASM compilation, bundling |
+| Core types | `@backbay/guard-sdk` | `clawdstrike-guard-sdk` | Guard interfaces, event types |
+| Testing utilities | `@backbay/guard-sdk/testing` | `clawdstrike-guard-sdk-test` | Test harnesses, mocks |
+| CLI tools | `@backbay/cli` | `cargo-clawdstrike` | Project scaffolding, validation |
+| Build tools | `@backbay/build` | (built-in) | WASM compilation, bundling |
 
 ### 1.2 Features
 
@@ -60,7 +60,7 @@ Before building custom guards, ensure you have:
 
 ```bash
 # Install CLI globally
-npm install -g @clawdstrike/cli
+npm install -g @backbay/cli
 
 # Verify installation
 hush --version
@@ -150,7 +150,7 @@ import {
   Policy,
   EventType,
   Severity,
-} from '@clawdstrike/guard-sdk';
+} from '@backbay/guard-sdk';
 
 import { MyGuardConfig, validateConfig } from './config';
 
@@ -355,7 +355,7 @@ export function getConfigSchema(): Record<string, unknown> {
 ```typescript
 // src/index.ts
 
-import { PluginDefinition } from '@clawdstrike/guard-sdk';
+import { PluginDefinition } from '@backbay/guard-sdk';
 import { MyCustomGuard } from './guard';
 import { getConfigSchema, MyGuardConfig } from './config';
 
@@ -704,7 +704,7 @@ import {
   createTestEvent,
   fileWriteEvent,
   patchApplyEvent,
-} from '@clawdstrike/guard-sdk/testing';
+} from '@backbay/guard-sdk/testing';
 
 import { MyCustomGuard } from '../src/guard';
 
@@ -881,7 +881,7 @@ async fn test_disabled_guard() {
 // tests/integration.test.ts
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { PolicyEngine } from '@clawdstrike/openclaw';
+import { PolicyEngine } from '@backbay/openclaw';
 import { MyCustomGuard } from '../src/guard';
 
 describe('Integration with PolicyEngine', () => {

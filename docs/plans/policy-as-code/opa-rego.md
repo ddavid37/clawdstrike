@@ -521,7 +521,7 @@ false
 ## TypeScript API
 
 ```typescript
-import { PolicyEngine, RegoPolicy, OpaBundle } from '@clawdstrike/openclaw';
+import { PolicyEngine, RegoPolicy, OpaBundle } from '@backbay/openclaw';
 
 // Load hybrid policy (YAML + Rego)
 const engine = new PolicyEngine({

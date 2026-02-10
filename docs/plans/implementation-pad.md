@@ -44,8 +44,8 @@ Tier 3: Enterprise readiness (close deals)
 - `crates/libs/hush-wasm`: WASM bindings (verification-oriented today).
 
 ### TypeScript (packages)
-- `packages/adapters/clawdstrike-openclaw` (`@clawdstrike/openclaw`): OpenClaw plugin + TS policy engine + TS CLI (`clawdstrike policy lint|show|test|diff`, `clawdstrike audit ...`).
-- `packages/sdk/hush-ts` (`@clawdstrike/sdk`): hashing/receipts utilities (not the policy engine).
+- `packages/adapters/clawdstrike-openclaw` (`@backbay/openclaw`): OpenClaw plugin + TS policy engine + TS CLI (`clawdstrike policy lint|show|test|diff`, `clawdstrike audit ...`).
+- `packages/sdk/hush-ts` (`@backbay/sdk`): hashing/receipts utilities (not the policy engine).
 
 ### Known mismatches / gaps to resolve early
 - Policy schema mismatch:
@@ -72,10 +72,10 @@ Tier 3: Enterprise readiness (close deals)
 - Rust CLI (PaC baseline):
   - Added policy-as-code commands: `clawdstrike policy lint|test|eval|simulate|diff|impact|version` (see `docs/src/reference/api/cli.md`).
 - TypeScript adapter foundation:
-  - Added `packages/adapters/clawdstrike-adapter-core/` (`@clawdstrike/adapter-core`) with `BaseToolInterceptor`, `DefaultOutputSanitizer`, `PolicyEventFactory`, and `InMemoryAuditLogger` + unit tests.
+  - Added `packages/adapters/clawdstrike-adapter-core/` (`@backbay/adapter-core`) with `BaseToolInterceptor`, `DefaultOutputSanitizer`, `PolicyEventFactory`, and `InMemoryAuditLogger` + unit tests.
 - Agent framework integrations (P0):
-  - `@clawdstrike/vercel-ai`: middleware, tool/model wrappers, streaming support, optional prompt-security (tests included): `packages/adapters/clawdstrike-vercel-ai/`.
-  - `@clawdstrike/langchain`: tool wrappers + callback handler + LangGraph nodes (tests included): `packages/adapters/clawdstrike-langchain/`.
+  - `@backbay/vercel-ai`: middleware, tool/model wrappers, streaming support, optional prompt-security (tests included): `packages/adapters/clawdstrike-vercel-ai/`.
+  - `@backbay/langchain`: tool wrappers + callback handler + LangGraph nodes (tests included): `packages/adapters/clawdstrike-langchain/`.
 - Prompt Security (P1 baseline + wiring):
   - Watermark payload bytes are RFC 8785 (JCS) canonical in Rust + TS (portable signatures/fingerprints).
   - Jailbreak detection: added session TTL + half-life decay + optional persistence hooks; linear model weights are configurable.
@@ -164,7 +164,7 @@ Fill these in with real people/handles once assigned; keep one DRI per workstrea
 
 ### M1: P0 Foundation shipped (Custom Guards + Agent Frameworks + Policy-as-Code)
 - [x] Custom guards plugin system (dev-mode first; production hardening later). *(Manifest validation + Rust wasm runtime + TS wasm bridge path landed; hardening continues.)*
-- [x] `@clawdstrike/adapter-core` + at least 2 “real” integrations (Vercel AI + LangChain). (See `packages/adapters/clawdstrike-adapter-core/`, `packages/adapters/clawdstrike-vercel-ai/`, `packages/adapters/clawdstrike-langchain/`.)
+- [x] `@backbay/adapter-core` + at least 2 “real” integrations (Vercel AI + LangChain). (See `packages/adapters/clawdstrike-adapter-core/`, `packages/adapters/clawdstrike-vercel-ai/`, `packages/adapters/clawdstrike-langchain/`.)
 - [x] Policy-as-code CLI: lint + test (YAML test suite) + diff + simulate. (See `crates/services/hush-cli/src/policy_lint.rs`, `crates/services/hush-cli/src/policy_test.rs`, `crates/services/hush-cli/src/policy_pac.rs`, `crates/services/hush-cli/src/policy_diff.rs`.)
 
 ### M2: P1 Differentiation shipped (Prompt Security + Multi-Agent primitives)
@@ -243,7 +243,7 @@ Primary specs: `docs/plans/custom-guards/*`
 Primary specs: `docs/plans/agent-frameworks/*`
 
 ### B0. Adapter core (shared)
-- [x] Create `@clawdstrike/adapter-core` package (interfaces + base implementations): `packages/adapters/clawdstrike-adapter-core/`.
+- [x] Create `@backbay/adapter-core` package (interfaces + base implementations): `packages/adapters/clawdstrike-adapter-core/`.
 - [x] Define the “interception contract” (captured in exported types + base interceptor):
   - Pre-call: build `PolicyEvent` + evaluate + block/warn/allow.
   - Post-call: sanitize output + audit + optional block persistence.
@@ -252,18 +252,18 @@ Primary specs: `docs/plans/agent-frameworks/*`
 - [x] Provide “default” implementations: tool interceptor, output sanitizer, event factory, in-memory audit logger.
 
 ### B1. Policy engine packaging strategy (TS)
-- [ ] Decide: keep policy engine in `@clawdstrike/openclaw` and depend on it, OR extract to `@clawdstrike/policy` for reuse.
+- [ ] Decide: keep policy engine in `@backbay/openclaw` and depend on it, OR extract to `@backbay/policy` for reuse.
 - [ ] Align policy schema with the canonical decision from M0 (migration shim if needed).
 - [x] Bring built-in guard parity with Rust where feasible (mcp_tool, prompt_injection, etc.). *(Canonical-first path + prompt/jailbreak parity + permissive/default alignment in hush-ts.)*
 
 ### B2. Vercel AI SDK integration (P0)
-- [x] Create `@clawdstrike/vercel-ai` with middleware + streaming support. (See `packages/adapters/clawdstrike-vercel-ai/`.)
+- [x] Create `@backbay/vercel-ai` with middleware + streaming support. (See `packages/adapters/clawdstrike-vercel-ai/`.)
 - [x] Tool wrapping (pre/post) + model wrapping (bootstrap + prompt injection defenses). (See `packages/adapters/clawdstrike-vercel-ai/src/middleware.ts`.)
 - [x] React helpers (`useSecureChat`, etc.) if they don’t materially expand scope. (See `packages/adapters/clawdstrike-vercel-ai/src/react/use-secure-chat.ts`.)
 - [x] Examples + integration tests with mocked model/tools. (See `packages/adapters/clawdstrike-vercel-ai/src/*.test.ts` and `packages/adapters/clawdstrike-vercel-ai/src/react/use-secure-chat.test.tsx`.)
 
 ### B3. LangChain / LangGraph integration (P0)
-- [x] Create `@clawdstrike/langchain` using callbacks + tool wrappers. (See `packages/adapters/clawdstrike-langchain/`.)
+- [x] Create `@backbay/langchain` using callbacks + tool wrappers. (See `packages/adapters/clawdstrike-langchain/`.)
 - [x] LangGraph nodes: “security checkpoint node”, tool-node wrapper, conditional edges. (See `packages/adapters/clawdstrike-langchain/src/langgraph.ts`.)
 - [x] Ensure correct trace/correlation propagation for audit. (See `packages/adapters/clawdstrike-langchain/src/callback-handler.ts`.)
 
@@ -272,9 +272,9 @@ Primary specs: `docs/plans/agent-frameworks/*`
 - [x] Provide examples (one TS sample app, one server-side handler). (See `examples/generic-adapter/sample-app.ts` and `examples/generic-adapter/server-handler.ts`.)
 
 ### B5. P1/P2 frameworks (later)
-- [ ] P1: `@clawdstrike/crewai` (Python bridge strategy TBD).
-- [ ] P1: `@clawdstrike/autogpt` (higher complexity).
-- [ ] P2: `@clawdstrike/autogen`.
+- [ ] P1: `@backbay/crewai` (Python bridge strategy TBD).
+- [ ] P1: `@backbay/autogpt` (higher complexity).
+- [ ] P2: `@backbay/autogen`.
 
 ---
 

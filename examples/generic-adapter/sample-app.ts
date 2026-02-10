@@ -1,5 +1,5 @@
-import { createHushCliEngine } from '@clawdstrike/hush-cli-engine';
-import { GenericToolBoundary, wrapGenericToolDispatcher } from '@clawdstrike/adapter-core';
+import { createHushCliEngine } from '@backbay/hush-cli-engine';
+import { GenericToolBoundary, wrapGenericToolDispatcher } from '@backbay/adapter-core';
 
 type ToolInput = Record<string, unknown>;
 type ToolOutput = { toolName: string; input: ToolInput; runId: string };

@@ -10,7 +10,7 @@ This document outlines the strategy for integrating Clawdstrike's policy engine 
 
 | Component | Minimum Version | Tested Up To |
 |-----------|----------------|--------------|
-| **@clawdstrike/openclaw** | 0.1.0 | 0.x |
+| **@backbay/openclaw** | 0.1.0 | 0.x |
 | **Node.js** | 18.0.0 | 22.x |
 | **TypeScript** | 5.0.0 | 5.x |
 

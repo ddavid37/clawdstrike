@@ -42,11 +42,11 @@ clawdstrike daemon start
 ## TypeScript SDK
 
 ```bash
-npm install @clawdstrike/sdk
+npm install @backbay/sdk
 ```
 
 ```typescript
-import { Clawdstrike } from "@clawdstrike/sdk";
+import { Clawdstrike } from "@backbay/sdk";
 
 const cs = Clawdstrike.withDefaults("strict");
 const decision = await cs.checkFile("~/.ssh/id_rsa", "read");

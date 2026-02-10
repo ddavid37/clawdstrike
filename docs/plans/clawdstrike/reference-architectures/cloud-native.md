@@ -695,7 +695,7 @@ spec:
 ```typescript
 // lambda/handler.ts
 import { APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda';
-import { PolicyEngine, loadPolicy } from '@clawdstrike/openclaw';
+import { PolicyEngine, loadPolicy } from '@backbay/openclaw';
 import {
   SecretsManagerClient,
   GetSecretValueCommand
@@ -863,7 +863,7 @@ functions:
 package:
   patterns:
     - '!node_modules/**'
-    - 'node_modules/@clawdstrike/**'
+    - 'node_modules/@backbay/**'
     - 'dist/**'
 
 layers:

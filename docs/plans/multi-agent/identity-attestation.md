@@ -189,7 +189,7 @@ Overwhelms legitimate agents in consensus
 ### TypeScript Interface
 
 ```typescript
-import { KeyPair, PublicKey, PrivateKey, Signature } from '@clawdstrike/crypto';
+import { KeyPair, PublicKey, PrivateKey, Signature } from '@backbay/crypto';
 
 /**
  * Agent identity information

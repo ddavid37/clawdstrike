@@ -12,9 +12,9 @@ This document details the architecture for integrating Clawdstrike's security en
 |---------|----------------|--------------|-------|
 | **crewai** (Python) | 0.28.0 | 0.80.x | Core CrewAI framework |
 | **crewai-tools** (Python) | 0.4.0 | 0.12.x | Tool definitions |
-| **@clawdstrike/crewai** (TypeScript) | 1.0.0 | 1.x | TypeScript bindings for Node.js agents |
+| **@backbay/crewai** (TypeScript) | 1.0.0 | 1.x | TypeScript bindings for Node.js agents |
 
-> **Note**: CrewAI is primarily a Python framework. The TypeScript interfaces shown in this document represent the `@clawdstrike/crewai` package, which provides TypeScript bindings for use with Node.js-based CrewAI implementations or for type-safe configuration. For pure Python usage, see the Python SDK documentation.
+> **Note**: CrewAI is primarily a Python framework. The TypeScript interfaces shown in this document represent the `@backbay/crewai` package, which provides TypeScript bindings for use with Node.js-based CrewAI implementations or for type-safe configuration. For pure Python usage, see the Python SDK documentation.
 
 ## Problem Statement
 
@@ -127,7 +127,7 @@ This document details the architecture for integrating Clawdstrike's security en
 ```typescript
 // Core integration layer
 ┌─────────────────────────────────────────────────────────────────┐
-│                    @clawdstrike/crewai                          │
+│                    @backbay/crewai                          │
 ├─────────────────────────────────────────────────────────────────┤
 │  ClawdstrikeCrewCallback                                        │
 │  ├── onCrewStart(crew) -> SecurityContext                       │
@@ -168,7 +168,7 @@ This document details the architecture for integrating Clawdstrike's security en
 
 ```typescript
 import { Agent, Crew, Task, Tool, Process } from 'crewai';
-import { PolicyEngine, Decision, Policy, ClawdstrikeConfig } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision, Policy, ClawdstrikeConfig } from '@backbay/openclaw';
 
 /**
  * Configuration for CrewAI integration
@@ -357,7 +357,7 @@ export interface SecureCrewResult {
 
 ```typescript
 import { CrewCallback, Agent, Task, Tool, Crew } from 'crewai';
-import { PolicyEngine, Decision, PolicyEvent } from '@clawdstrike/openclaw';
+import { PolicyEngine, Decision, PolicyEvent } from '@backbay/openclaw';
 
 /**
  * Clawdstrike callback handler for CrewAI
@@ -897,7 +897,7 @@ Always verify actions against these policies before proceeding.
 
 ```typescript
 import { Agent, Tool } from 'crewai';
-import { PolicyEngine, Policy } from '@clawdstrike/openclaw';
+import { PolicyEngine, Policy } from '@backbay/openclaw';
 
 /**
  * Factory for creating security-wrapped CrewAI agents
@@ -1123,7 +1123,7 @@ SECURITY CONSTRAINTS:
 
 ```typescript
 import { Agent, Crew, Task, Process } from 'crewai';
-import { ClawdstrikeCrewCallback, SecureAgentFactory } from '@clawdstrike/crewai';
+import { ClawdstrikeCrewCallback, SecureAgentFactory } from '@backbay/crewai';
 
 // Create security configuration
 const securityConfig: CrewAIClawdstrikeConfig = {
@@ -1212,7 +1212,7 @@ console.log(`Tools used: ${audit.toolUsage.length}`);
 
 ```typescript
 import { Crew, Process } from 'crewai';
-import { ClawdstrikeCrewCallback } from '@clawdstrike/crewai';
+import { ClawdstrikeCrewCallback } from '@backbay/crewai';
 
 const securityConfig: CrewAIClawdstrikeConfig = {
   globalPolicy: 'clawdstrike:ai-agent',
@@ -1336,7 +1336,7 @@ on_violation: cancel
 
 ```typescript
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ClawdstrikeCrewCallback, SecureAgentFactory } from '@clawdstrike/crewai';
+import { ClawdstrikeCrewCallback, SecureAgentFactory } from '@backbay/crewai';
 
 describe('ClawdstrikeCrewCallback', () => {
   let callback: ClawdstrikeCrewCallback;
@@ -1424,7 +1424,7 @@ describe('SecureAgentFactory', () => {
 ```typescript
 import { describe, it, expect } from 'vitest';
 import { Agent, Crew, Task, Process } from 'crewai';
-import { ClawdstrikeCrewCallback } from '@clawdstrike/crewai';
+import { ClawdstrikeCrewCallback } from '@backbay/crewai';
 
 describe('CrewAI Integration', () => {
   it('should enforce policy across full crew execution', async () => {

@@ -72,7 +72,7 @@ Initial alpha release. APIs and import paths will change before 1.0.
 - SQLite audit ledger with optional at-rest encryption for metadata
 - Certification badge PNG rendering (`format=png`, `size=1x|2x`)
 
-#### TypeScript SDK (`@clawdstrike/sdk`, `hush-ts`)
+#### TypeScript SDK (`@backbay/sdk`, `hush-ts`)
 
 - Crypto: `sha256`, `keccak256`, Ed25519 signing/verification
 - Canonical JSON (RFC 8785): `canonicalize`, `canonicalHash`
@@ -84,20 +84,20 @@ Initial alpha release. APIs and import paths will change before 1.0.
 
 #### Framework Adapters
 
-- `@clawdstrike/adapter-core` - Framework-agnostic primitives (PolicyEventFactory, SecurityContext, BaseToolInterceptor)
-- `@clawdstrike/hush-cli-engine` - Node.js bridge to Rust CLI for policy evaluation
-- `@clawdstrike/hushd-engine` - Node.js engine that evaluates events via `hushd` (`POST /api/v1/eval`)
-- `@clawdstrike/vercel-ai` - Middleware and stream guarding for Vercel AI SDK
-- `@clawdstrike/langchain` - Tool wrappers and callback handlers for LangChain
+- `@backbay/adapter-core` - Framework-agnostic primitives (PolicyEventFactory, SecurityContext, BaseToolInterceptor)
+- `@backbay/hush-cli-engine` - Node.js bridge to Rust CLI for policy evaluation
+- `@backbay/hushd-engine` - Node.js engine that evaluates events via `hushd` (`POST /api/v1/eval`)
+- `@backbay/vercel-ai` - Middleware and stream guarding for Vercel AI SDK
+- `@backbay/langchain` - Tool wrappers and callback handlers for LangChain
 
 ### Changed
 
 - Canonical-first policy handling across SDKs: canonical `version: "1.1.0"/"1.2.0"` is primary, with legacy `clawdstrike-v1.0` accepted via translation and deprecation warning.
 - WASM plugin runtime now executes via Rust Wasmtime path with capability checks and resource ceilings; TS `executionMode: wasm` uses the CLI bridge path instead of a stub failure.
 - `hushd` auth pepper is now instance-bound (resolved at store creation) to eliminate global env race conditions in parallel test/runtime paths.
-- Local TS file-dependency workflows are now clean-install safe via `@clawdstrike/adapter-core` `prepare` build and CI smoke coverage.
+- Local TS file-dependency workflows are now clean-install safe via `@backbay/adapter-core` `prepare` build and CI smoke coverage.
 
-#### OpenClaw Integration (`@clawdstrike/clawdstrike-security`)
+#### OpenClaw Integration (`@backbay/clawdstrike-security`)
 
 - OpenClaw plugin with `policy_check` tool for preflight security checks
 - CLI commands via `openclaw clawdstrike status|check`
@@ -111,7 +111,7 @@ Initial alpha release. APIs and import paths will change before 1.0.
 - **NetworkIrm**: Intercept TCP/UDP connect, DNS resolve, listen operations
 - **ExecutionIrm**: Intercept command execution from sandboxed modules
 
-#### WebAssembly Bindings (`@clawdstrike/wasm`)
+#### WebAssembly Bindings (`@backbay/wasm`)
 
 - Browser and Node.js compatible WASM module
 - SHA-256 and Keccak-256 hashing

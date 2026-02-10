@@ -1,5 +1,5 @@
 /**
- * @clawdstrike/openclaw - Guards Module
+ * @backbay/openclaw - Guards Module
  *
  * Security guards for policy enforcement.
  */

@@ -1,5 +1,5 @@
 /**
- * @clawdstrike/openclaw - Guard Tests
+ * @backbay/openclaw - Guard Tests
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';

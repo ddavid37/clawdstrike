@@ -174,7 +174,7 @@ clawdstrike/
 │
 ├── sdk/                         #   Client libraries
 │   ├── rust/                    #   Rust SDK (re-export of guards crate)
-│   ├── typescript/              #   @clawdstrike/sdk (TypeScript)
+│   ├── typescript/              #   @backbay/sdk (TypeScript)
 │   │   ├── package.json
 │   │   └── src/
 │   ├── python/                  #   clawdstrike (Python)
@@ -185,11 +185,11 @@ clawdstrike/
 │       └── src/
 │
 ├── adapters/                    #   Framework-specific adapters
-│   ├── claude-code/             #   @clawdstrike/claude-code
-│   ├── vercel-ai/               #   @clawdstrike/vercel-ai
-│   ├── langchain/               #   @clawdstrike/langchain
-│   ├── codex/                   #   @clawdstrike/codex
-│   └── opencode/                #   @clawdstrike/opencode
+│   ├── claude-code/             #   @backbay/claude-code
+│   ├── vercel-ai/               #   @backbay/vercel-ai
+│   ├── langchain/               #   @backbay/langchain
+│   ├── codex/                   #   @backbay/codex
+│   └── opencode/                #   @backbay/opencode
 │
 ├── rulesets/                    #   Community policy templates
 │   ├── permissive.yaml
@@ -490,9 +490,9 @@ docs/src/
 
 **Multi-language release coordination:**
 - Rust crates: `cargo publish` to crates.io
-- TypeScript: `npm publish` to npmjs.com as `@clawdstrike/*`
+- TypeScript: `npm publish` to npmjs.com as `@backbay/*`
 - Python: `uv publish` / `twine upload` to PyPI as `clawdstrike`
-- WASM: Published alongside TypeScript as `@clawdstrike/wasm`
+- WASM: Published alongside TypeScript as `@backbay/wasm`
 - Helm chart: Published to OCI registry (GitHub Container Registry)
 - Desktop: GitHub Releases with platform-specific binaries (macOS, Linux, Windows)
 
@@ -743,7 +743,7 @@ ClawdStrike's competitive moat has multiple layers:
 |-------|-------------------|---------------|---------|
 | 1 | **Rulesets** | YAML, security knowledge | `rulesets/community/prevent-ssh-key-exfil.yaml` |
 | 2 | **Documentation** | English, technical writing | Improve quickstart, add deployment guide |
-| 3 | **Framework adapters** | TypeScript/Python | `@clawdstrike/autogen`, `@clawdstrike/crewai` |
+| 3 | **Framework adapters** | TypeScript/Python | `@backbay/autogen`, `@backbay/crewai` |
 | 4 | **Compliance templates** | Regulatory knowledge | EU AI Act Article 12 mapping template |
 | 5 | **Custom guards** | Rust | New guard implementing `Guard` or `AsyncGuard` trait |
 | 6 | **Transport adapters** | Rust/Python + networking | MQTT Spine transport, ZeroMQ transport |
@@ -912,7 +912,7 @@ Each challenge runs in a sandboxed environment with ClawdStrike deployed. Soluti
 |------|-------|----------|--------------|
 | GitHub public repo (transfer from private) | Core team | 1 day | Phase 3 |
 | crates.io publish (hush-core, clawdstrike, hushd, hush-cli) | Release engineer | 1 day | Public repo |
-| npm publish (@clawdstrike/sdk, adapters) | Release engineer | 1 day | Public repo |
+| npm publish (@backbay/sdk, adapters) | Release engineer | 1 day | Public repo |
 | PyPI publish (clawdstrike) | Release engineer | 1 day | Public repo |
 | Blog post: "Introducing ClawdStrike" | Comms | 1 day | All packages |
 | Hacker News, Reddit, CNCF Slack announcements | Comms | 1 day | Blog post |

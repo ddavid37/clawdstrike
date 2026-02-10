@@ -1,4 +1,4 @@
-# @clawdstrike/policy
+# @backbay/policy
 
 Canonical policy loader + engine for JavaScript/TypeScript.
 
@@ -11,7 +11,7 @@ This package parses the Clawdstrike policy YAML schema and evaluates canonical `
 ## Usage
 
 ```ts
-import { createPolicyEngineFromPolicy, loadPolicyFromFile } from "@clawdstrike/policy";
+import { createPolicyEngineFromPolicy, loadPolicyFromFile } from "@backbay/policy";
 
 const policy = loadPolicyFromFile("./policy.yaml", { resolve: true });
 const engine = createPolicyEngineFromPolicy(policy);
@@ -41,4 +41,4 @@ explicitly allowlisted hosts.
 
 The Rust implementation (`crates/libs/clawdstrike`) is the reference for schema and behavior. This JS engine
 aims to stay in lockstep with the canonical schema and decision semantics; when in doubt, prefer the Rust
-engine (or the `@clawdstrike/hushd-engine` adapter) for maximum parity.
+engine (or the `@backbay/hushd-engine` adapter) for maximum parity.
