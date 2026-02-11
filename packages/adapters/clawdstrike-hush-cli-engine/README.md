@@ -1,4 +1,4 @@
-# @backbay/hush-cli-engine
+# @clawdstrike/engine-local
 
 Policy engine adapter that shells out to the `hush` CLI for evaluation.
 
@@ -11,8 +11,8 @@ This is useful when you want TypeScript tool-boundary enforcement but prefer the
 ## Usage
 
 ```ts
-import { createHushCliEngine } from "@backbay/hush-cli-engine";
-import type { PolicyEvent } from "@backbay/adapter-core";
+import { createHushCliEngine } from "@clawdstrike/engine-local";
+import type { PolicyEvent } from "@clawdstrike/adapter-core";
 
 const engine = createHushCliEngine({
   policyRef: "default",
