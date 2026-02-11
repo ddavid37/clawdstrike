@@ -64,6 +64,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Validate version consistency
         run: scripts/release-preflight.sh "${{ needs.resolve-version.outputs.version }}"
 
