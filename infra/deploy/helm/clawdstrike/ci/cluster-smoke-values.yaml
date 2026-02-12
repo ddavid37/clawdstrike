@@ -1,4 +1,10 @@
-# Minimal values for CI chart testing (small resources, no persistence)
+# Values for PR merge-candidate cluster smoke validation.
+global:
+  imagePullSecrets:
+    - name: ghcr-pull
+  nodeSelector:
+    kubernetes.io/arch: arm64
+
 nats:
   replicas: 1
   jetstream:
@@ -8,43 +14,44 @@ nats:
 spine:
   checkpointer:
     logSeedHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    streamReplicas: 1
     resources:
       requests:
-        cpu: 10m
-        memory: 32Mi
+        cpu: 50m
+        memory: 64Mi
       limits:
-        cpu: 100m
-        memory: 128Mi
+        cpu: 300m
+        memory: 256Mi
   witness:
     seedHex: "f1e1d1c1b1a191817161514131211101f0e0d0c0b0a090807060504030201000"
     resources:
       requests:
-        cpu: 10m
-        memory: 32Mi
+        cpu: 50m
+        memory: 64Mi
       limits:
-        cpu: 100m
-        memory: 128Mi
+        cpu: 300m
+        memory: 256Mi
   proofsApi:
     resources:
       requests:
-        cpu: 10m
-        memory: 32Mi
+        cpu: 50m
+        memory: 64Mi
       limits:
-        cpu: 100m
-        memory: 128Mi
+        cpu: 300m
+        memory: 256Mi
 
 hushd:
-  persistence:
-    enabled: false
   auth:
+    enabled: false
+  persistence:
     enabled: false
   resources:
     requests:
-      cpu: 10m
-      memory: 32Mi
+      cpu: 50m
+      memory: 64Mi
     limits:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 300m
+      memory: 256Mi
 
 bridges:
   tetragon:
