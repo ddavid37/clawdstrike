@@ -1,10 +1,10 @@
-# SDR Desktop
+# Clawdstrike SDR
 
-A Tauri 2.0 desktop application for **Swarm Detection Response (SDR)** - a companion to the clawdstrike-sdr security framework.
+A Tauri 2.0 desktop application for the **Clawdstrike** security platform.
 
 ## Overview
 
-SDR Desktop provides a visual interface for security engineers and developers to monitor, debug, and configure AI agent security policies.
+Clawdstrike SDR provides a visual interface for security engineers and developers to monitor, debug, and configure AI agent security policies.
 
 ## Features
 
@@ -17,7 +17,7 @@ SDR Desktop provides a visual interface for security engineers and developers to
 | **Policy Tester** | Simulate policy checks against the active policy |
 | **Swarm Map** | 3D visualization shell for agent topology (daemon agent/delegation APIs are not yet exposed) |
 | **OpenClaw Fleet** | OpenClaw Gateway control plane for nodes, presence, approvals, and device pairing |
-| **Forensics River** | Live/replay OpenClaw session telemetry (work-in-progress) |
+| **Forensics River** | Live/replay OpenClaw session telemetry with integrated Policy Workbench (editor + tester) |
 | **Marketplace** | Discover and install community policies |
 | **Workflows** | Workflow management UI (execution/verification remains backend-dependent) |
 | **Settings** | Daemon connection and preferences |
@@ -70,6 +70,23 @@ npm run build
 npm run tauri:build
 ```
 
+### Unsigned macOS Artifacts (CI)
+
+Manual workflow for unsigned desktop installers:
+
+- Workflow: `.github/workflows/desktop-release.yml`
+- Trigger: GitHub Actions -> **Desktop Artifacts (Unsigned)** -> Run workflow
+- Outputs:
+  - `.dmg`
+  - `.app.tar.gz`
+  - `SHA256SUMS`
+
+CLI trigger example:
+
+```bash
+gh workflow run "Desktop Artifacts (Unsigned)" -f ref=main
+```
+
 ### Type Check
 
 ```bash
@@ -105,7 +122,7 @@ openclaw config set --json gateway.controlUi.allowedOrigins \
   '["http://localhost:1420","tauri://localhost"]'
 openclaw gateway restart
 
-# Start the SDR Desktop app (Tauri)
+# Start the Clawdstrike SDR app (Tauri)
 npm run tauri:dev
 ```
 
@@ -147,11 +164,28 @@ apps/desktop/
 
 ### Daemon Connection
 
-By default, SDR Desktop connects to `http://localhost:9876`. Configure this in Settings or use the environment variable:
+By default, Clawdstrike SDR connects to `http://localhost:9876`. Configure this in Settings or use the environment variable:
 
 ```bash
 VITE_HUSHD_URL=http://localhost:9876
 ```
+
+Policy Workbench rollout flag (enabled by default):
+
+```bash
+# disable the integrated Forensics River policy editor/tester panel
+VITE_POLICY_WORKBENCH=0
+```
+
+Local dev/session override (persists in browser storage):
+
+```js
+localStorage.setItem("sdr:feature:policy-workbench", "0"); // force disable
+localStorage.setItem("sdr:feature:policy-workbench", "1"); // force enable
+localStorage.removeItem("sdr:feature:policy-workbench");   // fall back to env/default
+```
+
+Rollout/rollback guide: `../../docs/ops/policy-workbench-rollout.md`
 
 ## API Integration
 
@@ -159,13 +193,15 @@ The desktop app communicates with the hushd daemon via REST API:
 
 - `GET /health` - Health check
 - `GET /api/v1/policy` - Fetch current policy
+- `POST /api/v1/policy/validate` - Validate draft policy YAML
+- `PUT /api/v1/policy` - Save/activate updated policy YAML
 - `POST /api/v1/check` - Check action against policy
+- `POST /api/v1/eval` - Evaluate canonical `PolicyEvent`
 - `GET /api/v1/audit` - Query audit log
 - `GET /api/v1/events` - SSE event stream
 
 Current daemon API does **not** expose:
 
-- `POST /api/v1/policy/validate`
 - `GET /api/v1/agents`
 - `GET /api/v1/delegations`
 

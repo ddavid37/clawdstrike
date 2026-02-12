@@ -2,7 +2,8 @@
  * ShellLayout - Main application layout with navigation
  */
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, useBlocker, useLocation, useNavigate } from "react-router-dom";
+import type { BlockerFunction } from "react-router-dom";
 import { NavRail } from "./components/NavRail";
 import { CommandPalette } from "./components/CommandPalette";
 import { SOCBackground } from "./SOCBackground";
@@ -10,9 +11,14 @@ import { getPlugins } from "./plugins";
 import { useActiveApp, useSessionActions } from "./sessions";
 import { useShellShortcuts } from "./keyboard";
 import type { AppId } from "./plugins/types";
+import { shouldBlockDirtyPolicyDraftExit } from "./policyDraftGuard";
 import { dispatchCyberNexusCommand } from "@/features/cyber-nexus/events";
 import { SHELL_OPEN_COMMAND_PALETTE_EVENT } from "./events";
 import { DockProvider, DockSystem } from "./dock";
+import {
+  POLICY_WORKBENCH_DIRTY_EVENT,
+  type PolicyWorkbenchDirtyEventDetail,
+} from "@/features/forensics/policy-workbench/events";
 
 export function ShellLayout() {
   const navigate = useNavigate();
@@ -37,11 +43,49 @@ export function ShellLayout() {
   const { createSession, setActiveApp } = useSessionActions();
 
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [hasPolicyWorkbenchDirtyDraft, setHasPolicyWorkbenchDirtyDraft] = useState(false);
+  const unsavedPolicyWarning = "You have unsaved policy changes. Leave Forensics River anyway?";
   useEffect(() => {
     const open = () => setIsCommandPaletteOpen(true);
     window.addEventListener(SHELL_OPEN_COMMAND_PALETTE_EVENT, open);
     return () => window.removeEventListener(SHELL_OPEN_COMMAND_PALETTE_EVENT, open);
   }, []);
+
+  useEffect(() => {
+    const onDirtyEvent = (event: Event) => {
+      const custom = event as CustomEvent<PolicyWorkbenchDirtyEventDetail>;
+      setHasPolicyWorkbenchDirtyDraft(Boolean(custom.detail?.dirty));
+    };
+
+    window.addEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirtyEvent as (event: Event) => void);
+    return () =>
+      window.removeEventListener(
+        POLICY_WORKBENCH_DIRTY_EVENT,
+        onDirtyEvent as (event: Event) => void
+      );
+  }, []);
+
+  const shouldBlockForDirtyPolicyExit = useCallback<BlockerFunction>(
+    ({ currentLocation, nextLocation }) => {
+      return shouldBlockDirtyPolicyDraftExit({
+        hasDirtyDraft: hasPolicyWorkbenchDirtyDraft,
+        currentPathname: currentLocation.pathname,
+        nextPathname: nextLocation.pathname,
+      });
+    },
+    [hasPolicyWorkbenchDirtyDraft]
+  );
+  const blocker = useBlocker(shouldBlockForDirtyPolicyExit);
+
+  useEffect(() => {
+    if (blocker.state !== "blocked") return;
+    const proceed = globalThis.confirm?.(unsavedPolicyWarning);
+    if (proceed) {
+      blocker.proceed();
+      return;
+    }
+    blocker.reset();
+  }, [blocker, unsavedPolicyWarning]);
 
   const showAmbientBackground = useMemo(() => {
     const appId = location.pathname.split("/").filter(Boolean)[0] ?? "";
@@ -199,12 +243,15 @@ export function ShellLayout() {
     ];
   }, [activeAppId]);
 
+  useEffect(() => {
+    setActiveApp(activeAppId);
+  }, [activeAppId, setActiveApp]);
+
   const handleSelectApp = useCallback(
     (appId: AppId) => {
-      setActiveApp(appId);
       navigate(`/${appId}`);
     },
-    [navigate, setActiveApp]
+    [navigate]
   );
 
   const handleNewSession = useCallback(() => {

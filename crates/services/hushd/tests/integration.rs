@@ -122,6 +122,162 @@ async fn test_get_policy() {
     assert!(policy["name"].is_string());
     assert!(policy["yaml"].is_string());
     assert!(policy["policy_hash"].is_string());
+    assert!(policy["source"]["kind"].is_string());
+    assert!(policy["schema"]["current"].is_string());
+    assert!(policy["schema"]["supported"].is_array());
+}
+
+#[tokio::test]
+async fn test_validate_policy_valid_yaml() {
+    let (client, url) = test_setup();
+    let resp = client
+        .post(format!("{}/api/v1/policy/validate", url))
+        .json(&serde_json::json!({
+            "yaml": r#"
+version: "1.2.0"
+name: "validate-ok"
+guards:
+  forbidden_path:
+    enabled: true
+    patterns:
+      - "/etc/**"
+"#,
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+
+    let payload: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(payload["valid"], true);
+    assert!(payload["errors"].as_array().unwrap().is_empty());
+    assert_eq!(payload["normalized_version"], "1.2.0");
+}
+
+#[tokio::test]
+async fn test_validate_policy_invalid_yaml() {
+    let (client, url) = test_setup();
+    let resp = client
+        .post(format!("{}/api/v1/policy/validate", url))
+        .json(&serde_json::json!({
+            "yaml": r#"
+version: "9.9.9"
+name: "validate-bad"
+guards:
+  forbidden_path:
+    enabled: true
+    patterns:
+      - "/etc/**"
+"#,
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+
+    let payload: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(payload["valid"], false);
+    let errors = payload["errors"].as_array().unwrap();
+    assert!(!errors.is_empty());
+    assert!(
+        errors
+            .iter()
+            .any(|err| err["code"] == "policy_schema_unsupported"),
+        "expected schema version error"
+    );
+}
+
+#[tokio::test]
+async fn test_validate_policy_rejects_undeployable_custom_guard_policy() {
+    let (client, url) = test_setup();
+    let resp = client
+        .post(format!("{}/api/v1/policy/validate", url))
+        .json(&serde_json::json!({
+            "yaml": r#"
+version: "1.2.0"
+name: "validate-custom-guard"
+custom_guards:
+  - id: "acme.always_warn"
+    enabled: true
+    config: {}
+"#,
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+
+    let payload: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(payload["valid"], false);
+    assert_eq!(payload["normalized_version"], "1.2.0");
+    let errors = payload["errors"].as_array().unwrap();
+    assert!(
+        errors
+            .iter()
+            .any(|err| err["code"] == "policy_engine_invalid"),
+        "expected deployability/engine-build validation error"
+    );
+    assert!(
+        errors.iter().any(|err| err["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("CustomGuardRegistry")),
+        "expected fail-closed custom guard registry message"
+    );
+}
+
+#[tokio::test]
+async fn test_update_policy_returns_canonical_policy_hash() {
+    let (client, url) = test_setup();
+
+    let before = client
+        .get(format!("{}/api/v1/policy", url))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert!(before.status().is_success());
+    let before_json: serde_json::Value = before.json().await.unwrap();
+    let before_hash = before_json["policy_hash"].as_str().unwrap().to_string();
+    let before_yaml = before_json["yaml"].as_str().unwrap();
+
+    let updated_yaml = format!(
+        "# formatting-only update to verify canonical hash\n{}",
+        before_yaml
+    );
+    let update = client
+        .put(format!("{}/api/v1/policy", url))
+        .json(&serde_json::json!({ "yaml": updated_yaml }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert!(update.status().is_success());
+    let update_json: serde_json::Value = update.json().await.unwrap();
+    let update_hash = update_json["policy_hash"]
+        .as_str()
+        .expect("response policy_hash must be a string");
+
+    let after = client
+        .get(format!("{}/api/v1/policy", url))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert!(after.status().is_success());
+    let after_json: serde_json::Value = after.json().await.unwrap();
+    let after_hash = after_json["policy_hash"]
+        .as_str()
+        .expect("policy policy_hash must be a string");
+
+    assert_eq!(
+        update_hash, after_hash,
+        "update response should return the canonical active policy hash"
+    );
+    assert_eq!(
+        before_hash, after_hash,
+        "formatting-only YAML changes should not change canonical policy hash"
+    );
 }
 
 #[tokio::test]
@@ -158,6 +314,69 @@ async fn test_update_policy_bundle_rejects_policy_hash_mismatch() {
         .expect("Failed to connect to daemon");
 
     assert_eq!(resp.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn test_update_policy_bundle_returns_canonical_policy_hash() {
+    let (client, url) = test_setup();
+
+    let before = client
+        .get(format!("{}/api/v1/policy", url))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert!(before.status().is_success());
+    let before_json: serde_json::Value = before.json().await.unwrap();
+    let before_hash = before_json["policy_hash"]
+        .as_str()
+        .expect("policy_hash must be a string")
+        .to_string();
+    let policy_yaml = before_json["yaml"]
+        .as_str()
+        .expect("yaml must be a string")
+        .to_string();
+
+    let policy = clawdstrike::Policy::from_yaml(&policy_yaml).expect("default policy must parse");
+    let bundle = clawdstrike::PolicyBundle::new(policy).expect("bundle build must succeed");
+    let signer = hush_core::Keypair::generate();
+    let signed = clawdstrike::SignedPolicyBundle::sign_with_public_key(bundle, &signer)
+        .expect("bundle signing must succeed");
+
+    let update = client
+        .put(format!("{}/api/v1/policy/bundle", url))
+        .json(&signed)
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert!(update.status().is_success());
+    let update_json: serde_json::Value = update.json().await.unwrap();
+    let update_hash = update_json["policy_hash"]
+        .as_str()
+        .expect("response policy_hash must be a string");
+
+    let after = client
+        .get(format!("{}/api/v1/policy", url))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+    assert!(after.status().is_success());
+    let after_json: serde_json::Value = after.json().await.unwrap();
+    let after_hash = after_json["policy_hash"]
+        .as_str()
+        .expect("policy policy_hash must be a string");
+
+    assert!(
+        !update_hash.starts_with("0x"),
+        "bundle update response hash must be canonical non-prefixed hex"
+    );
+    assert_eq!(
+        update_hash, after_hash,
+        "bundle update response hash should match active policy hash"
+    );
+    assert_eq!(
+        update_hash, before_hash,
+        "re-applying equivalent policy bundle should preserve canonical policy hash"
+    );
 }
 
 #[tokio::test]
@@ -342,6 +561,110 @@ async fn test_eval_policy_event() {
     assert_eq!(json["decision"]["denied"], false);
     assert_eq!(json["decision"]["warn"], false);
     assert_eq!(json["report"]["overall"]["allowed"], true);
+}
+
+#[tokio::test]
+async fn test_eval_policy_event_regression_blocks_path_traversal_target() {
+    let (client, url) = test_setup();
+
+    let resp = client
+        .post(format!("{}/api/v1/eval", url))
+        .json(&serde_json::json!({
+            "event": {
+                "eventId": "evt-eval-regression-path-traversal",
+                "eventType": "file_read",
+                "timestamp": "2026-02-11T00:00:21Z",
+                "sessionId": "sess-eval-regression-path-traversal",
+                "data": {
+                    "type": "file",
+                    "path": "/tmp/safe/../../etc/passwd",
+                    "operation": "read"
+                }
+            }
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+    let json: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(json["decision"]["allowed"], false);
+    assert_eq!(json["decision"]["denied"], true);
+    assert_eq!(json["decision"]["guard"], "forbidden_path");
+    assert_eq!(json["decision"]["severity"], "critical");
+    assert_eq!(json["report"]["overall"]["guard"], "forbidden_path");
+    assert_eq!(json["report"]["overall"]["allowed"], false);
+}
+
+#[tokio::test]
+async fn test_eval_policy_event_regression_blocks_userinfo_spoofed_egress_host() {
+    let (client, url) = test_setup();
+
+    let resp = client
+        .post(format!("{}/api/v1/eval", url))
+        .json(&serde_json::json!({
+            "event": {
+                "eventId": "evt-eval-regression-userinfo-spoof",
+                "eventType": "network_egress",
+                "timestamp": "2026-02-11T00:00:22Z",
+                "sessionId": "sess-eval-regression-userinfo-spoof",
+                "data": {
+                    "type": "network",
+                    "host": "api.openai.com@evil.example",
+                    "port": 443,
+                    "url": "https://api.openai.com:443@evil.example/path"
+                }
+            }
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+    let json: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(json["decision"]["allowed"], false);
+    assert_eq!(json["decision"]["denied"], true);
+    assert_eq!(json["decision"]["guard"], "egress_allowlist");
+    assert_eq!(json["decision"]["severity"], "high");
+    assert_eq!(json["report"]["overall"]["guard"], "egress_allowlist");
+    assert_eq!(
+        json["report"]["overall"]["details"]["host"],
+        "api.openai.com@evil.example"
+    );
+}
+
+#[tokio::test]
+async fn test_eval_policy_event_regression_blocks_private_ip_egress() {
+    let (client, url) = test_setup();
+
+    let resp = client
+        .post(format!("{}/api/v1/eval", url))
+        .json(&serde_json::json!({
+            "event": {
+                "eventId": "evt-eval-regression-private-ip",
+                "eventType": "network_egress",
+                "timestamp": "2026-02-11T00:00:23Z",
+                "sessionId": "sess-eval-regression-private-ip",
+                "data": {
+                    "type": "network",
+                    "host": "127.0.0.1",
+                    "port": 443,
+                    "url": "http://127.0.0.1:443/internal"
+                }
+            }
+        }))
+        .send()
+        .await
+        .expect("Failed to connect to daemon");
+
+    assert!(resp.status().is_success());
+    let json: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(json["decision"]["allowed"], false);
+    assert_eq!(json["decision"]["denied"], true);
+    assert_eq!(json["decision"]["guard"], "egress_allowlist");
+    assert_eq!(json["report"]["overall"]["guard"], "egress_allowlist");
+    assert_eq!(json["report"]["overall"]["details"]["host"], "127.0.0.1");
+    assert_eq!(json["report"]["overall"]["details"]["is_default"], true);
 }
 
 #[tokio::test]
