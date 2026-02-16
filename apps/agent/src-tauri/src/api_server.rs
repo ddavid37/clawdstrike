@@ -1,11 +1,15 @@
 //! Authenticated local API server for agent control and OpenClaw transport.
 
+use crate::approval::{
+    ApprovalQueue, ApprovalRequestInput, ApprovalResolveInput, ApprovalStatusResponse,
+};
 use crate::daemon::{DaemonManager, DaemonStatus};
 use crate::openclaw::{
     GatewayDiscoverInput, GatewayRequestInput, GatewayUpsertRequest, ImportGatewayRequest,
     OpenClawManager,
 };
 use crate::policy::{evaluate_policy_check, PolicyCheckInput, PolicyCheckOutput};
+use crate::session::SessionManager;
 use crate::settings::Settings;
 use anyhow::{Context, Result};
 use axum::extract::{Path, State};
@@ -34,6 +38,8 @@ pub struct AgentApiServer {
 struct AgentApiState {
     settings: Arc<RwLock<Settings>>,
     daemon_manager: Arc<DaemonManager>,
+    session_manager: Arc<SessionManager>,
+    approval_queue: Arc<ApprovalQueue>,
     openclaw: OpenClawManager,
     auth_token: String,
     http_client: reqwest::Client,
@@ -44,6 +50,8 @@ impl AgentApiServer {
         port: u16,
         settings: Arc<RwLock<Settings>>,
         daemon_manager: Arc<DaemonManager>,
+        session_manager: Arc<SessionManager>,
+        approval_queue: Arc<ApprovalQueue>,
         openclaw: OpenClawManager,
         auth_token: String,
     ) -> Self {
@@ -52,6 +60,8 @@ impl AgentApiServer {
             state: Arc::new(AgentApiState {
                 settings,
                 daemon_manager,
+                session_manager,
+                approval_queue,
                 openclaw,
                 auth_token,
                 http_client: reqwest::Client::new(),
@@ -72,15 +82,15 @@ impl AgentApiServer {
                 get(list_gateways).post(create_gateway),
             )
             .route(
-                "/api/v1/openclaw/gateways/:id",
+                "/api/v1/openclaw/gateways/{id}",
                 patch(patch_gateway).delete(delete_gateway),
             )
             .route(
-                "/api/v1/openclaw/gateways/:id/connect",
+                "/api/v1/openclaw/gateways/{id}/connect",
                 post(connect_gateway),
             )
             .route(
-                "/api/v1/openclaw/gateways/:id/disconnect",
+                "/api/v1/openclaw/gateways/{id}/disconnect",
                 post(disconnect_gateway),
             )
             .route("/api/v1/openclaw/active-gateway", put(set_active_gateway))
@@ -92,6 +102,10 @@ impl AgentApiServer {
                 post(import_desktop_gateways),
             )
             .route("/api/v1/openclaw/events", get(openclaw_events))
+            .route("/api/v1/approval/request", post(create_approval_request))
+            .route("/api/v1/approval/{id}/status", get(get_approval_status))
+            .route("/api/v1/approval/{id}/resolve", post(resolve_approval))
+            .route("/api/v1/approval/pending", get(list_pending_approvals))
             .with_state(self.state.clone());
 
         let addr = SocketAddr::from(([127, 0, 0, 1], self.port));
@@ -117,6 +131,7 @@ impl AgentApiServer {
 struct AgentHealthResponse {
     status: &'static str,
     daemon: DaemonStatus,
+    session: crate::session::SessionState,
     openclaw: serde_json::Value,
     version: &'static str,
 }
@@ -130,6 +145,7 @@ struct AgentSettingsResponse {
     auto_start: bool,
     notifications_enabled: bool,
     notification_severity: String,
+    debug_include_daemon_error_body: bool,
     openclaw_active_gateway_id: Option<String>,
 }
 
@@ -139,6 +155,7 @@ struct AgentSettingsUpdate {
     auto_start: Option<bool>,
     notifications_enabled: Option<bool>,
     notification_severity: Option<String>,
+    debug_include_daemon_error_body: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_optional_string_field")]
     openclaw_active_gateway_id: Option<Option<String>>,
 }
@@ -160,11 +177,13 @@ async fn agent_health(
     State(state): State<Arc<AgentApiState>>,
 ) -> Result<Json<AgentHealthResponse>, (StatusCode, String)> {
     let daemon = state.daemon_manager.status().await;
+    let session = state.session_manager.state().await;
     let openclaw = state.openclaw.list_gateways().await;
 
     Ok(Json(AgentHealthResponse {
         status: "ok",
         daemon,
+        session,
         openclaw: serde_json::to_value(openclaw)
             .unwrap_or_else(|_| serde_json::json!({"error":"serialize_failed"})),
         version: env!("CARGO_PKG_VERSION"),
@@ -186,6 +205,7 @@ async fn get_settings(
         auto_start: settings.auto_start,
         notifications_enabled: settings.notifications_enabled,
         notification_severity: settings.notification_severity.clone(),
+        debug_include_daemon_error_body: settings.debug_include_daemon_error_body,
         openclaw_active_gateway_id: settings.openclaw.active_gateway_id.clone(),
     }))
 }
@@ -212,6 +232,9 @@ async fn update_settings(
         if let Some(value) = input.notification_severity {
             settings.notification_severity = value;
         }
+        if let Some(value) = input.debug_include_daemon_error_body {
+            settings.debug_include_daemon_error_body = value;
+        }
         if let Some(value) = input.openclaw_active_gateway_id {
             settings.openclaw.active_gateway_id = value;
         }
@@ -230,9 +253,14 @@ async fn agent_policy_check(
     Json(input): Json<PolicyCheckInput>,
 ) -> Result<Json<PolicyCheckOutput>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
-    let output = evaluate_policy_check(state.settings.clone(), &state.http_client, input)
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let session_id = state.session_manager.session_id().await;
+    let output = evaluate_policy_check(
+        state.settings.clone(),
+        &state.http_client,
+        input,
+        session_id,
+    )
+    .await;
     Ok(Json(output))
 }
 
@@ -439,6 +467,93 @@ fn sse_stream(
     })
 }
 
+async fn create_approval_request(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(input): Json<ApprovalRequestInput>,
+) -> Result<Json<ApprovalStatusResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    // Reject critical severity actions -- they are not approvable.
+    if input.severity.eq_ignore_ascii_case("critical") {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Critical severity actions are not approvable".to_string(),
+        ));
+    }
+
+    let request = state
+        .approval_queue
+        .submit(input)
+        .await
+        .map_err(|err| match err {
+            crate::approval::ApprovalError::QueueFull => {
+                (StatusCode::SERVICE_UNAVAILABLE, err.to_string())
+            }
+            other => (StatusCode::INTERNAL_SERVER_ERROR, other.to_string()),
+        })?;
+    Ok(Json(ApprovalStatusResponse::from(&request)))
+}
+
+async fn get_approval_status(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<ApprovalStatusResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    let status = state.approval_queue.get_status(&id).await.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            "Approval request not found".to_string(),
+        )
+    })?;
+
+    Ok(Json(status))
+}
+
+async fn resolve_approval(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(input): Json<ApprovalResolveInput>,
+) -> Result<Json<ApprovalStatusResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+
+    let result = state
+        .approval_queue
+        .resolve(&id, input.resolution)
+        .await
+        .map_err(|err| match err {
+            crate::approval::ApprovalError::NotFound => (
+                StatusCode::NOT_FOUND,
+                "Approval request not found".to_string(),
+            ),
+            crate::approval::ApprovalError::AlreadyResolved => (
+                StatusCode::CONFLICT,
+                "Approval request already resolved".to_string(),
+            ),
+            crate::approval::ApprovalError::Expired => {
+                (StatusCode::GONE, "Approval request expired".to_string())
+            }
+            crate::approval::ApprovalError::QueueFull => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Approval queue is full".to_string(),
+            ),
+        })?;
+
+    Ok(Json(result))
+}
+
+async fn list_pending_approvals(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<ApprovalStatusResponse>>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    let pending = state.approval_queue.list_pending().await;
+    Ok(Json(pending))
+}
+
 fn require_auth(headers: &HeaderMap, state: &AgentApiState) -> Result<(), (StatusCode, String)> {
     let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) else {
         return Err((
@@ -491,6 +606,7 @@ mod tests {
     use super::*;
     use crate::daemon::DaemonConfig;
     use std::path::PathBuf;
+    use tower::ServiceExt;
 
     fn test_state() -> AgentApiState {
         let settings = Arc::new(RwLock::new(Settings::default()));
@@ -499,11 +615,15 @@ mod tests {
             port: 9876,
             policy_path: PathBuf::from("/tmp/policy.yaml"),
         }));
+        let session_manager = Arc::new(crate::session::SessionManager::new());
+        let approval_queue = Arc::new(crate::approval::ApprovalQueue::new());
         let openclaw = OpenClawManager::new(settings.clone());
 
         AgentApiState {
             settings,
             daemon_manager,
+            session_manager,
+            approval_queue,
             openclaw,
             auth_token: "test-token".to_string(),
             http_client: reqwest::Client::new(),
@@ -575,5 +695,31 @@ mod tests {
             explicit_value.openclaw_active_gateway_id,
             Some(Some(value)) if value == "gw-1"
         ));
+    }
+
+    #[tokio::test]
+    async fn approval_status_route_matches_uuid_path() {
+        let state = Arc::new(test_state());
+        let app = Router::new()
+            .route("/api/v1/approval/{id}/status", get(get_approval_status))
+            .with_state(state);
+
+        let request = axum::http::Request::builder()
+            .uri("/api/v1/approval/550e8400-e29b-41d4-a716-446655440000/status")
+            .header("authorization", "Bearer test-token")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build request: {e}"));
+
+        let response = app
+            .oneshot(request)
+            .await
+            .unwrap_or_else(|e| panic!("request failed: {e}"));
+
+        // Should be 404 (approval not found) rather than 405/routing failure.
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "Route should match the UUID path param and return 404 (not found), not a routing error"
+        );
     }
 }

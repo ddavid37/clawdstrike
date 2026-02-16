@@ -39,7 +39,7 @@ if ! TOOL_NAME=$(echo "$INPUT" | jq -er '.tool_name // empty' 2>/dev/null); then
   fail "invalid hook payload: missing/invalid .tool_name"
 fi
 
-if ! TOOL_INPUT=$(echo "$INPUT" | jq -ec '.tool_input // {}' 2>/dev/null); then
+if ! TOOL_INPUT=$(echo "$INPUT" | jq -ec '.tool_input // {} | if type == "object" then . else {"tool_input": .} end' 2>/dev/null); then
   fail "invalid hook payload: .tool_input is not JSON"
 fi
 
@@ -48,23 +48,45 @@ if [ -z "$TOOL_NAME" ]; then
   exit 0
 fi
 
-# Map tool names to action types
+# Map tool names to hushd /api/v1/check action types.
+CONTENT=""
 case "$TOOL_NAME" in
-  Read|Write|Edit|Glob|Grep)
+  Read)
     ACTION_TYPE="file_access"
+    TARGET=$(echo "$TOOL_INPUT" | jq -er '.file_path // .path // empty' 2>/dev/null || true)
+    ;;
+  Glob)
+    ACTION_TYPE="file_access"
+    TARGET=$(echo "$TOOL_INPUT" | jq -er '.pattern // empty' 2>/dev/null || true)
+    ;;
+  Grep)
+    ACTION_TYPE="file_access"
+    # Grep may be invoked without an explicit path (searching the full workspace). In that case
+    # fall back to `.pattern` so we don't bypass the policy check entirely.
     TARGET=$(echo "$TOOL_INPUT" | jq -er '.file_path // .path // .pattern // empty' 2>/dev/null || true)
     ;;
+  Write)
+    ACTION_TYPE="file_write"
+    TARGET=$(echo "$TOOL_INPUT" | jq -er '.file_path // .path // empty' 2>/dev/null || true)
+    CONTENT=$(echo "$TOOL_INPUT" | jq -er '.content // .text // empty' 2>/dev/null || true)
+    ;;
+  Edit)
+    ACTION_TYPE="file_write"
+    TARGET=$(echo "$TOOL_INPUT" | jq -er '.file_path // .path // empty' 2>/dev/null || true)
+    CONTENT=$(echo "$TOOL_INPUT" | jq -er '.new_string // .content // empty' 2>/dev/null || true)
+    ;;
   Bash)
-    ACTION_TYPE="exec"
+    ACTION_TYPE="shell"
     TARGET=$(echo "$TOOL_INPUT" | jq -er '.command // empty' 2>/dev/null || true)
     ;;
   WebFetch|WebSearch)
-    ACTION_TYPE="network"
+    ACTION_TYPE="egress"
     TARGET=$(echo "$TOOL_INPUT" | jq -er '.url // .query // empty' 2>/dev/null || true)
     ;;
   *)
-    # Allow unknown tools by default
-    exit 0
+    # Unknown tool: treat as an MCP tool and let policy decide.
+    ACTION_TYPE="mcp_tool"
+    TARGET="$TOOL_NAME"
     ;;
 esac
 
@@ -74,8 +96,26 @@ if [ -z "${TARGET:-}" ]; then
 fi
 
 # Build JSON safely.
-if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" '{action_type:$action_type,target:$target}' 2>/dev/null); then
-  fail "failed to encode policy request payload"
+if [ "$ACTION_TYPE" = "mcp_tool" ]; then
+  if [ -n "${CONTENT:-}" ]; then
+    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --arg content "$CONTENT" --argjson args "$TOOL_INPUT" '{action_type:$action_type,target:$target,content:$content,args:$args}' 2>/dev/null); then
+      fail "failed to encode policy request payload"
+    fi
+  else
+    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --argjson args "$TOOL_INPUT" '{action_type:$action_type,target:$target,args:$args}' 2>/dev/null); then
+      fail "failed to encode policy request payload"
+    fi
+  fi
+else
+  if [ -n "${CONTENT:-}" ]; then
+    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" --arg content "$CONTENT" '{action_type:$action_type,target:$target,content:$content}' 2>/dev/null); then
+      fail "failed to encode policy request payload"
+    fi
+  else
+    if ! PAYLOAD=$(jq -cn --arg action_type "$ACTION_TYPE" --arg target "$TARGET" '{action_type:$action_type,target:$target}' 2>/dev/null); then
+      fail "failed to encode policy request payload"
+    fi
+  fi
 fi
 
 if [ ! -f "$CLAWDSTRIKE_TOKEN_FILE" ]; then
@@ -104,8 +144,15 @@ if ! ALLOWED=$(echo "$RESPONSE" | jq -er '.allowed' 2>/dev/null); then
 fi
 
 if [ "$ALLOWED" = "false" ]; then
-  MESSAGE=$(echo "$RESPONSE" | jq -er '.message // "Action blocked by security policy"' 2>/dev/null || echo "Action blocked by security policy")
   GUARD=$(echo "$RESPONSE" | jq -er '.guard // "unknown"' 2>/dev/null || echo "unknown")
+
+  # When the agent returns a well-formed deny due to daemon infrastructure errors,
+  # treat it as a hook failure so CLAWDSTRIKE_HOOK_FAIL_OPEN can apply.
+  if [[ "$GUARD" == hushd_* ]]; then
+    fail "policy daemon error (${GUARD})"
+  fi
+
+  MESSAGE=$(echo "$RESPONSE" | jq -er '.message // "Action blocked by security policy"' 2>/dev/null || echo "Action blocked by security policy")
 
   echo "🚫 BLOCKED by Clawdstrike (${GUARD}): ${MESSAGE}" >&2
   echo "   Target: ${TARGET}" >&2
@@ -245,12 +292,27 @@ mod tests {
         assert!(HOOK_SCRIPT.contains("jq -cn"));
         assert!(HOOK_SCRIPT.contains("/api/v1/agent/policy-check"));
         assert!(HOOK_SCRIPT.contains("CLAWDSTRIKE_HOOK_FAIL_OPEN"));
+        assert!(HOOK_SCRIPT.contains("ACTION_TYPE=\"mcp_tool\""));
     }
 
     #[test]
     fn test_hook_script_escapes_json_payload() {
         assert!(HOOK_SCRIPT.contains("--arg target \"$TARGET\""));
         assert!(!HOOK_SCRIPT.contains("\\\"target\\\":\\\"${TARGET}\\\""));
+    }
+
+    #[test]
+    fn test_hook_script_handles_unknown_tools_via_mcp_tool_args() {
+        assert!(HOOK_SCRIPT.contains("--argjson args \"$TOOL_INPUT\""));
+        assert!(HOOK_SCRIPT.contains("Unknown tool: treat as an MCP tool"));
+    }
+
+    #[test]
+    fn test_hook_script_does_not_skip_grep_without_path() {
+        // Grep can be invoked without a path (search full workspace); ensure we still produce a
+        // non-empty TARGET by falling back to the search pattern.
+        assert!(HOOK_SCRIPT.contains("Grep)"));
+        assert!(HOOK_SCRIPT.contains(".file_path // .path // .pattern"));
     }
 
     #[test]

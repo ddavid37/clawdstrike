@@ -6,7 +6,7 @@ import { createPolicyEngineFromPolicy, type Policy as CanonicalPolicy } from '@c
 
 import { mergeConfig } from '../config.js';
 import { EgressGuard, ForbiddenPathGuard, PatchIntegrityGuard, SecretLeakGuard } from '../guards/index.js';
-import type { Decision, EvaluationMode, ClawdstrikeConfig, Policy, PolicyEvent } from '../types.js';
+import type { Decision, EvaluationMode, ClawdstrikeConfig, Policy, PolicyEvent, Severity } from '../types.js';
 import { sanitizeOutputText } from '../sanitizer/output-sanitizer.js';
 
 import { loadPolicy } from './loader.js';
@@ -18,6 +18,121 @@ function expandHome(p: string): string {
 
 function normalizePathForPrefix(p: string): string {
   return path.resolve(expandHome(p));
+}
+
+function cleanPathToken(t: string): string {
+  return t.trim().replace(/^[("'`]+/, '').replace(/[)"'`;,\]}]+$/, '');
+}
+
+function isRedirectionOp(t: string): boolean {
+  return t === '>' || t === '>>' || t === '1>' || t === '1>>' || t === '2>' || t === '2>>' || t === '<' || t === '<<';
+}
+
+function splitInlineRedirection(t: string): string | null {
+  // Support forms like ">/path", "2>>/path", "<input".
+  const m = t.match(/^(?:\d)?(?:>>|>)\s*(.+)$/);
+  if (m?.[1]) return m[1];
+  const mi = t.match(/^(?:<<|<)\s*(.+)$/);
+  if (mi?.[1]) return mi[1];
+  return null;
+}
+
+function looksLikePathToken(t: string): boolean {
+  if (!t) return false;
+  if (t.includes('://')) return false;
+  if (t.startsWith('/') || t.startsWith('~') || t.startsWith('./') || t.startsWith('../')) return true;
+  if (t === '.env' || t.startsWith('.env.')) return true;
+  if (t.includes('/.ssh/') || t.includes('/.aws/') || t.includes('/.gnupg/') || t.includes('/.kube/')) return true;
+  return false;
+}
+
+const WRITE_PATH_FLAG_NAMES = new Set([
+  // Common output flags
+  'o',
+  'out',
+  'output',
+  'outfile',
+  'output-file',
+  // Common log file flags
+  'log-file',
+  'logfile',
+  'log-path',
+  'logpath',
+]);
+
+function isWritePathFlagToken(t: string): boolean {
+  if (!t) return false;
+  if (!t.startsWith('-')) return false;
+  const normalized = t.replace(/^-+/, '').toLowerCase().replace(/_/g, '-');
+  return WRITE_PATH_FLAG_NAMES.has(normalized);
+}
+
+function extractCommandPathCandidates(command: string, args: string[]): { reads: string[]; writes: string[] } {
+  const tokens = [command, ...args].map((t) => String(t ?? '')).filter(Boolean);
+  const reads: string[] = [];
+  const writes: string[] = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+
+    // Redirection operators: treat as write/read targets.
+    if (isRedirectionOp(t)) {
+      const next = tokens[i + 1];
+      if (typeof next === 'string' && next.length > 0) {
+        const cleaned = cleanPathToken(next);
+        if (cleaned) {
+          if (t.startsWith('>') || t === '>' || t === '>>' || t === '1>' || t === '1>>' || t === '2>' || t === '2>>') {
+            writes.push(cleaned);
+          } else {
+            reads.push(cleaned);
+          }
+        }
+      }
+      continue;
+    }
+
+    const inline = splitInlineRedirection(t);
+    if (inline) {
+      const cleaned = cleanPathToken(inline);
+      if (cleaned) {
+        if (t.includes('>')) writes.push(cleaned);
+        else reads.push(cleaned);
+      }
+      continue;
+    }
+
+    // Flags like --output /path or -o /path (write targets)
+    if (isWritePathFlagToken(t)) {
+      const next = tokens[i + 1];
+      if (typeof next === 'string' && next.length > 0) {
+        const cleaned = cleanPathToken(next);
+        if (looksLikePathToken(cleaned)) {
+          writes.push(cleaned);
+          i += 1;
+          continue;
+        }
+      }
+    }
+
+    // Flags like --output=/path
+    const eq = t.indexOf('=');
+    if (eq > 0) {
+      const lhs = t.slice(0, eq);
+      const rhs = cleanPathToken(t.slice(eq + 1));
+      if (looksLikePathToken(rhs)) {
+        if (isWritePathFlagToken(lhs)) writes.push(rhs);
+        else reads.push(rhs);
+      }
+    }
+
+    const cleanedToken = cleanPathToken(t);
+    if (looksLikePathToken(cleanedToken)) {
+      reads.push(cleanedToken);
+    }
+  }
+
+  const uniq = (xs: string[]) => Array.from(new Set(xs.filter(Boolean)));
+  return { reads: uniq(reads), writes: uniq(writes) };
 }
 
 export class PolicyEngine {
@@ -78,9 +193,7 @@ export class PolicyEngine {
     const base = this.evaluateDeterministic(event);
 
     // Fail fast on deterministic violations to avoid unnecessary external calls.
-    const baseDenied = base.status === 'deny' || base.denied;
-    const baseWarn = base.status === 'warn' || base.warn;
-    if (baseDenied || baseWarn) {
+    if (base.status === 'deny' || base.status === 'warn') {
       return this.applyMode(base, this.config.mode);
     }
 
@@ -96,16 +209,12 @@ export class PolicyEngine {
 
   private applyMode(result: Decision, mode: EvaluationMode): Decision {
     if (mode === 'audit') {
-      return { status: 'allow', allowed: true, denied: false, warn: false };
+      return { status: 'allow' };
     }
 
-    const isDenied = result.status === 'deny' || result.denied;
-    if (mode === 'advisory' && isDenied) {
+    if (mode === 'advisory' && result.status === 'deny') {
       return {
         status: 'warn',
-        allowed: true,
-        denied: false,
-        warn: true,
         reason: result.reason,
         guard: result.guard,
         severity: result.severity,
@@ -117,7 +226,7 @@ export class PolicyEngine {
   }
 
   private evaluateDeterministic(event: PolicyEvent): Decision {
-    const allowed: Decision = { status: 'allow', allowed: true, denied: false, warn: false };
+    const allowed: Decision = { status: 'allow' };
 
     switch (event.eventType) {
       case 'file_read':
@@ -138,15 +247,13 @@ export class PolicyEngine {
 
   private checkFilesystem(event: PolicyEvent): Decision {
     if (!this.config.guards.forbidden_path) {
-      return { status: 'allow', allowed: true, denied: false, warn: false };
+      return { status: 'allow' };
     }
 
     // First, enforce forbidden path patterns.
     const forbidden = this.forbiddenPathGuard.checkSync(event, this.policy);
     const mapped = this.guardResultToDecision(forbidden);
-    const mappedDenied = mapped.status === 'deny' || mapped.denied;
-    const mappedWarn = mapped.status === 'warn' || mapped.warn;
-    if (mappedDenied || mappedWarn) {
+    if (mapped.status === 'deny' || mapped.status === 'warn') {
       return this.applyOnViolation(mapped);
     }
 
@@ -162,9 +269,6 @@ export class PolicyEngine {
         if (!ok) {
           return this.applyOnViolation({
             status: 'deny',
-            allowed: false,
-            denied: true,
-            warn: false,
             reason: 'Write path not in allowed roots',
             guard: 'forbidden_path',
             severity: 'high',
@@ -173,12 +277,12 @@ export class PolicyEngine {
       }
     }
 
-    return { status: 'allow', allowed: true, denied: false, warn: false };
+    return { status: 'allow' };
   }
 
   private checkEgress(event: PolicyEvent): Decision {
     if (!this.config.guards.egress) {
-      return { status: 'allow', allowed: true, denied: false, warn: false };
+      return { status: 'allow' };
     }
 
     const res = this.egressGuard.checkSync(event, this.policy);
@@ -187,8 +291,47 @@ export class PolicyEngine {
   }
 
   private checkExecution(event: PolicyEvent): Decision {
+    // Defense in depth: shell/command execution can still touch the filesystem.
+    // Best-effort extract path-like tokens (including redirections) and run them through the
+    // filesystem policy checks (forbidden paths + allowed write roots).
+    if (this.config.guards.forbidden_path && event.data.type === 'command') {
+      const { reads, writes } = extractCommandPathCandidates(event.data.command, event.data.args);
+
+      const maxChecks = 64;
+      let checks = 0;
+
+      // Check likely writes first so allowed_write_roots is enforced.
+      for (const p of writes) {
+        if (checks++ >= maxChecks) break;
+        const synthetic: PolicyEvent = {
+          eventId: `${event.eventId}:cmdwrite:${checks}`,
+          eventType: 'file_write',
+          timestamp: event.timestamp,
+          sessionId: event.sessionId,
+          data: { type: 'file', path: p, operation: 'write' },
+          metadata: { ...event.metadata, derivedFrom: 'command_exec' },
+        };
+        const d = this.checkFilesystem(synthetic);
+        if (d.status === 'deny' || d.status === 'warn') return d;
+      }
+
+      for (const p of reads) {
+        if (checks++ >= maxChecks) break;
+        const synthetic: PolicyEvent = {
+          eventId: `${event.eventId}:cmdread:${checks}`,
+          eventType: 'file_read',
+          timestamp: event.timestamp,
+          sessionId: event.sessionId,
+          data: { type: 'file', path: p, operation: 'read' },
+          metadata: { ...event.metadata, derivedFrom: 'command_exec' },
+        };
+        const d = this.checkFilesystem(synthetic);
+        if (d.status === 'deny' || d.status === 'warn') return d;
+      }
+    }
+
     if (!this.config.guards.patch_integrity) {
-      return { status: 'allow', allowed: true, denied: false, warn: false };
+      return { status: 'allow' };
     }
 
     const res = this.patchIntegrityGuard.checkSync(event, this.policy);
@@ -202,26 +345,20 @@ export class PolicyEngine {
       const tools = this.policy.tools;
       const toolName = event.data.toolName.toLowerCase();
 
-      const denied = tools?.denied?.map((x) => x.toLowerCase()) ?? [];
-      if (denied.includes(toolName)) {
+      const deniedTools = tools?.denied?.map((x) => x.toLowerCase()) ?? [];
+      if (deniedTools.includes(toolName)) {
         return this.applyOnViolation({
           status: 'deny',
-          allowed: false,
-          denied: true,
-          warn: false,
           reason: `Tool '${event.data.toolName}' is denied by policy`,
           guard: 'mcp_tool',
           severity: 'high',
         });
       }
 
-      const allowed = tools?.allowed?.map((x) => x.toLowerCase()) ?? [];
-      if (allowed.length > 0 && !allowed.includes(toolName)) {
+      const allowedTools = tools?.allowed?.map((x) => x.toLowerCase()) ?? [];
+      if (allowedTools.length > 0 && !allowedTools.includes(toolName)) {
         return this.applyOnViolation({
           status: 'deny',
-          allowed: false,
-          denied: true,
-          warn: false,
           reason: `Tool '${event.data.toolName}' is not in allowed tool list`,
           guard: 'mcp_tool',
           severity: 'high',
@@ -229,8 +366,29 @@ export class PolicyEngine {
       }
     }
 
+    // Also check forbidden paths in tool parameters (defense in depth).
+    if (this.config.guards.forbidden_path && event.data.type === 'tool') {
+      const params = event.data.parameters ?? {};
+      const pathKeys = ['path', 'file', 'file_path', 'filepath', 'filename', 'target'];
+      for (const key of pathKeys) {
+        const val = params[key];
+        if (typeof val === 'string' && val.length > 0) {
+          const pathEvent: PolicyEvent = {
+            ...event,
+            eventType: 'file_write',
+            data: { type: 'file', path: val, operation: 'write' },
+          };
+          const pathCheck = this.forbiddenPathGuard.checkSync(pathEvent, this.policy);
+          const pathDecision = this.guardResultToDecision(pathCheck);
+          if (pathDecision.status === 'deny' || pathDecision.status === 'warn') {
+            return this.applyOnViolation(pathDecision);
+          }
+        }
+      }
+    }
+
     if (!this.config.guards.secret_leak) {
-      return { status: 'allow', allowed: true, denied: false, warn: false };
+      return { status: 'allow' };
     }
 
     const res = this.secretLeakGuard.checkSync(event, this.policy);
@@ -243,34 +401,26 @@ export class PolicyEngine {
       const r1 = this.patchIntegrityGuard.checkSync(event, this.policy);
       const mapped1 = this.guardResultToDecision(r1);
       const applied1 = this.applyOnViolation(mapped1);
-      const applied1Denied = applied1.status === 'deny' || applied1.denied;
-      const applied1Warn = applied1.status === 'warn' || applied1.warn;
-      if (applied1Denied || applied1Warn) return applied1;
+      if (applied1.status === 'deny' || applied1.status === 'warn') return applied1;
     }
 
     if (this.config.guards.secret_leak) {
       const r2 = this.secretLeakGuard.checkSync(event, this.policy);
       const mapped2 = this.guardResultToDecision(r2);
       const applied2 = this.applyOnViolation(mapped2);
-      const applied2Denied = applied2.status === 'deny' || applied2.denied;
-      const applied2Warn = applied2.status === 'warn' || applied2.warn;
-      if (applied2Denied || applied2Warn) return applied2;
+      if (applied2.status === 'deny' || applied2.status === 'warn') return applied2;
     }
 
-    return { status: 'allow', allowed: true, denied: false, warn: false };
+    return { status: 'allow' };
   }
 
   private applyOnViolation(decision: Decision): Decision {
     const action = this.policy.on_violation;
-    const isDenied = decision.status === 'deny' || decision.denied;
-    if (!isDenied) return decision;
+    if (decision.status !== 'deny') return decision;
 
     if (action === 'warn') {
       return {
         status: 'warn',
-        allowed: true,
-        denied: false,
-        warn: true,
         reason: decision.reason,
         guard: decision.guard,
         severity: decision.severity,
@@ -281,27 +431,30 @@ export class PolicyEngine {
     return decision;
   }
 
-  private guardResultToDecision(result: { status: 'allow' | 'deny' | 'warn'; reason?: string; severity?: any; guard: string }): Decision {
-    if (result.status === 'allow') return { status: 'allow', allowed: true, denied: false, warn: false };
+  private guardResultToDecision(result: { status: 'allow' | 'deny' | 'warn'; reason?: string; severity?: Severity; guard: string }): Decision {
+    if (result.status === 'allow') return { status: 'allow' };
     if (result.status === 'warn') {
-      return { status: 'warn', allowed: true, denied: false, warn: true, reason: result.reason, guard: result.guard, message: result.reason };
+      return { status: 'warn', reason: result.reason, guard: result.guard, message: result.reason };
     }
-    return { status: 'deny', allowed: false, denied: true, warn: false, reason: result.reason, guard: result.guard, severity: result.severity };
+    return { status: 'deny', reason: result.reason, guard: result.guard, severity: result.severity };
   }
 }
 
 function buildThreatIntelEngine(policy: Policy): CanonicalPolicyEngineLike | null {
-  const custom = (policy.guards as any)?.custom;
+  const custom = policy.guards?.custom;
   if (!Array.isArray(custom) || custom.length === 0) {
     return null;
   }
 
+  // The openclaw Policy types `custom` as `unknown`; the canonical Policy
+  // expects `CustomGuardSpec[]`. We've validated it's an array above.
+  // GuardConfigs has an index signature so `unknown[]` is assignable.
   const canonicalPolicy: CanonicalPolicy = {
     version: '1.1.0',
     guards: { custom },
   };
 
-  return createPolicyEngineFromPolicy(canonicalPolicy as any);
+  return createPolicyEngineFromPolicy(canonicalPolicy);
 }
 
 function toCanonicalEvent(event: PolicyEvent): CanonicalPolicyEvent {
@@ -311,8 +464,6 @@ function toCanonicalEvent(event: PolicyEvent): CanonicalPolicyEvent {
 }
 
 function combineDecisions(base: Decision, next: Decision): Decision {
-  const nextDenied = next.status === 'deny' || next.denied;
-  const nextWarn = next.status === 'warn' || next.warn;
-  if (nextDenied || nextWarn) return next;
+  if (next.status === 'deny' || next.status === 'warn') return next;
   return base;
 }

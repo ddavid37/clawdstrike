@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,7 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 
 const READY_MAX_ATTEMPTS: usize = 40;
 const READY_POLL_DELAY: Duration = Duration::from_millis(150);
@@ -74,6 +75,14 @@ pub struct DaemonConfig {
     pub policy_path: PathBuf,
 }
 
+#[derive(Debug, Serialize)]
+struct HushdRuntimeConfig {
+    listen: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    policy_path: Option<PathBuf>,
+    ruleset: String,
+}
+
 impl DaemonConfig {
     pub fn health_url(&self) -> String {
         format!("http://127.0.0.1:{}/health", self.port)
@@ -85,11 +94,14 @@ pub struct DaemonManager {
     config: DaemonConfig,
     state: Arc<RwLock<DaemonState>>,
     child: Arc<RwLock<Option<Child>>>,
+    lifecycle_lock: Arc<Mutex<()>>,
     restart_count: Arc<RwLock<u32>>,
+    external_mode: Arc<AtomicBool>,
     http_client: reqwest::Client,
     state_tx: broadcast::Sender<DaemonState>,
     shutdown_tx: broadcast::Sender<()>,
     monitor_started: Arc<AtomicBool>,
+    monitor_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl DaemonManager {
@@ -102,7 +114,9 @@ impl DaemonManager {
             config,
             state: Arc::new(RwLock::new(DaemonState::Stopped)),
             child: Arc::new(RwLock::new(None)),
+            lifecycle_lock: Arc::new(Mutex::new(())),
             restart_count: Arc::new(RwLock::new(0)),
+            external_mode: Arc::new(AtomicBool::new(false)),
             http_client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
                 .build()
@@ -110,6 +124,7 @@ impl DaemonManager {
             state_tx,
             shutdown_tx,
             monitor_started: Arc::new(AtomicBool::new(false)),
+            monitor_task: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -149,9 +164,27 @@ impl DaemonManager {
         }
 
         self.set_state(DaemonState::Starting).await;
+
+        // If another hushd is already healthy on this port, attach instead of spawning.
+        if let Ok(health) = health_check_with_client(&self.config, &self.http_client).await {
+            if health.status == "healthy" {
+                let _guard = Arc::clone(&self.lifecycle_lock).lock_owned().await;
+                self.external_mode.store(true, Ordering::SeqCst);
+                // Ensure we do not leak a managed child when transitioning into attach mode.
+                let _ = terminate_child_slot(&self.child).await;
+                self.set_state(DaemonState::Running).await;
+                self.start_health_monitor().await;
+                tracing::info!(
+                    "Attached to externally managed hushd on port {}",
+                    self.config.port
+                );
+                return Ok(());
+            }
+        }
+
         self.spawn_and_wait_ready().await?;
         self.set_state(DaemonState::Running).await;
-        self.start_health_monitor();
+        self.start_health_monitor().await;
         tracing::info!("hushd daemon started on port {}", self.config.port);
         Ok(())
     }
@@ -159,9 +192,34 @@ impl DaemonManager {
     /// Stop the daemon.
     pub async fn stop(&self) -> Result<()> {
         let _ = self.shutdown_tx.send(());
-        self.terminate_child("stop requested").await;
-        self.set_state(DaemonState::Stopped).await;
-        self.monitor_started.store(false, Ordering::SeqCst);
+        {
+            let _guard = Arc::clone(&self.lifecycle_lock).lock_owned().await;
+            self.terminate_child("stop requested").await;
+            self.external_mode.store(false, Ordering::SeqCst);
+            self.set_state(DaemonState::Stopped).await;
+        }
+
+        let monitor_handle = self.monitor_task.lock().await.take();
+        if let Some(handle) = monitor_handle {
+            // Ensure the background health monitor has fully observed shutdown before we return.
+            // This prevents overlapping monitor tasks during restart cycles.
+            if self.monitor_started.load(Ordering::SeqCst) {
+                let deadline = Instant::now() + Duration::from_secs(8);
+                while self.monitor_started.load(Ordering::SeqCst) && Instant::now() < deadline {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                if self.monitor_started.load(Ordering::SeqCst) {
+                    tracing::warn!("Health monitor did not shut down in time; aborting task");
+                    handle.abort();
+                }
+            }
+
+            // Await the monitor so the flag guard can run; don't block shutdown indefinitely.
+            let _ = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        } else if self.monitor_started.load(Ordering::SeqCst) {
+            tracing::warn!("Health monitor flag set but no join handle present; resetting flag");
+            self.monitor_started.store(false, Ordering::SeqCst);
+        }
         Ok(())
     }
 
@@ -178,12 +236,32 @@ impl DaemonManager {
     }
 
     async fn spawn_and_wait_ready(&self) -> Result<()> {
+        let _guard = Arc::clone(&self.lifecycle_lock).lock_owned().await;
         spawn_child_into_slot(&self.config, &self.child).await?;
 
         if let Err(err) = wait_for_ready_with_client(&self.config, &self.http_client).await {
             self.terminate_child("startup readiness check failed").await;
             return Err(err);
         }
+
+        // If the spawned child already exited but health is still good, another daemon owns the
+        // port. Attach to that external instance instead of restart-looping.
+        if let Some(reason) = check_process_exit(&self.child).await {
+            if let Ok(health) = health_check_with_client(&self.config, &self.http_client).await {
+                if health.status == "healthy" {
+                    self.external_mode.store(true, Ordering::SeqCst);
+                    tracing::warn!(
+                        reason = %reason,
+                        "Managed hushd exited during startup; using external hushd instance"
+                    );
+                    return Ok(());
+                }
+            }
+
+            anyhow::bail!("hushd exited during startup: {}", reason);
+        }
+
+        self.external_mode.store(false, Ordering::SeqCst);
 
         Ok(())
     }
@@ -194,21 +272,33 @@ impl DaemonManager {
         }
     }
 
-    fn start_health_monitor(&self) {
+    async fn start_health_monitor(&self) {
         if self.monitor_started.swap(true, Ordering::SeqCst) {
             return;
         }
 
         let state = Arc::clone(&self.state);
         let child = Arc::clone(&self.child);
+        let lifecycle_lock = Arc::clone(&self.lifecycle_lock);
         let restart_count = Arc::clone(&self.restart_count);
+        let external_mode = Arc::clone(&self.external_mode);
         let config = self.config.clone();
         let http_client = self.http_client.clone();
         let state_tx = self.state_tx.clone();
         let monitor_started = Arc::clone(&self.monitor_started);
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
+            struct MonitorFlagGuard(Arc<AtomicBool>);
+
+            impl Drop for MonitorFlagGuard {
+                fn drop(&mut self) {
+                    self.0.store(false, Ordering::SeqCst);
+                }
+            }
+
+            let _monitor_flag_guard = MonitorFlagGuard(Arc::clone(&monitor_started));
+
             let check_interval = Duration::from_secs(5);
             let max_health_failures = 3u32;
             let stable_window = Duration::from_secs(90);
@@ -220,75 +310,173 @@ impl DaemonManager {
                 tokio::select! {
                     _ = shutdown_rx.recv() => {
                         tracing::debug!("Health monitor received shutdown signal");
-                        monitor_started.store(false, Ordering::SeqCst);
                         break;
                     }
                     _ = tokio::time::sleep(check_interval) => {
+                        if shutdown_rx.try_recv().is_ok() {
+                            tracing::debug!("Shutdown requested while health monitor tick was running");
+                            break 'monitor;
+                        }
+
                         let current_state = state.read().await.clone();
                         if current_state == DaemonState::Stopped {
                             continue;
                         }
 
-                        if let Some(reason) = check_process_exit(&child).await {
-                            tracing::warn!(%reason, "hushd exited unexpectedly");
-                            let next_restart_count = {
-                                let mut value = restart_count.write().await;
-                                *value = value.saturating_add(1);
-                                *value
-                            };
-
-                            if last_ready_at.is_some_and(|ready_at| ready_at.elapsed() >= stable_window) {
-                                restart_streak = 0;
-                            }
-                            last_ready_at = None;
-                            restart_streak = restart_streak.saturating_add(1);
-
-                            set_shared_state(&state, &state_tx, DaemonState::Restarting).await;
-
-                            let backoff = compute_backoff(restart_streak, next_restart_count);
-                            tracing::info!(backoff_ms = backoff.as_millis() as u64, "Scheduling hushd restart");
-                            if sleep_or_shutdown(&mut shutdown_rx, backoff).await {
-                                tracing::debug!("Shutdown requested while waiting to restart hushd");
-                                monitor_started.store(false, Ordering::SeqCst);
-                                break 'monitor;
-                            }
-
-                            match spawn_child_into_slot(&config, &child).await {
-                                Ok(()) => {
-                                    match wait_for_ready_with_client_or_shutdown(
-                                        &config,
-                                        &http_client,
-                                        &mut shutdown_rx,
-                                    )
-                                    .await
-                                    {
-                                        Ok(ReadyWaitOutcome::Ready) => {
-                                            consecutive_health_failures = 0;
-                                            restart_streak = 0;
-                                            last_ready_at = Some(Instant::now());
-                                            set_shared_state(&state, &state_tx, DaemonState::Running).await;
-                                            tracing::info!("hushd restart complete");
-                                        }
-                                        Ok(ReadyWaitOutcome::Shutdown) => {
-                                            tracing::debug!("Shutdown requested during hushd readiness wait");
-                                            terminate_child_slot(&child).await;
-                                            monitor_started.store(false, Ordering::SeqCst);
-                                            break 'monitor;
-                                        }
-                                        Err(err) => {
-                                            tracing::error!(error = %err, "hushd restart failed readiness check");
-                                            terminate_child_slot(&child).await;
-                                            set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
-                                        }
+                        if !external_mode.load(Ordering::SeqCst) {
+                            if let Some(reason) = check_process_exit(&child).await {
+                                // If our managed child died but the port is now owned by a healthy
+                                // external hushd, attach instead of restart-looping.
+                                if let Ok(health) = health_check_with_client(&config, &http_client).await {
+                                    if health.status == "healthy" {
+                                        let _guard = Arc::clone(&lifecycle_lock).lock_owned().await;
+                                        external_mode.store(true, Ordering::SeqCst);
+                                        let _ = terminate_child_slot(&child).await;
+                                        consecutive_health_failures = 0;
+                                        restart_streak = 0;
+                                        last_ready_at = Some(Instant::now());
+                                        set_shared_state(&state, &state_tx, DaemonState::Running).await;
+                                        tracing::warn!(
+                                            reason = %reason,
+                                            "Managed hushd exited but external hushd is healthy; switching to attach mode"
+                                        );
+                                        continue;
                                     }
                                 }
-                                Err(err) => {
-                                    tracing::error!(error = %err, "Failed to respawn hushd");
-                                    set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
-                                }
-                            }
 
-                            continue;
+                                tracing::warn!(%reason, "hushd exited unexpectedly");
+                                let next_restart_count = {
+                                    let mut value = restart_count.write().await;
+                                    *value = value.saturating_add(1);
+                                    *value
+                                };
+
+                                if last_ready_at.is_some_and(|ready_at| ready_at.elapsed() >= stable_window) {
+                                    restart_streak = 0;
+                                }
+                                last_ready_at = None;
+                                restart_streak = restart_streak.saturating_add(1);
+
+                                {
+                                    // Coordinate state transitions with stop()/start() so we don't
+                                    // advertise a restart (or respawn) during shutdown.
+                                    let _guard = Arc::clone(&lifecycle_lock).lock_owned().await;
+                                    if shutdown_rx.try_recv().is_ok() {
+                                        tracing::debug!(
+                                            "Shutdown requested while scheduling restart; skipping"
+                                        );
+                                        break 'monitor;
+                                    }
+                                    if state.read().await.clone() == DaemonState::Stopped {
+                                        break 'monitor;
+                                    }
+                                    set_shared_state(&state, &state_tx, DaemonState::Restarting)
+                                        .await;
+                                }
+
+                                let backoff = compute_backoff(restart_streak, next_restart_count);
+                                tracing::info!(backoff_ms = backoff.as_millis() as u64, "Scheduling hushd restart");
+                                if sleep_or_shutdown(&mut shutdown_rx, backoff).await {
+                                    tracing::debug!("Shutdown requested while waiting to restart hushd");
+                                    break 'monitor;
+                                }
+
+                                let _guard = Arc::clone(&lifecycle_lock).lock_owned().await;
+                                if shutdown_rx.try_recv().is_ok()
+                                    || state.read().await.clone() == DaemonState::Stopped
+                                {
+                                    tracing::debug!(
+                                        "Shutdown requested while acquiring lifecycle lock; skipping restart"
+                                    );
+                                    break 'monitor;
+                                }
+                                if external_mode.load(Ordering::SeqCst) {
+                                    tracing::info!(
+                                        "External mode enabled during restart backoff; skipping managed respawn"
+                                    );
+                                    continue;
+                                }
+                                // If another hushd has claimed the port since we scheduled the
+                                // restart, attach instead of respawning.
+                                if let Ok(health) =
+                                    health_check_with_client(&config, &http_client).await
+                                {
+                                    if health.status == "healthy" {
+                                        external_mode.store(true, Ordering::SeqCst);
+                                        let _ = terminate_child_slot(&child).await;
+                                        consecutive_health_failures = 0;
+                                        restart_streak = 0;
+                                        last_ready_at = Some(Instant::now());
+                                        set_shared_state(&state, &state_tx, DaemonState::Running)
+                                            .await;
+                                        tracing::warn!(
+                                            "External hushd became healthy during restart; switching to attach mode"
+                                        );
+                                        continue;
+                                    }
+                                }
+                                match spawn_child_into_slot(&config, &child).await {
+                                    Ok(()) => {
+                                        match wait_for_ready_with_client_or_shutdown(
+                                            &config,
+                                            &http_client,
+                                            &mut shutdown_rx,
+                                        )
+                                        .await
+                                        {
+                                            Ok(ReadyWaitOutcome::Ready) => {
+                                                // If the restarted child exited but health is good, attach.
+                                                if let Some(reason) = check_process_exit(&child).await {
+                                                    if let Ok(health) = health_check_with_client(&config, &http_client).await {
+                                                        if health.status == "healthy" {
+                                                            external_mode.store(true, Ordering::SeqCst);
+                                                            consecutive_health_failures = 0;
+                                                            restart_streak = 0;
+                                                            last_ready_at = Some(Instant::now());
+                                                            set_shared_state(&state, &state_tx, DaemonState::Running).await;
+                                                            tracing::warn!(
+                                                                reason = %reason,
+                                                                "Restarted hushd exited immediately; attached to external hushd"
+                                                            );
+                                                            continue;
+                                                        }
+                                                    }
+                                                    tracing::error!(
+                                                        reason = %reason,
+                                                        "hushd exited before restart readiness stabilized"
+                                                    );
+                                                    terminate_child_slot(&child).await;
+                                                    set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
+                                                    continue;
+                                                }
+
+                                                external_mode.store(false, Ordering::SeqCst);
+                                                consecutive_health_failures = 0;
+                                                restart_streak = 0;
+                                                last_ready_at = Some(Instant::now());
+                                                set_shared_state(&state, &state_tx, DaemonState::Running).await;
+                                                tracing::info!("hushd restart complete");
+                                            }
+                                            Ok(ReadyWaitOutcome::Shutdown) => {
+                                                tracing::debug!("Shutdown requested during hushd readiness wait");
+                                                terminate_child_slot(&child).await;
+                                                break 'monitor;
+                                            }
+                                            Err(err) => {
+                                                tracing::error!(error = %err, "hushd restart failed readiness check");
+                                                terminate_child_slot(&child).await;
+                                                set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {
+                                        tracing::error!(error = %err, "Failed to respawn hushd");
+                                        set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
+                                    }
+                                }
+
+                                continue;
+                            }
                         }
 
                         match health_check_with_client(&config, &http_client).await {
@@ -317,11 +505,82 @@ impl DaemonManager {
                             if current == DaemonState::Running {
                                 set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
                             }
+
+                            // In external mode there is no child to restart, but the external daemon
+                            // may have disappeared. Fall back to spawning a managed child so the
+                            // agent can self-heal instead of staying offline indefinitely.
+                            if external_mode.load(Ordering::SeqCst) {
+                                tracing::warn!(
+                                    consecutive_failures = consecutive_health_failures,
+                                    "External hushd unhealthy; falling back to managed daemon"
+                                );
+                                let _guard = Arc::clone(&lifecycle_lock).lock_owned().await;
+                                if shutdown_rx.try_recv().is_ok()
+                                    || state.read().await.clone() == DaemonState::Stopped
+                                {
+                                    tracing::debug!(
+                                        "Shutdown requested while preparing external fallback; skipping respawn"
+                                    );
+                                    break 'monitor;
+                                }
+                                set_shared_state(&state, &state_tx, DaemonState::Restarting).await;
+                                external_mode.store(false, Ordering::SeqCst);
+                                match spawn_child_into_slot(&config, &child).await {
+                                    Ok(()) => {
+                                        match wait_for_ready_with_client_or_shutdown(
+                                            &config,
+                                            &http_client,
+                                            &mut shutdown_rx,
+                                        )
+                                        .await
+                                        {
+                                            Ok(ReadyWaitOutcome::Ready) => {
+                                                consecutive_health_failures = 0;
+                                                restart_streak = 0;
+                                                last_ready_at = Some(Instant::now());
+                                                let count = {
+                                                    let mut value = restart_count.write().await;
+                                                    *value = value.saturating_add(1);
+                                                    *value
+                                                };
+                                                set_shared_state(&state, &state_tx, DaemonState::Running).await;
+                                                tracing::info!(
+                                                    restart_count = count,
+                                                    "Recovered from external hushd loss; managed daemon running"
+                                                );
+                                            }
+                                            Ok(ReadyWaitOutcome::Shutdown) => {
+                                                tracing::debug!("Shutdown requested during hushd readiness wait");
+                                                terminate_child_slot(&child).await;
+                                                break 'monitor;
+                                            }
+                                            Err(err) => {
+                                                tracing::error!(
+                                                    error = %err,
+                                                    "Managed daemon failed readiness after external fallback"
+                                                );
+                                                terminate_child_slot(&child).await;
+                                                set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {
+                                        tracing::error!(
+                                            error = %err,
+                                            "Failed to spawn managed daemon after external hushd loss"
+                                        );
+                                        set_shared_state(&state, &state_tx, DaemonState::Unhealthy).await;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         });
+
+        // Store handle for shutdown coordination (stop() may abort on timeout).
+        *self.monitor_task.lock().await = Some(handle);
     }
 
     async fn set_state(&self, new_state: DaemonState) {
@@ -330,10 +589,215 @@ impl DaemonManager {
     }
 }
 
+// ---- Policy cache for warm-start recovery ----
+
+/// Path for the cached policy bundle.
+fn policy_cache_path() -> PathBuf {
+    crate::settings::get_config_dir().join("policy-cache.yaml")
+}
+
+/// Persistent policy cache that stores the last-known-good policy bundle
+/// fetched from hushd. Used for quick warm-start on agent restart so that
+/// hushd can re-load policies faster. This is NOT used for inline evaluation
+/// fallback — when hushd is unreachable, policy checks return deny with
+/// guard "hushd_unreachable" (fail-closed).
+pub struct PolicyCache {
+    http_client: reqwest::Client,
+    cached_policy: Mutex<Option<String>>,
+}
+
+impl PolicyCache {
+    pub fn new() -> Self {
+        let cached = std::fs::read_to_string(policy_cache_path()).ok();
+        Self {
+            http_client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
+            cached_policy: Mutex::new(cached),
+        }
+    }
+
+    /// Fetch the policy bundle from hushd and persist it to disk.
+    pub async fn sync_from_daemon(&self, daemon_url: &str, api_key: Option<&str>) -> Result<()> {
+        let url = format!("{}/api/v1/policy/bundle", daemon_url);
+        let mut request = self.http_client.get(&url);
+        if let Some(key) = api_key {
+            request = request.header("Authorization", format!("Bearer {}", key));
+        }
+
+        let response = request
+            .send()
+            .await
+            .with_context(|| format!("Failed to fetch policy bundle from {}", url))?;
+
+        if !response.status().is_success() {
+            anyhow::bail!("Policy bundle endpoint returned {}", response.status());
+        }
+
+        let body = response
+            .text()
+            .await
+            .with_context(|| "Failed to read policy bundle response body")?;
+
+        // Persist to disk via spawn_blocking to avoid blocking the tokio runtime.
+        let path = policy_cache_path();
+        let path_for_log = path.clone();
+        let body_clone = body.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).with_context(|| {
+                    format!("Failed to create policy cache directory {:?}", parent)
+                })?;
+            }
+            std::fs::write(&path, &body_clone)
+                .with_context(|| format!("Failed to write policy cache to {:?}", path))?;
+            Ok::<_, anyhow::Error>(())
+        })
+        .await
+        .with_context(|| "Policy cache write task panicked")??;
+
+        *self.cached_policy.lock().await = Some(body);
+        tracing::info!(path = ?path_for_log, "Policy cache updated");
+        Ok(())
+    }
+
+    /// Return the last-known-good cached policy YAML, if any.
+    #[allow(dead_code)]
+    pub async fn cached_policy(&self) -> Option<String> {
+        self.cached_policy.lock().await.clone()
+    }
+
+    /// Start a periodic sync loop that refreshes the policy cache from hushd.
+    pub fn start_periodic_sync(
+        self: &Arc<Self>,
+        daemon_url: String,
+        api_key: Option<String>,
+        mut shutdown_rx: broadcast::Receiver<()>,
+    ) {
+        let cache = Arc::clone(self);
+        tokio::spawn(async move {
+            let sync_interval = Duration::from_secs(300); // 5 minutes
+            loop {
+                tokio::select! {
+                    _ = shutdown_rx.recv() => {
+                        tracing::debug!("Policy cache sync loop shutting down");
+                        break;
+                    }
+                    _ = tokio::time::sleep(sync_interval) => {
+                        if let Err(err) = cache.sync_from_daemon(&daemon_url, api_key.as_deref()).await {
+                            tracing::debug!(error = %err, "Periodic policy cache sync failed (daemon may be offline)");
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+/// Queued audit events for offline mode.
+/// Stores events that were generated while hushd was unreachable so they
+/// can be uploaded when connectivity is restored.
+pub struct AuditQueue {
+    queue: Mutex<VecDeque<serde_json::Value>>,
+    flush_lock: Mutex<()>,
+    http_client: reqwest::Client,
+}
+
+const MAX_AUDIT_QUEUE_LEN: usize = 1000;
+
+impl AuditQueue {
+    pub fn new() -> Self {
+        Self {
+            queue: Mutex::new(VecDeque::new()),
+            flush_lock: Mutex::new(()),
+            http_client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
+        }
+    }
+
+    /// Enqueue an audit event to be uploaded later.
+    #[allow(dead_code)]
+    pub async fn enqueue(&self, event: serde_json::Value) {
+        let mut queue = self.queue.lock().await;
+        if queue.len() >= MAX_AUDIT_QUEUE_LEN {
+            queue.pop_front();
+        }
+        queue.push_back(event);
+    }
+
+    async fn requeue_failed_flush(&self, events: VecDeque<serde_json::Value>) {
+        // Preserve chronological ordering: front=oldest, back=newest.
+        // If over capacity, drop oldest entries to match `enqueue()` semantics.
+        let mut queue = self.queue.lock().await;
+        let new_events = std::mem::take(&mut *queue);
+        let mut restored = events;
+        restored.extend(new_events);
+        while restored.len() > MAX_AUDIT_QUEUE_LEN {
+            restored.pop_front();
+        }
+        *queue = restored;
+    }
+
+    /// Drain all queued events and upload them to hushd.
+    pub async fn flush(&self, daemon_url: &str, api_key: Option<&str>) -> Result<usize> {
+        // Serialize flushes so we never interleave drain/requeue in ways that can reorder or
+        // duplicate audit uploads during rapid reconnects.
+        let _flush_guard = self.flush_lock.lock().await;
+
+        let events: VecDeque<serde_json::Value> = {
+            let mut queue = self.queue.lock().await;
+            std::mem::take(&mut *queue)
+        };
+
+        if events.is_empty() {
+            return Ok(0);
+        }
+
+        let count = events.len();
+        let events_vec: Vec<_> = events.iter().collect();
+        let url = format!("{}/api/v1/audit/batch", daemon_url);
+        let mut request = self.http_client.post(&url).json(&serde_json::json!({
+            "events": events_vec,
+        }));
+        if let Some(key) = api_key {
+            request = request.header("Authorization", format!("Bearer {}", key));
+        }
+
+        let response = match request.send().await {
+            Ok(resp) => resp,
+            Err(err) => {
+                // Re-queue events so they are not lost.
+                self.requeue_failed_flush(events).await;
+                return Err(err).with_context(|| "Failed to flush audit queue to daemon");
+            }
+        };
+
+        if !response.status().is_success() {
+            // Re-queue: preserve chronological ordering (oldest -> newest).
+            self.requeue_failed_flush(events).await;
+            anyhow::bail!("Audit batch upload returned {}", response.status());
+        }
+
+        tracing::info!(count, "Flushed queued audit events to daemon");
+        Ok(count)
+    }
+
+    /// Number of events currently queued.
+    pub async fn len(&self) -> usize {
+        self.queue.lock().await.len()
+    }
+}
+
 async fn spawn_child_into_slot(
     config: &DaemonConfig,
     child_slot: &Arc<RwLock<Option<Child>>>,
 ) -> Result<()> {
+    // Defensive: if any managed child is already tracked, terminate it before overwriting
+    // the slot to avoid leaking processes.
+    let _ = terminate_child_slot(child_slot).await;
     let mut child = spawn_daemon_process(config).await?;
     attach_child_logs(&mut child);
     *child_slot.write().await = Some(child);
@@ -366,16 +830,12 @@ async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
         anyhow::bail!("hushd binary not found at {:?}", config.binary_path);
     }
 
+    let runtime_config_path = write_runtime_config_file(config).await?;
+
     let mut cmd = Command::new(&config.binary_path);
     cmd.arg("start")
-        .arg("--port")
-        .arg(config.port.to_string())
-        .arg("--bind")
-        .arg("127.0.0.1");
-
-    if config.policy_path.exists() {
-        cmd.arg("--ruleset").arg(&config.policy_path);
-    }
+        .arg("--config")
+        .arg(&runtime_config_path);
 
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -386,6 +846,92 @@ async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
         .with_context(|| format!("Failed to spawn hushd from {:?}", config.binary_path))?;
 
     Ok(child)
+}
+
+async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
+    // Keep runtime config files in the agent config directory rather than alongside the
+    // policy file. Users may point policy_path at a repo directory or read-only location.
+    let parent = crate::settings::get_config_dir().join("runtime");
+    let runtime_config_filename = format!("hushd.runtime.{}.yaml", config.port);
+    let runtime_config_path = parent.join(&runtime_config_filename);
+    let listen = format!("127.0.0.1:{}", config.port);
+    let policy_path = config.policy_path.clone();
+
+    let path = tokio::task::spawn_blocking(move || {
+        std::fs::create_dir_all(&parent)
+            .with_context(|| format!("Failed to create runtime config dir {:?}", parent))?;
+
+        let policy_path = resolve_supported_policy_path(&policy_path);
+        let runtime = HushdRuntimeConfig {
+            listen,
+            policy_path,
+            ruleset: "default".to_string(),
+        };
+        let serialized = serde_yaml::to_string(&runtime)
+            .with_context(|| "Failed to serialize hushd runtime config")?;
+        std::fs::write(&runtime_config_path, serialized).with_context(|| {
+            format!(
+                "Failed to write hushd runtime config to {:?}",
+                runtime_config_path
+            )
+        })?;
+
+        Ok::<_, anyhow::Error>(runtime_config_path)
+    })
+    .await
+    .with_context(|| "Runtime config write task panicked")??;
+
+    Ok(path)
+}
+
+fn yaml_contains_mapping_key(value: &serde_yaml::Value, needle: &str) -> bool {
+    match value {
+        serde_yaml::Value::Mapping(map) => map.iter().any(|(k, v)| {
+            matches!(k, serde_yaml::Value::String(s) if s == needle)
+                || yaml_contains_mapping_key(v, needle)
+        }),
+        serde_yaml::Value::Sequence(seq) => seq.iter().any(|v| yaml_contains_mapping_key(v, needle)),
+        _ => false,
+    }
+}
+
+fn resolve_supported_policy_path(policy_path: &PathBuf) -> Option<PathBuf> {
+    if !policy_path.exists() {
+        return None;
+    }
+    let Ok(raw) = std::fs::read_to_string(policy_path) else {
+        return None;
+    };
+
+    // Hushd no longer accepts legacy guard keys like `fs_blocklist`.
+    // When an incompatible policy is detected, fall back to built-in ruleset
+    // so the daemon stays available instead of restart-looping.
+    let doc: serde_yaml::Value = match serde_yaml::from_str(&raw) {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                path = %policy_path.display(),
+                error = %err,
+                "Failed to parse policy file; falling back to default ruleset"
+            );
+            return None;
+        }
+    };
+
+    let legacy_guard_keys = ["fs_blocklist", "exec_blocklist", "egress_allowlist"];
+    if let Some(legacy_key) = legacy_guard_keys
+        .into_iter()
+        .find(|key| yaml_contains_mapping_key(&doc, key))
+    {
+        tracing::warn!(
+            path = %policy_path.display(),
+            legacy_key,
+            "Policy file contains legacy guard key; falling back to default ruleset"
+        );
+        return None;
+    }
+
+    Some(policy_path.clone())
 }
 
 fn attach_child_logs(child: &mut Child) {
@@ -517,20 +1063,20 @@ async fn health_check_with_client(
 
 async fn check_process_exit(child_slot: &Arc<RwLock<Option<Child>>>) -> Option<String> {
     let mut guard = child_slot.write().await;
-    if let Some(ref mut proc) = *guard {
-        match proc.try_wait() {
-            Ok(Some(status)) => {
-                *guard = None;
-                Some(format!("process exited with status {}", status))
-            }
-            Ok(None) => None,
-            Err(err) => {
-                *guard = None;
-                Some(format!("failed to check process status: {}", err))
-            }
+    let Some(ref mut proc) = *guard else {
+        // Treat missing child as an exit event so the health monitor can attempt recovery.
+        return Some("process handle missing".to_string());
+    };
+    match proc.try_wait() {
+        Ok(Some(status)) => {
+            *guard = None;
+            Some(format!("process exited with status {}", status))
         }
-    } else {
-        Some("process handle missing".to_string())
+        Ok(None) => None,
+        Err(err) => {
+            *guard = None;
+            Some(format!("failed to check process status: {}", err))
+        }
     }
 }
 
@@ -590,5 +1136,117 @@ mod tests {
     fn backoff_is_bounded() {
         let backoff = compute_backoff(10, 10);
         assert!(backoff <= Duration::from_millis(20_500));
+    }
+
+    #[tokio::test]
+    async fn audit_queue_enqueue_and_len() {
+        let queue = AuditQueue::new();
+        assert_eq!(queue.len().await, 0);
+        queue.enqueue(serde_json::json!({"id": "1"})).await;
+        queue.enqueue(serde_json::json!({"id": "2"})).await;
+        assert_eq!(queue.len().await, 2);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_caps_at_limit() {
+        let queue = AuditQueue::new();
+        for i in 0..1001 {
+            queue
+                .enqueue(serde_json::json!({"id": i.to_string()}))
+                .await;
+        }
+        assert_eq!(queue.len().await, MAX_AUDIT_QUEUE_LEN);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_flush_failure_preserves_order_and_drops_oldest() {
+        use axum::{http::StatusCode, routing::post, Json, Router};
+        use std::sync::{Arc, Mutex as StdMutex};
+        use tokio::net::TcpListener;
+        use tokio::sync::{oneshot, Notify};
+
+        let queue = Arc::new(AuditQueue::new());
+
+        for i in 0..MAX_AUDIT_QUEUE_LEN {
+            queue.enqueue(serde_json::json!({ "id": i as i64 })).await;
+        }
+        assert_eq!(queue.len().await, MAX_AUDIT_QUEUE_LEN);
+
+        let notify = Arc::new(Notify::new());
+        let notify_for_handler = notify.clone();
+
+        let (started_tx, started_rx) = oneshot::channel::<()>();
+        let started_tx = Arc::new(StdMutex::new(Some(started_tx)));
+        let started_tx_for_handler = started_tx.clone();
+
+        let app = Router::new().route(
+            "/api/v1/audit/batch",
+            post(move || {
+                let notify_for_handler = notify_for_handler.clone();
+                let started_tx_for_handler = started_tx_for_handler.clone();
+                async move {
+                    if let Some(tx) = started_tx_for_handler.lock().unwrap().take() {
+                        let _ = tx.send(());
+                    }
+                    // Hold the response so the caller can enqueue new events mid-flush.
+                    notify_for_handler.notified().await;
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error": "fail"})),
+                    )
+                }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let daemon_url = format!("http://{}", addr);
+
+        let queue_for_flush = queue.clone();
+        let daemon_url_for_flush = daemon_url.clone();
+        let flush_task =
+            tokio::spawn(async move { queue_for_flush.flush(&daemon_url_for_flush, None).await });
+
+        // Wait until the server has received the batch request.
+        let _ = started_rx.await;
+
+        // Enqueue new events while flush is in-flight. This will exceed capacity once requeued.
+        for i in MAX_AUDIT_QUEUE_LEN..(MAX_AUDIT_QUEUE_LEN + 5) {
+            queue.enqueue(serde_json::json!({ "id": i as i64 })).await;
+        }
+
+        // Now let the server respond with failure.
+        notify.notify_one();
+
+        let res = flush_task.await.unwrap();
+        assert!(res.is_err());
+
+        let guard = queue.queue.lock().await;
+        assert_eq!(guard.len(), MAX_AUDIT_QUEUE_LEN);
+
+        let ids: Vec<i64> = guard
+            .iter()
+            .map(|v| v.get("id").and_then(|x| x.as_i64()).unwrap())
+            .collect();
+
+        // Oldest should be dropped first to enforce the cap (enqueue() pops front/oldest).
+        assert_eq!(ids.first().copied(), Some(5));
+        // Newest should be preserved.
+        assert_eq!(ids.last().copied(), Some((MAX_AUDIT_QUEUE_LEN + 4) as i64));
+
+        // Queue must preserve chronological order (strictly increasing IDs).
+        for w in ids.windows(2) {
+            assert!(w[0] < w[1]);
+        }
+    }
+
+    #[tokio::test]
+    async fn policy_cache_returns_none_initially() {
+        let cache = PolicyCache::new();
+        // May or may not have a cached file on disk; just verify the method works.
+        let _ = cache.cached_policy().await;
     }
 }

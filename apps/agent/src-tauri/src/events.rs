@@ -12,9 +12,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, Mutex};
 
-const AUDIT_PAGE_SIZE: usize = 50;
-const AUDIT_MAX_PAGES: usize = 40;
-
 /// A policy check event from hushd.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyEvent {
@@ -22,7 +19,7 @@ pub struct PolicyEvent {
     pub id: String,
     /// Timestamp.
     pub timestamp: String,
-    /// Action type (e.g., "file_access", "network", "exec").
+    /// Action type (e.g., "file_access", "file_write", "egress", "shell", "mcp_tool", "patch").
     pub action_type: String,
     /// Target (file path, URL, command).
     pub target: Option<String>,
@@ -43,6 +40,37 @@ impl PolicyEvent {
     pub fn normalized_decision(&self) -> NormalizedDecision {
         NormalizedDecision::from_str(&self.decision)
     }
+}
+
+/// Daemon-level SSE event types beyond audit events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum DaemonEvent {
+    /// Policy was updated on hushd; local cache should refresh.
+    PolicyUpdated {
+        #[serde(default)]
+        version: Option<String>,
+    },
+    /// A security violation was detected.
+    Violation {
+        #[serde(default)]
+        guard: Option<String>,
+        #[serde(default)]
+        message: Option<String>,
+        #[serde(default)]
+        severity: Option<String>,
+        #[serde(default)]
+        target: Option<String>,
+    },
+    /// Session posture transitioned (e.g., standard -> restricted).
+    SessionPostureTransition {
+        #[serde(default)]
+        session_id: Option<String>,
+        #[serde(default)]
+        from: Option<String>,
+        #[serde(default)]
+        to: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -85,13 +113,16 @@ pub struct EventManager {
     api_key: Option<String>,
     http_client: reqwest::Client,
     events_tx: broadcast::Sender<PolicyEvent>,
+    daemon_events_tx: broadcast::Sender<DaemonEvent>,
     deduper: Arc<Mutex<EventDeduper>>,
-    poll_cursor_id: Arc<Mutex<Option<String>>>,
+    /// Cursor for the polling fallback so we resume from where we left off.
+    poll_cursor: Arc<Mutex<Option<String>>>,
 }
 
 impl EventManager {
     pub fn new(daemon_url: String, api_key: Option<String>) -> Self {
         let (events_tx, _) = broadcast::channel(200);
+        let (daemon_events_tx, _) = broadcast::channel(64);
 
         Self {
             daemon_url,
@@ -101,14 +132,20 @@ impl EventManager {
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             events_tx,
+            daemon_events_tx,
             deduper: Arc::new(Mutex::new(EventDeduper::new(2_000))),
-            poll_cursor_id: Arc::new(Mutex::new(None)),
+            poll_cursor: Arc::new(Mutex::new(None)),
         }
     }
 
-    /// Subscribe to events.
+    /// Subscribe to policy check events.
     pub fn subscribe(&self) -> broadcast::Receiver<PolicyEvent> {
         self.events_tx.subscribe()
+    }
+
+    /// Subscribe to daemon-level events (policy updates, violations, posture transitions).
+    pub fn subscribe_daemon_events(&self) -> broadcast::Receiver<DaemonEvent> {
+        self.daemon_events_tx.subscribe()
     }
 
     /// Start event collection.
@@ -156,7 +193,7 @@ impl EventManager {
                             tracing::info!("hushd SSE connection opened");
                         }
                         Some(Ok(Event::Message(msg))) => {
-                            if let Err(err) = self.handle_raw_event(&msg.data).await {
+                            if let Err(err) = self.handle_sse_message(&msg.event, &msg.data).await {
                                 tracing::warn!(error = %err, "Failed to parse SSE event payload");
                             }
                         }
@@ -204,18 +241,23 @@ impl EventManager {
             events: Vec<PolicyEvent>,
         }
 
-        let url = format!("{}/api/v1/audit", self.daemon_url);
-        let cursor_id = self.poll_cursor_id.lock().await.clone();
-        let mut offset = 0usize;
-        let mut pages = 0usize;
-        let mut found_cursor = false;
-        let mut unseen_desc: Vec<PolicyEvent> = Vec::new();
+        let base_url = format!("{}/api/v1/audit", self.daemon_url);
+        let limit = 50u32;
+        let max_pages = 40u32;
+        let cursor = self.poll_cursor.lock().await.clone();
 
-        while pages < AUDIT_MAX_PAGES {
-            let mut request = self.http_client.get(&url).query(&[
-                ("limit", AUDIT_PAGE_SIZE.to_string()),
-                ("offset", offset.to_string()),
-            ]);
+        let mut all_events: Vec<PolicyEvent> = Vec::new();
+
+        for page in 0..max_pages {
+            let offset = page * limit;
+            let mut request = self
+                .http_client
+                .get(&base_url)
+                .query(&[
+                    ("limit", &limit.to_string()),
+                    ("offset", &offset.to_string()),
+                ]);
+
             if let Some(ref key) = self.api_key {
                 request = request.header("Authorization", format!("Bearer {}", key));
             }
@@ -224,6 +266,7 @@ impl EventManager {
                 .send()
                 .await
                 .with_context(|| "Failed to poll audit events")?;
+
             if !response.status().is_success() {
                 anyhow::bail!("Audit API returned status: {}", response.status());
             }
@@ -232,56 +275,94 @@ impl EventManager {
                 .json()
                 .await
                 .with_context(|| "Failed to parse audit response")?;
-            if audit.events.is_empty() {
-                break;
-            }
 
-            let page_len = audit.events.len();
+            let fetched = audit.events.len();
+
+            // Audit endpoint returns newest-first. Collect until we hit the cursor
+            // (last seen event id) or exhaust the page.
+            let mut hit_cursor = false;
             for event in audit.events {
-                if cursor_id.as_ref().is_some_and(|id| &event.id == id) {
-                    found_cursor = true;
-                    break;
+                if let Some(ref cursor_id) = cursor {
+                    if event.id == *cursor_id {
+                        hit_cursor = true;
+                        break;
+                    }
                 }
-                unseen_desc.push(event);
+                all_events.push(event);
             }
 
-            pages += 1;
-            if found_cursor || page_len < AUDIT_PAGE_SIZE {
+            if hit_cursor || fetched < limit as usize {
                 break;
             }
-            offset += AUDIT_PAGE_SIZE;
         }
 
-        if pages == AUDIT_MAX_PAGES && !found_cursor {
-            tracing::warn!(
-                page_limit = AUDIT_MAX_PAGES,
-                "Audit poll fallback reached pagination cap; some older events may be skipped"
-            );
+        // Emit oldest-first for stable UI ordering.
+        all_events.reverse();
+
+        // Advance cursor to the newest event we've seen.
+        if let Some(newest) = all_events.last() {
+            *self.poll_cursor.lock().await = Some(newest.id.clone());
         }
 
-        if let Some(newest_unseen) = unseen_desc.first() {
-            *self.poll_cursor_id.lock().await = Some(newest_unseen.id.clone());
-        }
-
-        // Audit endpoint is newest-first; emit oldest-first for stable UI ordering.
-        for event in unseen_desc.into_iter().rev() {
+        for event in all_events {
             self.publish_event_if_new(event).await;
         }
 
         Ok(())
     }
 
-    async fn handle_raw_event(&self, data: &str) -> Result<()> {
-        // Skip heartbeats.
+    /// Handle an SSE message using both the SSE event-type field and the JSON data payload.
+    ///
+    /// hushd puts the event type in the SSE `event:` protocol field, not in the JSON
+    /// `data:` payload. We use the SSE event field to identify daemon-level events and
+    /// inject the `"type"` key so serde can deserialize the tagged enum.
+    async fn handle_sse_message(&self, event_type: &str, data: &str) -> Result<()> {
         if data.is_empty() || data == "ping" {
             return Ok(());
         }
 
-        let event: PolicyEvent = serde_json::from_str(data)
-            .with_context(|| format!("Failed to parse SSE event payload: {}", data))?;
+        // Daemon-level events: hushd sends type via SSE `event:` field.
+        match event_type {
+            "policy_updated" | "violation" | "session_posture_transition" => {
+                let mut json: serde_json::Value =
+                    serde_json::from_str(data).with_context(|| {
+                        format!("Malformed JSON in SSE daemon event ({event_type}): {data}")
+                    })?;
+                if let Some(obj) = json.as_object_mut() {
+                    obj.insert(
+                        "type".to_string(),
+                        serde_json::Value::String(event_type.to_string()),
+                    );
+                }
+                let daemon_event: DaemonEvent =
+                    serde_json::from_value(json).with_context(|| {
+                        format!("Failed to parse daemon event ({event_type}): {data}")
+                    })?;
+                let _ = self.daemon_events_tx.send(daemon_event);
+                return Ok(());
+            }
+            _ => {}
+        }
 
-        self.publish_event_if_new(event).await;
-        Ok(())
+        // Prefer policy audit events when the payload is ambiguous (policy events may also
+        // contain a "type" key).
+        match serde_json::from_str::<PolicyEvent>(data) {
+            Ok(event) => {
+                self.publish_event_if_new(event).await;
+                Ok(())
+            }
+            Err(policy_err) => {
+                // Fallback: try direct daemon-event deserialization in case the data payload
+                // contains "type".
+                if let Ok(daemon_event) = serde_json::from_str::<DaemonEvent>(data) {
+                    let _ = self.daemon_events_tx.send(daemon_event);
+                    return Ok(());
+                }
+
+                Err::<(), _>(policy_err)
+                    .with_context(|| format!("Failed to parse SSE event payload: {}", data))
+            }
+        }
     }
 
     async fn publish_event_if_new(&self, event: PolicyEvent) {
@@ -318,6 +399,103 @@ mod tests {
         };
         assert_eq!(event.id, "123");
         assert!(event.normalized_decision().is_blocked());
+    }
+
+    #[test]
+    fn daemon_event_policy_updated_deserializes() {
+        let json = r#"{"type":"policy_updated","version":"1.2.0"}"#;
+        let event: DaemonEvent = match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(err) => panic!("failed to parse policy_updated event: {err}"),
+        };
+        assert!(matches!(event, DaemonEvent::PolicyUpdated { .. }));
+    }
+
+    #[test]
+    fn daemon_event_violation_deserializes() {
+        let json = r#"{"type":"violation","guard":"fs_blocklist","severity":"high","target":"/etc/shadow"}"#;
+        let event: DaemonEvent = match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(err) => panic!("failed to parse violation event: {err}"),
+        };
+        assert!(matches!(event, DaemonEvent::Violation { .. }));
+    }
+
+    #[test]
+    fn daemon_event_posture_transition_deserializes() {
+        let json = r#"{"type":"session_posture_transition","session_id":"s-1","from":"standard","to":"restricted"}"#;
+        let event: DaemonEvent = match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(err) => panic!("failed to parse posture transition event: {err}"),
+        };
+        assert!(matches!(
+            event,
+            DaemonEvent::SessionPostureTransition { .. }
+        ));
+    }
+
+    /// Verify that handle_sse_message dispatches daemon events using the SSE event-type
+    /// field (how hushd actually sends them) rather than requiring "type" in the JSON data.
+    #[tokio::test]
+    async fn sse_event_field_dispatches_daemon_events() {
+        let mgr = EventManager::new("http://localhost:0".to_string(), None);
+        let mut daemon_rx = mgr.subscribe_daemon_events();
+
+        // hushd sends: event: policy_updated\ndata: {"version":"2.0.0"}
+        // Note: no "type" key in the JSON payload.
+        mgr.handle_sse_message("policy_updated", r#"{"version":"2.0.0"}"#)
+            .await
+            .expect("should dispatch policy_updated");
+
+        let evt = daemon_rx
+            .try_recv()
+            .expect("should have received daemon event");
+        assert!(matches!(evt, DaemonEvent::PolicyUpdated { version: Some(v) } if v == "2.0.0"));
+
+        // violation with SSE event field
+        mgr.handle_sse_message("violation", r#"{"guard":"fs_blocklist","severity":"high"}"#)
+            .await
+            .expect("should dispatch violation");
+
+        let evt = daemon_rx
+            .try_recv()
+            .expect("should have received violation event");
+        assert!(
+            matches!(evt, DaemonEvent::Violation { guard: Some(g), .. } if g == "fs_blocklist")
+        );
+    }
+
+    /// Verify that audit events (no special SSE event field) still parse correctly.
+    #[tokio::test]
+    async fn sse_default_event_dispatches_audit() {
+        let mgr = EventManager::new("http://localhost:0".to_string(), None);
+        let mut events_rx = mgr.subscribe();
+
+        let data = r#"{"id":"ev-1","timestamp":"2024-01-01T00:00:00Z","action_type":"file_access","decision":"blocked"}"#;
+        mgr.handle_sse_message("message", data)
+            .await
+            .expect("should dispatch audit event");
+
+        let evt = events_rx
+            .try_recv()
+            .expect("should have received policy event");
+        assert_eq!(evt.id, "ev-1");
+    }
+
+    /// Malformed JSON in a known daemon event type must return an error,
+    /// not silently create a phantom event with all-None fields.
+    #[tokio::test]
+    async fn sse_malformed_json_returns_error() {
+        let mgr = EventManager::new("http://localhost:0".to_string(), None);
+        let mut daemon_rx = mgr.subscribe_daemon_events();
+
+        let result = mgr
+            .handle_sse_message("violation", "not valid json{{{")
+            .await;
+        assert!(result.is_err(), "malformed JSON should be an error");
+
+        // No phantom event should have been emitted.
+        assert!(daemon_rx.try_recv().is_err());
     }
 
     #[test]

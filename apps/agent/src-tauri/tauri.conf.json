@@ -15,7 +15,7 @@
     },
     "trayIcon": {
       "iconPath": "icons/icon.png",
-      "iconAsTemplate": true
+      "iconAsTemplate": false
     }
   },
   "bundle": {
@@ -30,7 +30,9 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "resources/*"
+      "resources/*",
+      "resources/**/*",
+      "icons/*"
     ],
     "macOS": {
       "minimumSystemVersion": "10.15",
@@ -46,9 +48,5 @@
       "timestampUrl": ""
     }
   },
-  "plugins": {
-    "notification": {
-      "enabled": true
-    }
-  }
+  "plugins": {}
 }

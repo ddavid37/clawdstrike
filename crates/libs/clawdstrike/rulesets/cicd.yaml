@@ -19,6 +19,15 @@ guards:
       - "**/.gnupg/**"
       - "/etc/shadow"
       - "/etc/passwd"
+      # Windows credential stores
+      - "**/AppData/Roaming/Microsoft/Credentials/**"
+      - "**/AppData/Local/Microsoft/Credentials/**"
+      - "**/AppData/Roaming/Microsoft/Vault/**"
+      # Windows registry hives
+      - "**/NTUSER.DAT"
+      - "**/Windows/System32/config/SAM"
+      - "**/Windows/System32/config/SECURITY"
+      - "**/Windows/System32/config/SYSTEM"
     exceptions:
       # Allow reading workflow files
       - "**/.github/workflows/**"
@@ -85,6 +94,10 @@ guards:
       - "(?i)disable[\\s_\\-]?(security|auth|ssl|tls)"
       - "(?i)rm\\s+-rf\\s+/"
       - "(?i)chmod\\s+777"
+
+  shell_command:
+    enabled: true
+    enforce_forbidden_paths: true
 
   mcp_tool:
     allow:

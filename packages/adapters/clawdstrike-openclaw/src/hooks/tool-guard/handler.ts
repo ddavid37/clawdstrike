@@ -4,28 +4,161 @@
  * Intercepts tool results and enforces security policy.
  */
 
+import { createHash } from 'node:crypto';
+
 import type {
   HookHandler,
   HookEvent,
   ToolResultPersistEvent,
   ClawdstrikeConfig,
+  Decision,
   PolicyEvent,
-  ToolEventData,
-  FileEventData,
-  CommandEventData,
-  NetworkEventData,
-  PatchEventData,
 } from '../../types.js';
 import { PolicyEngine } from '../../policy/engine.js';
+import { checkAndConsumeApproval } from '../approval-state.js';
+import { extractPath, normalizeApprovalResource } from '../approval-utils.js';
+
+// ── LRU Decision Cache ──────────────────────────────────────────────
+
+interface CacheEntry {
+  decision: Decision;
+  expiresAt: number;
+}
+
+const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_CACHE_MAX = 256;
+
+function stableStringify(value: unknown, seen = new WeakSet<object>()): string {
+  if (value === null) return 'null';
+
+  const t = typeof value;
+  if (t === 'string') return JSON.stringify(value);
+  if (t === 'number' || t === 'boolean') return String(value);
+  if (t === 'bigint') return JSON.stringify(String(value));
+  if (t === 'undefined') return '"__undefined__"';
+  if (t === 'symbol') return JSON.stringify(String(value));
+  if (t === 'function') return '"__function__"';
+
+  if (Array.isArray(value)) {
+    return `[${value.map((v) => stableStringify(v, seen)).join(',')}]`;
+  }
+
+  if (t !== 'object') {
+    return JSON.stringify(String(value));
+  }
+
+  if (seen.has(value as object)) {
+    return '"__cycle__"';
+  }
+  seen.add(value as object);
+
+  // Only stable-sort plain objects; for other objects (Date, Buffer, etc) defer to
+  // JSON.stringify where possible.
+  const tag = Object.prototype.toString.call(value);
+  if (tag !== '[object Object]') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return JSON.stringify(String(value));
+    }
+  }
+
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  const entries = keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k], seen)}`);
+  return `{${entries.join(',')}}`;
+}
+
+function shortSha256(value: unknown): string {
+  const h = createHash('sha256');
+  if (typeof value === 'string') h.update(value);
+  else h.update(stableStringify(value));
+  return h.digest('hex').slice(0, 16);
+}
+
+function policyCacheKey(policy: unknown): string {
+  const version =
+    policy &&
+    typeof policy === 'object' &&
+    'version' in policy &&
+    typeof (policy as { version?: unknown }).version === 'string'
+      ? (policy as { version: string }).version
+      : 'unknown';
+
+  return `${version}@${shortSha256(policy)}`;
+}
+
+/** Event types that must never be cached (destructive / non-idempotent). */
+const UNCACHEABLE_EVENT_TYPES = new Set([
+  'command_exec',
+  'patch_apply',
+  'file_write',
+]);
+
+export class DecisionCache {
+  private readonly maxSize: number;
+  private readonly ttlMs: number;
+  private readonly map = new Map<string, CacheEntry>();
+
+  constructor(maxSize = DEFAULT_CACHE_MAX, ttlMs = DEFAULT_CACHE_TTL_MS) {
+    this.maxSize = maxSize;
+    this.ttlMs = ttlMs;
+  }
+
+  /** Build a cache key from event type + resource identifier + policy fingerprint. */
+  static key(eventType: string, resource: string, policyKey: string): string {
+    return `${eventType}:${resource}:${policyKey}`;
+  }
+
+  get(key: string): Decision | undefined {
+    const entry = this.map.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.map.delete(key);
+      return undefined;
+    }
+    // Move to end (most-recently-used).
+    this.map.delete(key);
+    this.map.set(key, entry);
+    return entry.decision;
+  }
+
+  set(key: string, decision: Decision): void {
+    // Evict oldest when at capacity.
+    if (this.map.size >= this.maxSize) {
+      const oldest = this.map.keys().next().value;
+      if (oldest !== undefined) this.map.delete(oldest);
+    }
+    this.map.set(key, { decision, expiresAt: Date.now() + this.ttlMs });
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+}
+
+// ── Module State ─────────────────────────────────────────────────────
 
 /** Shared policy engine instance */
 let engine: PolicyEngine | null = null;
+let currentConfig: ClawdstrikeConfig = {};
+let cachedPolicyKey = 'unknown';
+
+/** Shared decision cache (reset on initialize) */
+export let decisionCache = new DecisionCache();
 
 /**
  * Initialize the hook with configuration
  */
 export function initialize(config: ClawdstrikeConfig): void {
   engine = new PolicyEngine(config);
+  currentConfig = config;
+  decisionCache = new DecisionCache();
+  cachedPolicyKey = policyCacheKey(engine.getPolicy());
 }
 
 /**
@@ -34,8 +167,33 @@ export function initialize(config: ClawdstrikeConfig): void {
 function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
   if (!engine) {
     engine = new PolicyEngine(config ?? {});
+    cachedPolicyKey = policyCacheKey(engine.getPolicy());
   }
   return engine;
+}
+
+/**
+ * Extract a stable resource identifier from a policy event for cache keying.
+ */
+function extractResourceKey(event: PolicyEvent): string {
+  switch (event.data.type) {
+    case 'file':
+      return event.data.path;
+    case 'network':
+      return event.data.host + ':' + event.data.port;
+    case 'tool':
+      // Tool-call decisions depend on parameters and outputs (e.g., secret leak checks).
+      // Include both so cached allows cannot be reused for a different invocation.
+      return `${event.data.toolName}:${shortSha256(event.data.parameters)}:${shortSha256(event.data.result ?? '')}`;
+    case 'command':
+      return event.data.command + ' ' + event.data.args.join(' ');
+    case 'patch':
+      return event.data.filePath;
+    case 'secret':
+      return event.data.secretName;
+    default:
+      return '';
+  }
 }
 
 /**
@@ -48,36 +206,53 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
 
   const toolEvent = event as ToolResultPersistEvent;
   const { toolName, params, result } = toolEvent.context.toolResult;
+  const sessionId = toolEvent.context.sessionId;
   const policyEngine = getEngine();
 
-  // Create policy event from tool result
-  const policyEvent = createPolicyEvent(
-    toolEvent.context.sessionId,
-    toolName,
-    params,
-    result,
-  );
+  // Check if preflight already approved this action — skip policy evaluation
+  // but still run output sanitization below.
+  const resource = normalizeApprovalResource(policyEngine, toolName, params);
+  const priorApproval = checkAndConsumeApproval(sessionId, toolName, resource);
 
-  // Evaluate policy
-  const decision = await policyEngine.evaluate(policyEvent);
-
-  const isDenied = decision.status === 'deny' || decision.denied;
-  const isWarn = decision.status === 'warn' || decision.warn;
-
-  if (isDenied) {
-    // Block the tool result
-    toolEvent.context.toolResult.error = decision.reason ?? 'Policy violation';
-    toolEvent.messages.push(
-      `[clawdstrike] Blocked by ${decision.guard}: ${decision.reason}`,
+  if (!priorApproval) {
+    // Create policy event from tool result
+    const policyEvent = createPolicyEvent(
+      sessionId,
+      toolName,
+      params,
+      result,
     );
-    return;
-  }
 
-  if (isWarn) {
-    // Add warning message
-    toolEvent.messages.push(
-      `[clawdstrike] Warning: ${decision.message ?? decision.reason}`,
-    );
+    // Check decision cache (skip for destructive ops and advisory/audit modes)
+    const mode = currentConfig.mode ?? 'deterministic';
+    const useCache = mode === 'deterministic' && !UNCACHEABLE_EVENT_TYPES.has(policyEvent.eventType);
+    const cacheKey = useCache
+      ? DecisionCache.key(policyEvent.eventType, extractResourceKey(policyEvent), cachedPolicyKey)
+      : '';
+
+    let decision = useCache ? decisionCache.get(cacheKey) : undefined;
+    if (!decision) {
+      decision = await policyEngine.evaluate(policyEvent);
+      if (useCache && decision.status === 'allow') {
+        decisionCache.set(cacheKey, decision);
+      }
+    }
+
+    if (decision.status === 'deny') {
+      // Block the tool result
+      toolEvent.context.toolResult.error = decision.reason ?? 'Policy violation';
+      toolEvent.messages.push(
+        `[clawdstrike] Blocked by ${decision.guard}: ${decision.reason}`,
+      );
+      return;
+    }
+
+    if (decision.status === 'warn') {
+      // Add warning message
+      toolEvent.messages.push(
+        `[clawdstrike] Warning: ${decision.message ?? decision.reason}`,
+      );
+    }
   }
 
   function sanitizeUnknown(
@@ -233,7 +408,7 @@ function createEventData(
         contentBase64,
         contentHash,
         operation: eventType === 'file_read' ? 'read' : 'write',
-      } as FileEventData;
+      };
     }
 
     case 'network_egress': {
@@ -243,7 +418,7 @@ function createEventData(
         host,
         port,
         url,
-      } as NetworkEventData;
+      };
     }
 
     case 'command_exec': {
@@ -253,7 +428,7 @@ function createEventData(
         command,
         args,
         workingDir,
-      } as CommandEventData;
+      };
     }
 
     case 'patch_apply': {
@@ -262,7 +437,7 @@ function createEventData(
         type: 'patch',
         filePath,
         patchContent,
-      } as PatchEventData;
+      };
     }
 
     case 'tool_call':
@@ -272,35 +447,9 @@ function createEventData(
         toolName,
         parameters: params,
         result: typeof result === 'string' ? result : JSON.stringify(result ?? ''),
-      } as ToolEventData;
+      };
     }
   }
-}
-
-/**
- * Extract file path from tool params
- */
-function extractPath(params: Record<string, unknown>): string | undefined {
-  // Common parameter names for file paths
-  const pathKeys = ['path', 'file', 'file_path', 'filepath', 'filename', 'target'];
-
-  for (const key of pathKeys) {
-    if (typeof params[key] === 'string') {
-      return params[key] as string;
-    }
-  }
-
-  // Check for path in command string
-  if (typeof params.command === 'string') {
-    const command = params.command as string;
-    // Try to extract path from commands like "cat /path/to/file"
-    const match = command.match(/(?:cat|head|tail|less|more|vim|nano|read)\s+([^\s|><]+)/);
-    if (match) {
-      return match[1];
-    }
-  }
-
-  return undefined;
 }
 
 function extractFileContent(
@@ -341,10 +490,10 @@ function extractNetworkInfo(
   params: Record<string, unknown>,
 ): { host: string; port: number; url?: string } {
   // Try to get URL first
-  const url =
-    (params.url as string) ??
-    (params.endpoint as string) ??
-    (params.href as string);
+  const url = typeof params.url === 'string' ? params.url
+    : typeof params.endpoint === 'string' ? params.endpoint
+    : typeof params.href === 'string' ? params.href
+    : undefined;
 
   if (url) {
     try {
@@ -361,8 +510,7 @@ function extractNetworkInfo(
 
   // Try to extract from command
   if (typeof params.command === 'string') {
-    const command = params.command as string;
-    const urlMatch = command.match(/https?:\/\/[^\s'"]+/);
+    const urlMatch = params.command.match(/https?:\/\/[^\s'"]+/);
     if (urlMatch) {
       try {
         const parsed = new URL(urlMatch[0]);
@@ -378,11 +526,11 @@ function extractNetworkInfo(
   }
 
   // Fallback
-  return {
-    host: (params.host as string) ?? (params.hostname as string) ?? 'unknown',
-    port: (params.port as number) ?? 80,
-    url,
-  };
+  const host = typeof params.host === 'string' ? params.host
+    : typeof params.hostname === 'string' ? params.hostname
+    : 'unknown';
+  const port = typeof params.port === 'number' ? params.port : 80;
+  return { host, port, url };
 }
 
 function extractCommandInfo(
