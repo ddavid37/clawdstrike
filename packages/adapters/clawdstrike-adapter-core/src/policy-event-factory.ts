@@ -1,4 +1,23 @@
 import type { EventType, PolicyEvent } from './types.js';
+import { parseNetworkTarget } from './network-target.js';
+
+function coerceValidPort(value: unknown): number | null {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    const port = Math.trunc(value);
+    if (port > 0 && port <= 65535) return port;
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!/^[0-9]+$/.test(trimmed)) return null;
+    const port = Number.parseInt(trimmed, 10);
+    if (Number.isFinite(port) && port > 0 && port <= 65535) return port;
+  }
+
+  return null;
+}
 
 export class PolicyEventFactory {
   private readonly toolTypeMapping: Map<RegExp, EventType> = new Map([
@@ -108,22 +127,22 @@ export class PolicyEventFactory {
         const url = String(
           parameters.url ?? parameters.endpoint ?? parameters.href ?? '',
         );
-        try {
-          const parsed = new URL(url.includes('://') ? url : `https://${url}`);
-          return {
-            type: 'network',
-            host: parsed.hostname,
-            port: parseInt(parsed.port) || (parsed.protocol === 'https:' ? 443 : 80),
-            url,
-          };
-        } catch {
-          return {
-            type: 'network',
-            host: String(parameters.host ?? url),
-            port: Number(parameters.port ?? 443),
-            url,
-          };
-        }
+        const explicitHost = parameters.host;
+        const explicitPort = parameters.port;
+
+        const parsedTarget = parseNetworkTarget(url, { emptyPort: 'default' });
+        const host = typeof explicitHost === 'string' && explicitHost.length > 0
+          ? explicitHost
+          : parsedTarget.host;
+
+        const port = coerceValidPort(explicitPort) ?? parsedTarget.port;
+
+        return {
+          type: 'network',
+          host,
+          port,
+          url,
+        };
       }
 
       case 'patch_apply':
@@ -148,4 +167,3 @@ export class PolicyEventFactory {
     return `evt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   }
 }
-

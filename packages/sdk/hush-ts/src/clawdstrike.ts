@@ -34,6 +34,7 @@
  * @packageDocumentation
  */
 
+import { parseNetworkTarget } from '@clawdstrike/adapter-core';
 import { EgressAllowlistGuard } from './guards/egress-allowlist.js';
 import { ForbiddenPathGuard } from './guards/forbidden-path.js';
 import { JailbreakGuard } from './guards/jailbreak.js';
@@ -1240,19 +1241,12 @@ export class ClawdstrikeSession {
    * Check network egress.
    */
   async checkNetwork(url: string): Promise<Decision> {
-    let host: string;
-    let port: number;
-
-    try {
-      const parsed = new URL(url);
-      host = parsed.hostname;
-      port = parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' ? 443 : 80);
-    } catch {
-      host = url;
-      port = 443;
-    }
-
-    return this.check('network_egress', { host, port, url });
+    const target = parseNetworkTarget(url);
+    return this.check('network_egress', {
+      host: target.host,
+      port: target.port,
+      url: target.url,
+    });
   }
 
   /**
@@ -1558,19 +1552,12 @@ export class Clawdstrike {
    * ```
    */
   async checkNetwork(url: string): Promise<Decision> {
-    let host: string;
-    let port: number;
-
-    try {
-      const parsed = new URL(url);
-      host = parsed.hostname;
-      port = parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' ? 443 : 80);
-    } catch {
-      host = url;
-      port = 443;
-    }
-
-    return this.check('network_egress', { host, port, url });
+    const target = parseNetworkTarget(url);
+    return this.check('network_egress', {
+      host: target.host,
+      port: target.port,
+      url: target.url,
+    });
   }
 
   /**
