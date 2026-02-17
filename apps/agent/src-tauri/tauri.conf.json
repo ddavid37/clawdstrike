@@ -4,18 +4,14 @@
   "version": "0.1.0",
   "identifier": "dev.clawdstrike.agent",
   "build": {
-    "beforeDevCommand": "",
-    "beforeBuildCommand": "",
+    "beforeDevCommand": "sh scripts/prepare-bundled-hushd.sh dev",
+    "beforeBuildCommand": "sh scripts/prepare-bundled-hushd.sh release",
     "frontendDist": "resources"
   },
   "app": {
     "windows": [],
     "security": {
       "csp": null
-    },
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": false
     }
   },
   "bundle": {

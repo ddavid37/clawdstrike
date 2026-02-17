@@ -28,7 +28,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 reqwest = { version = "0.12", features = ["json"] }
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
 
 # SSE client
 reqwest-eventsource = "0.6"
@@ -42,6 +42,9 @@ thiserror = "1"
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 
+# Versioning
+semver = "1"
+
 # UUID
 uuid = { version = "1", features = ["v4", "serde"] }
 
@@ -51,6 +54,9 @@ keyring = "3"
 
 # Process utilities
 which = "6"
+
+# Shared crypto/data primitives
+hush-core = { path = "../../../crates/libs/hush-core" }
 
 # Logging
 tracing = "0.1"

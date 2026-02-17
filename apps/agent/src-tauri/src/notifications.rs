@@ -58,24 +58,35 @@ impl<R: Runtime> NotificationManager<R> {
         Self { app, settings }
     }
 
+    async fn should_notify(&self, event_severity: Severity) -> bool {
+        let settings = self.settings.read().await;
+        if !settings.notifications_enabled {
+            return false;
+        }
+        let min_severity = Severity::from_str(&settings.notification_severity);
+        event_severity >= min_severity
+    }
+
     /// Show notification for a policy event.
     pub async fn notify(&self, event: &PolicyEvent) {
-        let settings = self.settings.read().await;
-
-        if !settings.notifications_enabled {
-            return;
-        }
-
-        let min_severity = Severity::from_str(&settings.notification_severity);
         let event_severity = Severity::from_decision(&event.decision);
-        if event_severity < min_severity {
+        if !self.should_notify(event_severity).await {
             return;
         }
-
-        drop(settings);
 
         let (title, body) = format_notification(event);
         show_branded_notification(&self.app, &title, &body);
+    }
+
+    /// Show notification for posture transitions.
+    pub async fn notify_posture_transition(&self, from: &str, to: &str) {
+        let notifications_enabled = self.settings.read().await.notifications_enabled;
+        if !notifications_enabled {
+            return;
+        }
+
+        let body = format!("Posture changed from {} to {}", from, to);
+        show_branded_notification(&self.app, "Posture Transition", &body);
     }
 }
 
@@ -147,8 +158,6 @@ fn show_branded_notification<R: Runtime>(app: &AppHandle<R>, title: &str, body: 
         if let Err(err) = notification.send() {
             tracing::error!(error = %err, "Failed to show notification");
         }
-
-        return;
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -186,13 +195,31 @@ fn format_notification(event: &PolicyEvent) -> (String, String) {
 
     let target = event.target.as_deref().unwrap_or("unknown target");
 
-    let body = if let Some(ref message) = event.message {
+    let mut body = if let Some(ref message) = event.message {
         format!("{}\n{}", target, message)
     } else if let Some(ref guard) = event.guard {
         format!("{}\nGuard: {}", target, guard)
     } else {
         target.to_string()
     };
+
+    if let Some(agent_id) = event
+        .agent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        body.push_str(&format!("\nAgent: {agent_id}"));
+    }
+
+    if let Some(session_id) = event
+        .session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        body.push_str(&format!("\nSession: {session_id}"));
+    }
 
     (title, body)
 }
@@ -252,6 +279,22 @@ pub fn show_hooks_installed_notification<R: Runtime>(app: &AppHandle<R>, success
     show_notification(app, title, body);
 }
 
+/// Show a notification for OpenClaw plugin installation.
+pub fn show_openclaw_plugin_installed_notification<R: Runtime>(app: &AppHandle<R>, success: bool) {
+    let (title, body) = if success {
+        (
+            "OpenClaw Plugin Installed",
+            "Clawdstrike security plugin is now active in OpenClaw",
+        )
+    } else {
+        (
+            "OpenClaw Plugin Installation Failed",
+            "Failed to install OpenClaw plugin. Check logs for details.",
+        )
+    };
+    show_notification(app, title, body);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,12 +326,16 @@ mod tests {
             severity: Some("high".to_string()),
             message: None,
             details: serde_json::Value::Null,
+            session_id: Some("s-123".to_string()),
+            agent_id: Some("a-456".to_string()),
         };
 
         let (title, body) = format_notification(&event);
         assert!(title.contains("BLOCKED"));
         assert!(title.contains("file_access"));
         assert!(body.contains("/etc/passwd"));
+        assert!(body.contains("Agent: a-456"));
+        assert!(body.contains("Session: s-123"));
     }
 
     #[test]

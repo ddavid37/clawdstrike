@@ -1,27 +1,37 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { Layout } from "./components/Layout";
+import { SharedSSEProvider } from "./context/SSEContext";
 import { Dashboard } from "./pages/Dashboard";
-import { Agents } from "./pages/Agents";
 import { Events } from "./pages/Events";
+import { AuditLog } from "./pages/AuditLog";
 import { Policies } from "./pages/Policies";
-import { Alerts } from "./pages/Alerts";
-import { Compliance } from "./pages/Compliance";
 import { Settings } from "./pages/Settings";
-import { Login } from "./pages/Login";
+
+function routerBasename(): string | undefined {
+  const baseUrl = import.meta.env.BASE_URL || "/";
+  if (baseUrl === "/") {
+    return undefined;
+  }
+  return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+}
 
 export function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/agents" element={<Agents />} />
-        <Route path="/events" element={<Events />} />
-        <Route path="/policies" element={<Policies />} />
-        <Route path="/alerts" element={<Alerts />} />
-        <Route path="/compliance" element={<Compliance />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+    <SharedSSEProvider>
+      <BrowserRouter basename={routerBasename()}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/events" element={<Events />} />
+            <Route path="/audit" element={<AuditLog />} />
+            <Route path="/policies" element={<Policies />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/settings/siem" element={<Settings initialSection="siem" />} />
+            <Route path="/settings/webhooks" element={<Settings initialSection="webhooks" />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </SharedSSEProvider>
   );
 }

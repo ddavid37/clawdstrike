@@ -20,18 +20,21 @@ mod policy;
 mod session;
 mod settings;
 mod tray;
+mod updater;
 
 use agent_auth::ensure_local_api_token;
-use api_server::AgentApiServer;
+use api_server::{AgentApiServer, AgentApiServerDeps};
 use approval::ApprovalQueue;
 use daemon::{
-    find_hushd_binary, AuditQueue, DaemonConfig, DaemonManager, DaemonState, PolicyCache,
+    find_hushd_binary, prepare_managed_hushd_binary, AuditQueue, DaemonConfig, DaemonManager,
+    DaemonState, PolicyCache,
 };
 use events::EventManager;
-use integrations::{ClaudeCodeIntegration, McpServer};
+use integrations::{ClaudeCodeIntegration, McpServer, OpenClawPluginIntegration};
 use notifications::{
-    show_hooks_installed_notification, show_policy_reload_notification, show_startup_notification,
-    show_toggle_notification, NotificationManager,
+    show_hooks_installed_notification, show_openclaw_plugin_installed_notification,
+    show_policy_reload_notification, show_startup_notification, show_toggle_notification,
+    NotificationManager,
 };
 use openclaw::OpenClawManager;
 use session::SessionManager;
@@ -42,6 +45,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Listener, Manager, RunEvent, Runtime};
 use tokio::sync::{broadcast, Notify, RwLock};
 use tray::{setup_tray, TrayManager};
+use updater::HushdUpdater;
 
 /// Bundled default policy.
 const DEFAULT_POLICY: &str = include_str!("../resources/default-policy.yaml");
@@ -56,6 +60,7 @@ struct AppState {
     approval_queue: Arc<ApprovalQueue>,
     policy_cache: Arc<PolicyCache>,
     audit_queue: Arc<AuditQueue>,
+    updater: Arc<HushdUpdater>,
     shutdown_tx: broadcast::Sender<()>,
     agent_api_token: String,
     shutdown_complete: Arc<ShutdownComplete>,
@@ -118,16 +123,30 @@ fn main() {
         }
     };
 
+    let bundled_hushd_path = if settings.hushd_binary_path.is_none() {
+        match prepare_managed_hushd_binary() {
+            Ok(path) => path,
+            Err(err) => {
+                tracing::warn!(error = %err, "Failed to prepare bundled hushd binary");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let hushd_path = settings
         .hushd_binary_path
         .clone()
+        .or(bundled_hushd_path)
         .or_else(find_hushd_binary)
         .unwrap_or_else(|| {
             tracing::error!(
-                "Could not find hushd binary. Please install hushd or set hushd_binary_path."
+                "Could not find hushd binary. Install hushd or set hushd_binary_path in agent settings."
             );
             std::path::PathBuf::from("hushd")
         });
+    tracing::info!(path = %hushd_path.display(), "Using hushd binary path");
 
     let daemon_config = DaemonConfig {
         binary_path: hushd_path,
@@ -147,6 +166,7 @@ fn main() {
     let approval_queue = Arc::new(ApprovalQueue::new());
     let policy_cache = Arc::new(PolicyCache::new());
     let audit_queue = Arc::new(AuditQueue::new());
+    let updater = Arc::new(HushdUpdater::new(settings.clone(), daemon_manager.clone()));
     let (shutdown_tx, _) = broadcast::channel::<()>(4);
     let shutdown_complete = Arc::new(ShutdownComplete::new());
 
@@ -159,6 +179,7 @@ fn main() {
         approval_queue,
         policy_cache,
         audit_queue,
+        updater,
         shutdown_tx: shutdown_tx.clone(),
         agent_api_token,
         shutdown_complete: shutdown_complete.clone(),
@@ -175,6 +196,7 @@ fn main() {
         .manage(app_state.approval_queue.clone())
         .manage(app_state.policy_cache.clone())
         .manage(app_state.audit_queue.clone())
+        .manage(app_state.updater.clone())
         .manage(app_state.shutdown_tx.clone())
         .manage(app_state.shutdown_complete.clone())
         .setup(move |app| {
@@ -191,6 +213,7 @@ fn main() {
             let approval_queue = app_state.approval_queue.clone();
             let policy_cache = app_state.policy_cache.clone();
             let audit_queue = app_state.audit_queue.clone();
+            let updater = app_state.updater.clone();
             let settings = app_state.settings.clone();
             let shutdown_tx = app_state.shutdown_tx.clone();
             let agent_api_token = app_state.agent_api_token.clone();
@@ -206,6 +229,7 @@ fn main() {
                     approval_queue,
                     policy_cache,
                     audit_queue,
+                    updater,
                     tray_manager,
                     settings,
                     shutdown_tx,
@@ -251,6 +275,7 @@ async fn run_agent<R: Runtime>(
     approval_queue: Arc<ApprovalQueue>,
     policy_cache: Arc<PolicyCache>,
     audit_queue: Arc<AuditQueue>,
+    updater: Arc<HushdUpdater>,
     tray_manager: Arc<TrayManager<R>>,
     settings: Arc<RwLock<Settings>>,
     shutdown_tx: broadcast::Sender<()>,
@@ -265,16 +290,18 @@ async fn run_agent<R: Runtime>(
     // Start heartbeat loop once. It no-ops until a session is established, and it reads the
     // current session ID from shared state each tick (so daemon reconnect replacements do not
     // require restarting the loop).
-    session_manager.start_heartbeat(
-        daemon_url.clone(),
-        api_key.clone(),
-        shutdown_tx.subscribe(),
-    );
+    session_manager.start_heartbeat(daemon_url.clone(), api_key.clone(), shutdown_tx.subscribe());
+    updater.start_background(shutdown_tx.subscribe());
 
     tracing::info!("Starting hushd daemon...");
     if let Err(e) = daemon_manager.start().await {
         tracing::error!("Failed to start daemon: {}", e);
         tray_manager.set_daemon_state(DaemonState::Stopped).await;
+        tray_manager
+            .set_session_info(Some(
+                "Daemon failed to start (check hushd install)".to_string(),
+            ))
+            .await;
     } else {
         tray_manager.set_daemon_state(DaemonState::Running).await;
         show_startup_notification(&app);
@@ -409,9 +436,23 @@ async fn run_agent<R: Runtime>(
     let notification_manager = NotificationManager::new(app.clone(), settings.clone());
     let tray_for_events = tray_manager.clone();
     tokio::spawn(async move {
-        while let Ok(event) = events_rx.recv().await {
-            tray_for_events.add_event(event.clone()).await;
-            notification_manager.notify(&event).await;
+        loop {
+            match events_rx.recv().await {
+                Ok(event) => {
+                    tray_for_events.add_event(event.clone()).await;
+                    notification_manager.notify(&event).await;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!(
+                        skipped,
+                        "Policy event consumer lagged; skipping dropped events"
+                    );
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    tracing::info!("Policy event channel closed");
+                    break;
+                }
+            }
         }
     });
 
@@ -422,10 +463,26 @@ async fn run_agent<R: Runtime>(
     let tray_for_sse = tray_manager.clone();
     let app_for_sse = app.clone();
     let settings_for_sse = settings.clone();
+    let notification_manager_for_sse = NotificationManager::new(app.clone(), settings.clone());
     tokio::spawn(async move {
         use crate::events::DaemonEvent;
 
-        while let Ok(event) = daemon_events_rx.recv().await {
+        loop {
+            let event = match daemon_events_rx.recv().await {
+                Ok(event) => event,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!(
+                        skipped,
+                        "Daemon event consumer lagged; skipping dropped events"
+                    );
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    tracing::info!("Daemon event channel closed");
+                    break;
+                }
+            };
+
             match event {
                 DaemonEvent::PolicyUpdated { version } => {
                     tracing::info!(version = ?version, "Received policy_updated event from hushd");
@@ -444,26 +501,22 @@ async fn run_agent<R: Runtime>(
                 }
                 DaemonEvent::Violation {
                     guard,
-                    message,
+                    message: _,
                     severity,
                     target,
+                    session_id,
+                    agent_id,
                 } => {
                     tracing::info!(
                         guard = ?guard,
                         severity = ?severity,
                         target = ?target,
+                        session_id = ?session_id,
+                        agent_id = ?agent_id,
                         "Received violation event from hushd"
                     );
-                    let title = format!(
-                        "Security Violation{}",
-                        guard
-                            .as_ref()
-                            .map(|g| format!(" ({})", g))
-                            .unwrap_or_default()
-                    );
-                    let body = message
-                        .unwrap_or_else(|| target.unwrap_or_else(|| "Unknown target".to_string()));
-                    notifications::show_notification(&app_for_sse, &title, &body);
+                    // Notification is handled via PolicyEvent → NotificationManager
+                    // for consistent severity filtering and attribution.
                 }
                 DaemonEvent::SessionPostureTransition {
                     session_id,
@@ -481,7 +534,10 @@ async fn run_agent<R: Runtime>(
                     // Keep the exposed session state in sync with SSE posture updates so the agent
                     // health endpoint doesn't lag behind the tray display until the next heartbeat.
                     let _ = session_manager_for_sse
-                        .update_posture_from_daemon_event(session_id.as_deref(), new_posture.clone())
+                        .update_posture_from_daemon_event(
+                            session_id.as_deref(),
+                            new_posture.clone(),
+                        )
                         .await;
 
                     let session_state = session_manager_for_sse.state().await;
@@ -492,8 +548,9 @@ async fn run_agent<R: Runtime>(
                     };
                     tray_for_sse.set_session_info(Some(summary)).await;
 
-                    let body = format!("Posture changed from {} to {}", old_posture, new_posture);
-                    notifications::show_notification(&app_for_sse, "Posture Transition", &body);
+                    notification_manager_for_sse
+                        .notify_posture_transition(&old_posture, &new_posture)
+                        .await;
                 }
             }
         }
@@ -506,7 +563,22 @@ async fn run_agent<R: Runtime>(
     let app_for_approvals = app.clone();
     let approval_queue_for_events = approval_queue.clone();
     tokio::spawn(async move {
-        while let Ok(event) = approval_events_rx.recv().await {
+        loop {
+            let event = match approval_events_rx.recv().await {
+                Ok(event) => event,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!(
+                        skipped,
+                        "Approval event consumer lagged; skipping dropped events"
+                    );
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    tracing::info!("Approval event channel closed");
+                    break;
+                }
+            };
+
             match &event {
                 approval::ApprovalEvent::NewRequest { request } => {
                     let title = format!("Approval Required: {}", request.tool);
@@ -539,12 +611,15 @@ async fn run_agent<R: Runtime>(
 
     let api_server = AgentApiServer::new(
         api_port,
-        settings.clone(),
-        daemon_manager.clone(),
-        session_manager.clone(),
-        approval_queue.clone(),
-        openclaw_manager.clone(),
-        agent_api_token,
+        AgentApiServerDeps {
+            settings: settings.clone(),
+            daemon_manager: daemon_manager.clone(),
+            session_manager: session_manager.clone(),
+            approval_queue: approval_queue.clone(),
+            openclaw: openclaw_manager.clone(),
+            updater: updater.clone(),
+            auth_token: agent_api_token,
+        },
     );
     let api_shutdown = shutdown_tx.subscribe();
     tokio::spawn(async move {
@@ -602,6 +677,31 @@ async fn run_agent<R: Runtime>(
         });
     });
 
+    let app_for_openclaw = app.clone();
+    let openclaw_handler = app.listen("install_openclaw_plugin", move |_| {
+        let app = app_for_openclaw.clone();
+
+        tauri::async_runtime::spawn(async move {
+            let integration = OpenClawPluginIntegration::new();
+            if !integration.is_cli_available() {
+                tracing::warn!("OpenClaw CLI not detected on PATH");
+                show_openclaw_plugin_installed_notification(&app, false);
+                return;
+            }
+
+            match integration.install_plugin().await {
+                Ok(_) => {
+                    tracing::info!("OpenClaw plugin installed successfully");
+                    show_openclaw_plugin_installed_notification(&app, true);
+                }
+                Err(err) => {
+                    tracing::error!("Failed to install OpenClaw plugin: {}", err);
+                    show_openclaw_plugin_installed_notification(&app, false);
+                }
+            }
+        });
+    });
+
     let app_for_reload = app.clone();
     let reload_handler = app.listen("reload_policy", move |_| {
         let app = app_for_reload.clone();
@@ -621,7 +721,12 @@ async fn run_agent<R: Runtime>(
         });
     });
 
-    let _handlers = (toggle_handler, hooks_handler, reload_handler);
+    let _handlers = (
+        toggle_handler,
+        hooks_handler,
+        openclaw_handler,
+        reload_handler,
+    );
 
     let mut shutdown_rx = shutdown_tx.subscribe();
     let _ = shutdown_rx.recv().await;

@@ -10,28 +10,51 @@ use crate::openclaw::{
 };
 use crate::policy::{evaluate_policy_check, PolicyCheckInput, PolicyCheckOutput};
 use crate::session::SessionManager;
-use crate::settings::Settings;
+use crate::settings::{IntegrationSettings, Settings};
+use crate::updater::{HushdUpdater, OtaStatus};
 use anyhow::{Context, Result};
-use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::body::Body;
+use axum::extract::{Path, Request, State};
+use axum::http::header::{
+    ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_TYPE, COOKIE, SET_COOKIE,
+};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri};
+use axum::middleware::Next;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::IntoResponse;
+use axum::response::Html;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
-use futures::{Stream, StreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, RwLock};
 use tokio_stream::wrappers::BroadcastStream;
+use tower_http::services::{ServeDir, ServeFile};
+
+const HUSHD_AUTHORIZATION_HEADER: &str = "x-hushd-authorization";
+const AGENT_AUTH_COOKIE_NAME: &str = "clawdstrike_agent_auth";
 
 #[derive(Clone)]
 pub struct AgentApiServer {
     port: u16,
     state: Arc<AgentApiState>,
+}
+
+#[derive(Clone)]
+pub struct AgentApiServerDeps {
+    pub settings: Arc<RwLock<Settings>>,
+    pub daemon_manager: Arc<DaemonManager>,
+    pub session_manager: Arc<SessionManager>,
+    pub approval_queue: Arc<ApprovalQueue>,
+    pub openclaw: OpenClawManager,
+    pub updater: Arc<HushdUpdater>,
+    pub auth_token: String,
 }
 
 #[derive(Clone)]
@@ -41,41 +64,48 @@ struct AgentApiState {
     session_manager: Arc<SessionManager>,
     approval_queue: Arc<ApprovalQueue>,
     openclaw: OpenClawManager,
+    updater: Arc<HushdUpdater>,
     auth_token: String,
     http_client: reqwest::Client,
 }
 
 impl AgentApiServer {
-    pub fn new(
-        port: u16,
-        settings: Arc<RwLock<Settings>>,
-        daemon_manager: Arc<DaemonManager>,
-        session_manager: Arc<SessionManager>,
-        approval_queue: Arc<ApprovalQueue>,
-        openclaw: OpenClawManager,
-        auth_token: String,
-    ) -> Self {
+    pub fn new(port: u16, deps: AgentApiServerDeps) -> Self {
         Self {
             port,
             state: Arc::new(AgentApiState {
-                settings,
-                daemon_manager,
-                session_manager,
-                approval_queue,
-                openclaw,
-                auth_token,
+                settings: deps.settings,
+                daemon_manager: deps.daemon_manager,
+                session_manager: deps.session_manager,
+                approval_queue: deps.approval_queue,
+                openclaw: deps.openclaw,
+                updater: deps.updater,
+                auth_token: deps.auth_token,
                 http_client: reqwest::Client::new(),
             }),
         }
     }
 
     pub async fn start(self, mut shutdown_rx: broadcast::Receiver<()>) -> Result<()> {
-        let app = Router::new()
+        let mut app = Router::new()
+            .route("/health", get(proxy_daemon_get))
+            .route("/api/v1/audit", get(proxy_daemon_get))
+            .route("/api/v1/audit/stats", get(proxy_daemon_get))
+            .route("/api/v1/policy", get(proxy_daemon_get))
+            .route("/api/v1/events", get(proxy_daemon_events))
+            .route("/api/v1/siem/exporters", get(proxy_daemon_get))
             .route("/api/v1/agent/health", get(agent_health))
             .route(
                 "/api/v1/agent/settings",
                 get(get_settings).put(update_settings),
             )
+            .route(
+                "/api/v1/agent/integrations",
+                get(get_integrations_settings).put(update_integrations_settings),
+            )
+            .route("/api/v1/agent/ota/status", get(get_ota_status))
+            .route("/api/v1/agent/ota/check", post(trigger_ota_check))
+            .route("/api/v1/agent/ota/apply", post(trigger_ota_apply))
             .route("/api/v1/agent/policy-check", post(agent_policy_check))
             .route(
                 "/api/v1/openclaw/gateways",
@@ -108,6 +138,35 @@ impl AgentApiServer {
             .route("/api/v1/approval/pending", get(list_pending_approvals))
             .with_state(self.state.clone());
 
+        if let Some(dashboard_dist) = resolve_cloud_dashboard_dist() {
+            tracing::info!(
+                path = %dashboard_dist.display(),
+                "Serving cloud dashboard from bundled assets"
+            );
+            let index_file = dashboard_dist.join("index.html");
+            let ui_router = Router::new()
+                .fallback_service(
+                    ServeDir::new(dashboard_dist).not_found_service(ServeFile::new(index_file)),
+                )
+                .layer(axum::middleware::from_fn_with_state(
+                    self.state.clone(),
+                    attach_ui_auth_cookie,
+                ));
+            app = app.nest("/ui", ui_router);
+        } else {
+            tracing::warn!(
+                "Cloud dashboard assets were not found; serving fallback diagnostics page at /ui"
+            );
+            let ui_router = Router::new()
+                .route("/", get(agent_web_ui_fallback))
+                .route("/{*path}", get(agent_web_ui_fallback))
+                .layer(axum::middleware::from_fn_with_state(
+                    self.state.clone(),
+                    attach_ui_auth_cookie,
+                ));
+            app = app.nest("/ui", ui_router);
+        }
+
         let addr = SocketAddr::from(([127, 0, 0, 1], self.port));
         let listener = TcpListener::bind(addr)
             .await
@@ -125,6 +184,435 @@ impl AgentApiServer {
 
         Ok(())
     }
+}
+
+async fn agent_web_ui_fallback() -> Html<&'static str> {
+    Html(
+        r##"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clawdstrike Agent Web UI</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #8b949e;
+      --accent: #2f81f7;
+      --card: #161b22;
+      --line: #30363d;
+    }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      border: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 10px;
+      padding: 20px;
+    }
+    h1 { margin-top: 0; font-size: 1.4rem; }
+    p { color: var(--muted); line-height: 1.5; }
+    code {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin: 14px 0 16px;
+      flex-wrap: wrap;
+    }
+    .tab {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.9rem;
+      color: var(--muted);
+      text-decoration: none;
+    }
+    .tab.active {
+      border-color: var(--accent);
+      color: #d7e8ff;
+      background: rgba(47, 129, 247, 0.12);
+    }
+    .hidden {
+      display: none;
+    }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+    h2 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+    }
+    ul { margin: 0.75rem 0 0; padding-left: 1.2rem; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Clawdstrike Agent Web UI</h1>
+    <p>This is the local fallback UI. If you expected the cloud dashboard on <code>localhost:3100</code>, start it manually during development.</p>
+
+    <nav class="tabs" aria-label="Agent web UI sections">
+      <a href="#/" class="tab" data-route="/">Overview</a>
+      <a href="#/settings/siem" class="tab" data-route="/settings/siem">SIEM Export</a>
+      <a href="#/settings/webhooks" class="tab" data-route="/settings/webhooks">Webhooks</a>
+    </nav>
+
+    <section class="panel" data-view="/">
+      <h2>Overview</h2>
+      <ul>
+        <li>Agent health (auth required): <a href="/api/v1/agent/health"><code>/api/v1/agent/health</code></a></li>
+        <li>Agent settings (auth required): <a href="/api/v1/agent/settings"><code>/api/v1/agent/settings</code></a></li>
+      </ul>
+    </section>
+
+    <section class="panel hidden" data-view="/settings/siem">
+      <h2>SIEM Export</h2>
+      <p>Configure SIEM providers from the cloud dashboard when available. This fallback page confirms the requested route and keeps agent diagnostics available.</p>
+      <ul>
+        <li>Requested route: <code>#/settings/siem</code></li>
+        <li>Preferred full dashboard URL: <code>http://127.0.0.1:3100/settings/siem</code></li>
+      </ul>
+    </section>
+
+    <section class="panel hidden" data-view="/settings/webhooks">
+      <h2>Webhooks</h2>
+      <p>Configure webhook forwarding from the cloud dashboard when available. This fallback page confirms the requested route and keeps agent diagnostics available.</p>
+      <ul>
+        <li>Requested route: <code>#/settings/webhooks</code></li>
+        <li>Preferred full dashboard URL: <code>http://127.0.0.1:3100/settings/webhooks</code></li>
+      </ul>
+    </section>
+  </main>
+  <script>
+    function normalizeRoute(hash) {
+      if (!hash || hash === "#") return "/";
+      const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+      return raw.startsWith("/") ? raw : `/${raw}`;
+    }
+
+    function renderRoute() {
+      const route = normalizeRoute(window.location.hash);
+      const tabs = document.querySelectorAll("[data-route]");
+      const views = document.querySelectorAll("[data-view]");
+      const knownRoutes = new Set(["/", "/settings/siem", "/settings/webhooks"]);
+      const activeRoute = knownRoutes.has(route) ? route : "/";
+
+      tabs.forEach((tab) => {
+        tab.classList.toggle("active", tab.dataset.route === activeRoute);
+      });
+      views.forEach((view) => {
+        view.classList.toggle("hidden", view.dataset.view !== activeRoute);
+      });
+    }
+
+    window.addEventListener("hashchange", renderRoute);
+    renderRoute();
+  </script>
+</body>
+</html>"##,
+    )
+}
+
+fn cloud_dashboard_dist_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Ok(override_path) = std::env::var("CLAWDSTRIKE_DASHBOARD_DIST") {
+        candidates.push(PathBuf::from(override_path));
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            candidates.push(exe_dir.join("cloud-dashboard"));
+            candidates.push(exe_dir.join("resources").join("cloud-dashboard"));
+
+            if let Some(contents_dir) = exe_dir.parent() {
+                candidates.push(contents_dir.join("Resources").join("cloud-dashboard"));
+                candidates.push(
+                    contents_dir
+                        .join("Resources")
+                        .join("resources")
+                        .join("cloud-dashboard"),
+                );
+            }
+        }
+    }
+
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let root = PathBuf::from(manifest_dir);
+        candidates.push(root.join("resources").join("cloud-dashboard"));
+        candidates.push(root.join("../../cloud-dashboard/dist"));
+    }
+
+    candidates
+}
+
+fn resolve_cloud_dashboard_dist() -> Option<PathBuf> {
+    cloud_dashboard_dist_candidates()
+        .into_iter()
+        .find(|candidate| candidate.join("index.html").is_file())
+}
+
+fn build_daemon_proxy_target(daemon_url: &str, uri: &Uri) -> Result<String, (StatusCode, String)> {
+    let path_and_query = uri
+        .path_and_query()
+        .map(|value| value.as_str())
+        .unwrap_or_else(|| uri.path());
+
+    if !path_and_query.starts_with('/') {
+        return Err((StatusCode::BAD_REQUEST, "invalid proxy path".to_string()));
+    }
+
+    Ok(format!(
+        "{}{}",
+        daemon_url.trim_end_matches('/'),
+        path_and_query
+    ))
+}
+
+fn merged_authorization_header(
+    request_headers: &HeaderMap,
+    daemon_api_key: Option<&str>,
+) -> Option<String> {
+    if let Some(value) = request_headers
+        .get(HUSHD_AUTHORIZATION_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(value.to_string());
+    }
+
+    if let Some(value) = request_headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(value.to_string());
+    }
+
+    daemon_api_key
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|key| format!("Bearer {}", key))
+}
+
+fn auth_cookie_header_value(auth_token: &str) -> String {
+    format!(
+        "{}={}; Path=/; HttpOnly; SameSite=Strict",
+        AGENT_AUTH_COOKIE_NAME, auth_token
+    )
+}
+
+async fn attach_ui_auth_cookie(
+    State(state): State<Arc<AgentApiState>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    match HeaderValue::from_str(&auth_cookie_header_value(&state.auth_token)) {
+        Ok(value) => {
+            response.headers_mut().append(SET_COOKIE, value);
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "Failed to build UI auth cookie header");
+        }
+    }
+    response
+}
+
+async fn send_daemon_get_request(
+    state: &AgentApiState,
+    request_headers: &HeaderMap,
+    uri: &Uri,
+) -> Result<reqwest::Response, (StatusCode, String)> {
+    let (daemon_url, daemon_api_key) = {
+        let settings = state.settings.read().await;
+        (settings.daemon_url(), settings.api_key.clone())
+    };
+
+    let target_url = build_daemon_proxy_target(&daemon_url, uri)?;
+    let mut request = state.http_client.get(target_url);
+
+    if let Some(value) = request_headers
+        .get(ACCEPT)
+        .and_then(|value| value.to_str().ok())
+    {
+        request = request.header(ACCEPT.as_str(), value);
+    }
+
+    if let Some(auth_header) =
+        merged_authorization_header(request_headers, daemon_api_key.as_deref())
+    {
+        request = request.header(AUTHORIZATION.as_str(), auth_header);
+    }
+
+    request
+        .send()
+        .await
+        .map_err(|err| internal_error(err.into()))
+}
+
+async fn proxy_http_response(
+    response: reqwest::Response,
+) -> Result<Response, (StatusCode, String)> {
+    let status =
+        StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let content_type = response.headers().get(CONTENT_TYPE).cloned();
+    let body = response
+        .bytes()
+        .await
+        .map_err(|err| internal_error(err.into()))?;
+
+    let mut headers = HeaderMap::new();
+    if let Some(value) = content_type {
+        headers.insert(CONTENT_TYPE, value);
+    }
+
+    Ok((status, headers, body).into_response())
+}
+
+async fn proxy_daemon_get(
+    State(state): State<Arc<AgentApiState>>,
+    mut headers: HeaderMap,
+    uri: Uri,
+) -> Result<Response, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    // Do not forward the local agent auth token to hushd.
+    // A caller can provide a daemon token via `X-Hushd-Authorization`; otherwise we
+    // fall back to the configured daemon API key from settings.
+    headers.remove(AUTHORIZATION);
+    let response = send_daemon_get_request(&state, &headers, &uri).await?;
+    proxy_http_response(response).await
+}
+
+async fn proxy_daemon_events(
+    State(state): State<Arc<AgentApiState>>,
+    mut headers: HeaderMap,
+    uri: Uri,
+) -> Result<Response, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    // Do not forward the local agent auth token to hushd.
+    // A caller can provide a daemon token via `X-Hushd-Authorization`; otherwise we
+    // fall back to the configured daemon API key from settings.
+    headers.remove(AUTHORIZATION);
+    let response = send_daemon_get_request(&state, &headers, &uri).await?;
+    let status =
+        StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+
+    if !status.is_success() {
+        return proxy_http_response(response).await;
+    }
+
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .cloned()
+        .unwrap_or_else(|| HeaderValue::from_static("text/event-stream"));
+    let stream = response.bytes_stream().map_err(std::io::Error::other);
+    let body = Body::from_stream(stream);
+
+    let mut out_headers = HeaderMap::new();
+    out_headers.insert(CONTENT_TYPE, content_type);
+    out_headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    out_headers.insert(CONNECTION, HeaderValue::from_static("keep-alive"));
+
+    Ok((status, out_headers, body).into_response())
+}
+
+fn normalize_integration_settings(settings: &mut IntegrationSettings) {
+    settings.siem.provider = settings.siem.provider.trim().to_ascii_lowercase();
+    if settings.siem.provider.is_empty() {
+        settings.siem.provider = "datadog".to_string();
+    }
+    settings.siem.endpoint = settings.siem.endpoint.trim().to_string();
+    settings.siem.api_key = settings.siem.api_key.trim().to_string();
+    settings.webhooks.url = settings.webhooks.url.trim().to_string();
+    settings.webhooks.secret = settings.webhooks.secret.trim().to_string();
+
+    if settings.siem.endpoint.is_empty() && settings.siem.api_key.is_empty() {
+        settings.siem.enabled = false;
+    }
+    if settings.webhooks.url.is_empty() {
+        settings.webhooks.enabled = false;
+    }
+}
+
+fn validate_integration_settings(
+    settings: &IntegrationSettings,
+) -> std::result::Result<(), String> {
+    let provider = settings.siem.provider.as_str();
+    let provider_supported = matches!(
+        provider,
+        "datadog" | "splunk" | "elastic" | "sumo_logic" | "custom"
+    );
+    if !provider_supported {
+        return Err(format!(
+            "Unsupported SIEM provider '{}'",
+            settings.siem.provider
+        ));
+    }
+
+    if settings.siem.enabled {
+        if settings.siem.endpoint.is_empty() {
+            return Err("SIEM endpoint is required when SIEM is enabled".to_string());
+        }
+        let key_required = matches!(provider, "datadog" | "splunk" | "elastic");
+        if key_required && settings.siem.api_key.is_empty() {
+            return Err(format!(
+                "SIEM API key is required for provider '{}'",
+                settings.siem.provider
+            ));
+        }
+    }
+
+    if settings.webhooks.enabled && settings.webhooks.url.is_empty() {
+        return Err("Webhook URL is required when webhook forwarding is enabled".to_string());
+    }
+
+    Ok(())
+}
+
+async fn fetch_daemon_exporter_status(state: &AgentApiState) -> Option<Value> {
+    let (daemon_url, daemon_api_key) = {
+        let settings = state.settings.read().await;
+        (settings.daemon_url(), settings.api_key.clone())
+    };
+
+    let url = format!("{}/api/v1/siem/exporters", daemon_url.trim_end_matches('/'));
+    let mut request = state.http_client.get(url);
+
+    if let Some(key) = daemon_api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        request = request.header(AUTHORIZATION.as_str(), format!("Bearer {}", key));
+    }
+
+    let response = request.send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+
+    response.json::<Value>().await.ok()
 }
 
 #[derive(Debug, Serialize)]
@@ -145,8 +633,19 @@ struct AgentSettingsResponse {
     auto_start: bool,
     notifications_enabled: bool,
     notification_severity: String,
+    dashboard_url: String,
     debug_include_daemon_error_body: bool,
     openclaw_active_gateway_id: Option<String>,
+    ota_enabled: bool,
+    ota_mode: String,
+    ota_channel: String,
+    ota_manifest_url: Option<String>,
+    ota_allow_fallback_to_default: bool,
+    ota_check_interval_minutes: u32,
+    ota_pinned_public_keys: Vec<String>,
+    ota_last_check_at: Option<String>,
+    ota_last_result: Option<String>,
+    ota_current_hushd_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -155,7 +654,18 @@ struct AgentSettingsUpdate {
     auto_start: Option<bool>,
     notifications_enabled: Option<bool>,
     notification_severity: Option<String>,
+    dashboard_url: Option<String>,
     debug_include_daemon_error_body: Option<bool>,
+    ota_enabled: Option<bool>,
+    ota_mode: Option<String>,
+    ota_channel: Option<String>,
+    ota_manifest_url: Option<Option<String>>,
+    ota_allow_fallback_to_default: Option<bool>,
+    ota_check_interval_minutes: Option<u32>,
+    ota_pinned_public_keys: Option<Vec<String>>,
+    ota_last_check_at: Option<Option<String>>,
+    ota_last_result: Option<Option<String>>,
+    ota_current_hushd_version: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_string_field")]
     openclaw_active_gateway_id: Option<Option<String>>,
 }
@@ -171,6 +681,44 @@ struct GatewayPatchInput {
 #[derive(Debug, Deserialize)]
 struct ActiveGatewayUpdateInput {
     active_gateway_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct IntegrationsSettingsUpdateInput {
+    #[serde(default)]
+    siem: Option<SiemIntegrationUpdateInput>,
+    #[serde(default)]
+    webhooks: Option<WebhookIntegrationUpdateInput>,
+    #[serde(default = "default_apply_integrations_changes")]
+    apply: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct SiemIntegrationUpdateInput {
+    provider: Option<String>,
+    endpoint: Option<String>,
+    api_key: Option<String>,
+    enabled: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WebhookIntegrationUpdateInput {
+    url: Option<String>,
+    secret: Option<String>,
+    enabled: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct IntegrationsApplyResponse {
+    integrations: IntegrationSettings,
+    restarted: bool,
+    daemon: DaemonStatus,
+    exporter_status: Option<Value>,
+    warning: Option<String>,
+}
+
+fn default_apply_integrations_changes() -> bool {
+    true
 }
 
 async fn agent_health(
@@ -205,8 +753,19 @@ async fn get_settings(
         auto_start: settings.auto_start,
         notifications_enabled: settings.notifications_enabled,
         notification_severity: settings.notification_severity.clone(),
+        dashboard_url: settings.dashboard_url.clone(),
         debug_include_daemon_error_body: settings.debug_include_daemon_error_body,
         openclaw_active_gateway_id: settings.openclaw.active_gateway_id.clone(),
+        ota_enabled: settings.ota_enabled,
+        ota_mode: settings.ota_mode.clone(),
+        ota_channel: settings.ota_channel.clone(),
+        ota_manifest_url: settings.ota_manifest_url.clone(),
+        ota_allow_fallback_to_default: settings.ota_allow_fallback_to_default,
+        ota_check_interval_minutes: settings.ota_check_interval_minutes,
+        ota_pinned_public_keys: settings.ota_pinned_public_keys.clone(),
+        ota_last_check_at: settings.ota_last_check_at.clone(),
+        ota_last_result: settings.ota_last_result.clone(),
+        ota_current_hushd_version: settings.ota_current_hushd_version.clone(),
     }))
 }
 
@@ -232,8 +791,41 @@ async fn update_settings(
         if let Some(value) = input.notification_severity {
             settings.notification_severity = value;
         }
+        if let Some(value) = input.dashboard_url {
+            settings.dashboard_url = value;
+        }
         if let Some(value) = input.debug_include_daemon_error_body {
             settings.debug_include_daemon_error_body = value;
+        }
+        if let Some(value) = input.ota_enabled {
+            settings.ota_enabled = value;
+        }
+        if let Some(value) = input.ota_mode {
+            settings.ota_mode = value;
+        }
+        if let Some(value) = input.ota_channel {
+            settings.ota_channel = value;
+        }
+        if let Some(value) = input.ota_manifest_url {
+            settings.ota_manifest_url = value;
+        }
+        if let Some(value) = input.ota_allow_fallback_to_default {
+            settings.ota_allow_fallback_to_default = value;
+        }
+        if let Some(value) = input.ota_check_interval_minutes {
+            settings.ota_check_interval_minutes = value;
+        }
+        if let Some(value) = input.ota_pinned_public_keys {
+            settings.ota_pinned_public_keys = value;
+        }
+        if let Some(value) = input.ota_last_check_at {
+            settings.ota_last_check_at = value;
+        }
+        if let Some(value) = input.ota_last_result {
+            settings.ota_last_result = value;
+        }
+        if let Some(value) = input.ota_current_hushd_version {
+            settings.ota_current_hushd_version = value;
         }
         if let Some(value) = input.openclaw_active_gateway_id {
             settings.openclaw.active_gateway_id = value;
@@ -245,6 +837,149 @@ async fn update_settings(
     }
 
     get_settings(State(state), headers).await
+}
+
+async fn get_integrations_settings(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<IntegrationSettings>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    let settings = state.settings.read().await;
+    Ok(Json(settings.integrations.clone()))
+}
+
+async fn update_integrations_settings(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+    Json(input): Json<IntegrationsSettingsUpdateInput>,
+) -> Result<Json<IntegrationsApplyResponse>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    {
+        let mut settings = state.settings.write().await;
+        let mut next_integrations = settings.integrations.clone();
+
+        if let Some(siem) = input.siem {
+            if let Some(value) = siem.provider {
+                next_integrations.siem.provider = value;
+            }
+            if let Some(value) = siem.endpoint {
+                next_integrations.siem.endpoint = value;
+            }
+            if let Some(value) = siem.api_key {
+                next_integrations.siem.api_key = value;
+            }
+            if let Some(value) = siem.enabled {
+                next_integrations.siem.enabled = value;
+            }
+        }
+
+        if let Some(webhooks) = input.webhooks {
+            if let Some(value) = webhooks.url {
+                next_integrations.webhooks.url = value;
+            }
+            if let Some(value) = webhooks.secret {
+                next_integrations.webhooks.secret = value;
+            }
+            if let Some(value) = webhooks.enabled {
+                next_integrations.webhooks.enabled = value;
+            }
+        }
+
+        normalize_integration_settings(&mut next_integrations);
+        validate_integration_settings(&next_integrations)
+            .map_err(|err| (StatusCode::BAD_REQUEST, err))?;
+        settings.integrations = next_integrations;
+
+        settings
+            .save()
+            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    }
+
+    let mut restarted = false;
+    let mut warning = None;
+
+    if input.apply {
+        state
+            .daemon_manager
+            .restart()
+            .await
+            .map_err(internal_error)?;
+        restarted = true;
+    }
+
+    let daemon = state.daemon_manager.status().await;
+    let exporter_status = fetch_daemon_exporter_status(&state).await;
+    let integrations = {
+        let settings = state.settings.read().await;
+        settings.integrations.clone()
+    };
+    if input.apply {
+        if exporter_status.is_none() {
+            warning = Some("hushd restarted but exporter status could not be fetched".to_string());
+        } else {
+            let export_enabled = exporter_status
+                .as_ref()
+                .and_then(|v| v.get("enabled"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let exporter_count = exporter_status
+                .as_ref()
+                .and_then(|v| v.get("exporters"))
+                .and_then(|v| v.as_array())
+                .map(|v| v.len())
+                .unwrap_or(0);
+
+            let expected_exporters = integrations.siem.enabled || integrations.webhooks.enabled;
+            if expected_exporters && (!export_enabled || exporter_count == 0) {
+                warning = Some(
+                    "Integration settings were saved, but hushd reports no active exporters after restart."
+                        .to_string(),
+                );
+            }
+        }
+    }
+
+    Ok(Json(IntegrationsApplyResponse {
+        integrations,
+        restarted,
+        daemon,
+        exporter_status,
+        warning,
+    }))
+}
+
+async fn get_ota_status(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<OtaStatus>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    Ok(Json(state.updater.status().await))
+}
+
+async fn trigger_ota_check(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<OtaStatus>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    state
+        .updater
+        .check_now()
+        .await
+        .map(Json)
+        .map_err(internal_error)
+}
+
+async fn trigger_ota_apply(
+    State(state): State<Arc<AgentApiState>>,
+    headers: HeaderMap,
+) -> Result<Json<OtaStatus>, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    state
+        .updater
+        .apply_now()
+        .await
+        .map(Json)
+        .map_err(internal_error)
 }
 
 async fn agent_policy_check(
@@ -554,29 +1289,46 @@ async fn list_pending_approvals(
     Ok(Json(pending))
 }
 
+fn auth_token_from_cookie(headers: &HeaderMap) -> Option<String> {
+    let cookie_header = headers.get(COOKIE)?.to_str().ok()?;
+    for cookie in cookie_header.split(';') {
+        let Some((name, value)) = cookie.trim().split_once('=') else {
+            continue;
+        };
+        if name.trim() == AGENT_AUTH_COOKIE_NAME {
+            let token = value.trim();
+            if !token.is_empty() {
+                return Some(token.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn require_auth(headers: &HeaderMap, state: &AgentApiState) -> Result<(), (StatusCode, String)> {
-    let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) else {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "missing authorization header".to_string(),
-        ));
-    };
+    let auth_header = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim);
 
-    let Some(token) = auth.strip_prefix("Bearer ") else {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "invalid authorization scheme".to_string(),
-        ));
-    };
-
-    if token.trim() != state.auth_token {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "invalid authorization token".to_string(),
-        ));
+    if let Some(auth) = auth_header {
+        if let Some(token) = auth.strip_prefix("Bearer ") {
+            if token.trim() == state.auth_token {
+                return Ok(());
+            }
+        }
     }
 
-    Ok(())
+    if auth_token_from_cookie(headers).as_deref() == Some(state.auth_token.as_str()) {
+        return Ok(());
+    }
+
+    let err = match auth_header {
+        None => "missing authorization header".to_string(),
+        Some(auth) if !auth.starts_with("Bearer ") => "invalid authorization scheme".to_string(),
+        Some(_) => "invalid authorization token".to_string(),
+    };
+    Err((StatusCode::UNAUTHORIZED, err))
 }
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, String) {
@@ -618,6 +1370,10 @@ mod tests {
         let session_manager = Arc::new(crate::session::SessionManager::new());
         let approval_queue = Arc::new(crate::approval::ApprovalQueue::new());
         let openclaw = OpenClawManager::new(settings.clone());
+        let updater = Arc::new(crate::updater::HushdUpdater::new(
+            settings.clone(),
+            daemon_manager.clone(),
+        ));
 
         AgentApiState {
             settings,
@@ -625,6 +1381,7 @@ mod tests {
             session_manager,
             approval_queue,
             openclaw,
+            updater,
             auth_token: "test-token".to_string(),
             http_client: reqwest::Client::new(),
         }
@@ -666,6 +1423,287 @@ mod tests {
 
         let result = require_auth(&headers, &state);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn auth_accepts_cookie_token_without_authorization_header() {
+        let state = test_state();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            COOKIE,
+            format!("{}={}", AGENT_AUTH_COOKIE_NAME, state.auth_token)
+                .parse()
+                .unwrap_or_else(|_| panic!("failed to build cookie header")),
+        );
+
+        let result = require_auth(&headers, &state);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn auth_allows_cookie_fallback_when_authorization_is_invalid() {
+        let state = test_state();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            "Bearer wrong-token"
+                .parse()
+                .unwrap_or_else(|_| panic!("failed to build authorization header")),
+        );
+        headers.insert(
+            COOKIE,
+            format!("{}={}", AGENT_AUTH_COOKIE_NAME, state.auth_token)
+                .parse()
+                .unwrap_or_else(|_| panic!("failed to build cookie header")),
+        );
+
+        let result = require_auth(&headers, &state);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_integrations_requires_api_key_for_datadog() {
+        let mut integrations = IntegrationSettings::default();
+        integrations.siem.enabled = true;
+        integrations.siem.provider = "datadog".to_string();
+        integrations.siem.endpoint = "https://us5.datadoghq.com".to_string();
+        integrations.siem.api_key = String::new();
+
+        let result = validate_integration_settings(&integrations);
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn integrations_update_roundtrip_without_restart() {
+        let state = Arc::new(test_state());
+        let app = Router::new()
+            .route(
+                "/api/v1/agent/integrations",
+                get(get_integrations_settings).put(update_integrations_settings),
+            )
+            .with_state(state);
+
+        let put_req = axum::http::Request::builder()
+            .method("PUT")
+            .uri("/api/v1/agent/integrations")
+            .header("authorization", "Bearer test-token")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                r#"{
+                    "siem": {
+                        "provider": "datadog",
+                        "endpoint": "https://us5.datadoghq.com",
+                        "api_key": "dd-key",
+                        "enabled": true
+                    },
+                    "apply": false
+                }"#,
+            ))
+            .unwrap_or_else(|e| panic!("failed to build PUT request: {e}"));
+
+        let response = app
+            .clone()
+            .oneshot(put_req)
+            .await
+            .unwrap_or_else(|e| panic!("PUT request failed: {e}"));
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let get_req = axum::http::Request::builder()
+            .uri("/api/v1/agent/integrations")
+            .header("authorization", "Bearer test-token")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build GET request: {e}"));
+        let response = app
+            .oneshot(get_req)
+            .await
+            .unwrap_or_else(|e| panic!("GET request failed: {e}"));
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 64)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read response body: {e}"));
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).unwrap_or_else(|e| panic!("invalid JSON: {e}"));
+        assert_eq!(
+            json.get("siem")
+                .and_then(|v| v.get("provider"))
+                .and_then(|v| v.as_str()),
+            Some("datadog")
+        );
+        assert_eq!(
+            json.get("siem")
+                .and_then(|v| v.get("enabled"))
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn integrations_invalid_update_does_not_mutate_state() {
+        let state = Arc::new(test_state());
+        let app = Router::new()
+            .route(
+                "/api/v1/agent/integrations",
+                get(get_integrations_settings).put(update_integrations_settings),
+            )
+            .with_state(state.clone());
+
+        let put_req = axum::http::Request::builder()
+            .method("PUT")
+            .uri("/api/v1/agent/integrations")
+            .header("authorization", "Bearer test-token")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                r#"{
+                    "siem": {
+                        "provider": "not-supported",
+                        "endpoint": "https://example.invalid",
+                        "api_key": "abc123",
+                        "enabled": true
+                    },
+                    "apply": false
+                }"#,
+            ))
+            .unwrap_or_else(|e| panic!("failed to build PUT request: {e}"));
+
+        let response = app
+            .clone()
+            .oneshot(put_req)
+            .await
+            .unwrap_or_else(|e| panic!("PUT request failed: {e}"));
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let get_req = axum::http::Request::builder()
+            .uri("/api/v1/agent/integrations")
+            .header("authorization", "Bearer test-token")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build GET request: {e}"));
+        let response = app
+            .oneshot(get_req)
+            .await
+            .unwrap_or_else(|e| panic!("GET request failed: {e}"));
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 64)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read response body: {e}"));
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).unwrap_or_else(|e| panic!("invalid JSON: {e}"));
+        assert_eq!(
+            json.get("siem")
+                .and_then(|v| v.get("provider"))
+                .and_then(|v| v.as_str()),
+            Some("datadog"),
+            "Rejected update should not mutate in-memory integrations provider"
+        );
+    }
+
+    #[tokio::test]
+    async fn daemon_proxy_route_requires_auth() {
+        let state = Arc::new(test_state());
+        let app = Router::new()
+            .route("/api/v1/audit", get(proxy_daemon_get))
+            .with_state(state);
+
+        let request = axum::http::Request::builder()
+            .uri("/api/v1/audit")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build request: {e}"));
+        let response = app
+            .oneshot(request)
+            .await
+            .unwrap_or_else(|e| panic!("request failed: {e}"));
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn integrations_routes_require_auth() {
+        let state = Arc::new(test_state());
+        let app = Router::new()
+            .route(
+                "/api/v1/agent/integrations",
+                get(get_integrations_settings).put(update_integrations_settings),
+            )
+            .with_state(state);
+
+        let get_req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/v1/agent/integrations")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build GET request: {e}"));
+        let get_response = app
+            .clone()
+            .oneshot(get_req)
+            .await
+            .unwrap_or_else(|e| panic!("GET request failed: {e}"));
+        assert_eq!(get_response.status(), StatusCode::UNAUTHORIZED);
+
+        let put_req = axum::http::Request::builder()
+            .method("PUT")
+            .uri("/api/v1/agent/integrations")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(r#"{"apply":false}"#))
+            .unwrap_or_else(|e| panic!("failed to build PUT request: {e}"));
+        let put_response = app
+            .oneshot(put_req)
+            .await
+            .unwrap_or_else(|e| panic!("PUT request failed: {e}"));
+        assert_eq!(put_response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn daemon_proxy_target_preserves_path_and_query() {
+        let uri: Uri = "/api/v1/audit?limit=25&decision=block"
+            .parse()
+            .unwrap_or_else(|err| panic!("failed to parse uri: {err}"));
+        let target = build_daemon_proxy_target("http://127.0.0.1:9876", &uri)
+            .unwrap_or_else(|err| panic!("failed to build target: {err:?}"));
+        assert_eq!(
+            target,
+            "http://127.0.0.1:9876/api/v1/audit?limit=25&decision=block"
+        );
+    }
+
+    #[test]
+    fn merged_authorization_header_prefers_explicit_hushd_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HUSHD_AUTHORIZATION_HEADER,
+            "Bearer daemon-from-request"
+                .parse()
+                .unwrap_or_else(|err| panic!("failed to parse daemon auth header: {err}")),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            "Bearer local-agent-token"
+                .parse()
+                .unwrap_or_else(|err| panic!("failed to parse auth header: {err}")),
+        );
+
+        let merged = merged_authorization_header(&headers, Some("from-settings"));
+        assert_eq!(merged.as_deref(), Some("Bearer daemon-from-request"));
+    }
+
+    #[test]
+    fn merged_authorization_header_uses_request_authorization_when_present() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            "Bearer from-request"
+                .parse()
+                .unwrap_or_else(|err| panic!("failed to parse auth header: {err}")),
+        );
+
+        let merged = merged_authorization_header(&headers, Some("from-settings"));
+        assert_eq!(merged.as_deref(), Some("Bearer from-request"));
+    }
+
+    #[test]
+    fn merged_authorization_header_falls_back_to_settings_key() {
+        let headers = HeaderMap::new();
+        let merged = merged_authorization_header(&headers, Some("daemon-key"));
+        assert_eq!(merged.as_deref(), Some("Bearer daemon-key"));
     }
 
     #[test]
@@ -720,6 +1758,76 @@ mod tests {
             response.status(),
             StatusCode::NOT_FOUND,
             "Route should match the UUID path param and return 404 (not found), not a routing error"
+        );
+    }
+
+    #[tokio::test]
+    async fn settings_roundtrip_includes_dashboard_url() {
+        let state = Arc::new(test_state());
+
+        let app = Router::new()
+            .route(
+                "/api/v1/agent/settings",
+                get(get_settings).put(update_settings),
+            )
+            .with_state(state);
+
+        // GET should return default dashboard_url.
+        let get_req = axum::http::Request::builder()
+            .uri("/api/v1/agent/settings")
+            .header("authorization", "Bearer test-token")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build GET request: {e}"));
+
+        let response = app
+            .clone()
+            .oneshot(get_req)
+            .await
+            .unwrap_or_else(|e| panic!("GET request failed: {e}"));
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 64)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read response body: {e}"));
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).unwrap_or_else(|e| panic!("invalid JSON: {e}"));
+        assert_eq!(
+            json.get("dashboard_url").and_then(|v| v.as_str()),
+            Some("http://127.0.0.1:9878/ui"),
+            "GET should return default dashboard_url"
+        );
+        assert_eq!(
+            json.get("ota_enabled").and_then(|v| v.as_bool()),
+            Some(true),
+            "GET should return default ota_enabled"
+        );
+
+        // PUT should persist a custom dashboard_url.
+        let put_req = axum::http::Request::builder()
+            .method("PUT")
+            .uri("/api/v1/agent/settings")
+            .header("authorization", "Bearer test-token")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                r#"{"dashboard_url":"http://localhost:4200"}"#,
+            ))
+            .unwrap_or_else(|e| panic!("failed to build PUT request: {e}"));
+
+        let response = app
+            .oneshot(put_req)
+            .await
+            .unwrap_or_else(|e| panic!("PUT request failed: {e}"));
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 64)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read PUT response body: {e}"));
+        let json: serde_json::Value =
+            serde_json::from_slice(&body).unwrap_or_else(|e| panic!("invalid JSON: {e}"));
+        assert_eq!(
+            json.get("dashboard_url").and_then(|v| v.as_str()),
+            Some("http://localhost:4200"),
+            "PUT should return updated dashboard_url"
         );
     }
 }

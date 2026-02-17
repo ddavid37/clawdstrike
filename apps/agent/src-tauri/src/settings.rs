@@ -23,6 +23,54 @@ pub struct OpenClawSettings {
     pub active_gateway_id: Option<String>,
 }
 
+/// SIEM integration settings configured from the dashboard.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SiemIntegrationSettings {
+    #[serde(default = "default_siem_provider")]
+    pub provider: String,
+    #[serde(default)]
+    pub endpoint: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+impl Default for SiemIntegrationSettings {
+    fn default() -> Self {
+        Self {
+            provider: default_siem_provider(),
+            endpoint: String::new(),
+            api_key: String::new(),
+            enabled: false,
+        }
+    }
+}
+
+fn default_siem_provider() -> String {
+    "datadog".to_string()
+}
+
+/// Webhook integration settings configured from the dashboard.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WebhookIntegrationSettings {
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub secret: String,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+/// Integration settings configured from dashboard pages.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct IntegrationSettings {
+    #[serde(default)]
+    pub siem: SiemIntegrationSettings,
+    #[serde(default)]
+    pub webhooks: WebhookIntegrationSettings,
+}
+
 /// Agent settings persisted to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -79,6 +127,54 @@ pub struct Settings {
     /// Non-secret OpenClaw metadata.
     #[serde(default)]
     pub openclaw: OpenClawSettings,
+
+    /// URL for the local web dashboard.
+    #[serde(default = "default_dashboard_url")]
+    pub dashboard_url: String,
+
+    /// Integration settings synchronized from the local dashboard.
+    #[serde(default)]
+    pub integrations: IntegrationSettings,
+
+    /// Enable automatic hushd OTA checks and updates.
+    #[serde(default = "default_ota_enabled")]
+    pub ota_enabled: bool,
+
+    /// OTA behavior mode: "auto" or "manual".
+    #[serde(default = "default_ota_mode")]
+    pub ota_mode: String,
+
+    /// OTA release channel ("stable" or "beta").
+    #[serde(default = "default_ota_channel")]
+    pub ota_channel: String,
+
+    /// Optional override URL for signed OTA manifest.
+    #[serde(default)]
+    pub ota_manifest_url: Option<String>,
+
+    /// Whether manifest override is allowed to fall back to default URL.
+    #[serde(default)]
+    pub ota_allow_fallback_to_default: bool,
+
+    /// Periodic OTA check interval in minutes.
+    #[serde(default = "default_ota_check_interval_minutes")]
+    pub ota_check_interval_minutes: u32,
+
+    /// Additional trusted OTA signer keys (hex-encoded Ed25519 public keys).
+    #[serde(default)]
+    pub ota_pinned_public_keys: Vec<String>,
+
+    /// RFC3339 timestamp of the last OTA check attempt.
+    #[serde(default)]
+    pub ota_last_check_at: Option<String>,
+
+    /// Human-readable summary of the last OTA action result.
+    #[serde(default)]
+    pub ota_last_result: Option<String>,
+
+    /// Current hushd version observed/applied by OTA.
+    #[serde(default)]
+    pub ota_current_hushd_version: Option<String>,
 }
 
 fn default_policy_path() -> PathBuf {
@@ -113,6 +209,30 @@ fn default_notification_severity() -> String {
     "block".to_string()
 }
 
+fn default_dashboard_url() -> String {
+    default_dashboard_url_for_port(default_agent_api_port())
+}
+
+fn default_dashboard_url_for_port(agent_api_port: u16) -> String {
+    format!("http://127.0.0.1:{}/ui", agent_api_port)
+}
+
+fn default_ota_enabled() -> bool {
+    true
+}
+
+fn default_ota_mode() -> String {
+    "auto".to_string()
+}
+
+fn default_ota_channel() -> String {
+    "stable".to_string()
+}
+
+fn default_ota_check_interval_minutes() -> u32 {
+    360
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -129,6 +249,18 @@ impl Default for Settings {
             hushd_binary_path: None,
             api_key: None,
             openclaw: OpenClawSettings::default(),
+            dashboard_url: default_dashboard_url(),
+            integrations: IntegrationSettings::default(),
+            ota_enabled: default_ota_enabled(),
+            ota_mode: default_ota_mode(),
+            ota_channel: default_ota_channel(),
+            ota_manifest_url: None,
+            ota_allow_fallback_to_default: false,
+            ota_check_interval_minutes: default_ota_check_interval_minutes(),
+            ota_pinned_public_keys: Vec::new(),
+            ota_last_check_at: None,
+            ota_last_result: None,
+            ota_current_hushd_version: None,
         }
     }
 }
@@ -141,8 +273,15 @@ impl Settings {
         if path.exists() {
             let contents = std::fs::read_to_string(&path)
                 .with_context(|| format!("Failed to read settings from {:?}", path))?;
-            let settings: Settings =
+            let settings_json: serde_json::Value =
                 serde_json::from_str(&contents).with_context(|| "Failed to parse settings JSON")?;
+            let mut settings: Settings = serde_json::from_value(settings_json.clone())
+                .with_context(|| "Failed to parse settings JSON")?;
+            let dashboard_url_present = settings_json
+                .as_object()
+                .map(|obj| obj.contains_key("dashboard_url"))
+                .unwrap_or(false);
+            backfill_dashboard_url_if_missing(&mut settings, dashboard_url_present);
             Ok(settings)
         } else {
             let settings = Settings::default();
@@ -171,6 +310,12 @@ impl Settings {
     /// Get the daemon URL based on current settings.
     pub fn daemon_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.daemon_port)
+    }
+}
+
+fn backfill_dashboard_url_if_missing(settings: &mut Settings, dashboard_url_present: bool) {
+    if !dashboard_url_present || settings.dashboard_url.trim().is_empty() {
+        settings.dashboard_url = default_dashboard_url_for_port(settings.agent_api_port);
     }
 }
 
@@ -223,6 +368,35 @@ mod tests {
         assert!(settings.enabled);
         assert!(settings.notifications_enabled);
         assert!(!settings.debug_include_daemon_error_body);
+        assert!(settings.ota_enabled);
+        assert_eq!(settings.ota_mode, "auto");
+        assert_eq!(settings.ota_channel, "stable");
+        assert_eq!(settings.ota_check_interval_minutes, 360);
+        assert_eq!(settings.integrations.siem.provider, "datadog");
+        assert!(!settings.integrations.siem.enabled);
+        assert!(!settings.integrations.webhooks.enabled);
+    }
+
+    #[test]
+    fn backfills_dashboard_url_from_loaded_agent_port_when_missing() {
+        let mut settings = Settings::default();
+        settings.agent_api_port = 21111;
+        settings.dashboard_url = String::new();
+
+        backfill_dashboard_url_if_missing(&mut settings, false);
+
+        assert_eq!(settings.dashboard_url, "http://127.0.0.1:21111/ui");
+    }
+
+    #[test]
+    fn preserves_dashboard_url_when_explicitly_present() {
+        let mut settings = Settings::default();
+        settings.agent_api_port = 21111;
+        settings.dashboard_url = "http://localhost:3100".to_string();
+
+        backfill_dashboard_url_if_missing(&mut settings, true);
+
+        assert_eq!(settings.dashboard_url, "http://localhost:3100");
     }
 
     #[test]

@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -81,6 +81,101 @@ struct HushdRuntimeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     policy_path: Option<PathBuf>,
     ruleset: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    siem: Option<HushdRuntimeSiemConfig>,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeSiemConfig {
+    enabled: bool,
+    exporters: HushdRuntimeExportersConfig,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct HushdRuntimeExportersConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    splunk: Option<HushdRuntimeExporterSettings<HushdRuntimeSplunkConfig>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    elastic: Option<HushdRuntimeExporterSettings<HushdRuntimeElasticConfig>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    datadog: Option<HushdRuntimeExporterSettings<HushdRuntimeDatadogConfig>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sumo_logic: Option<HushdRuntimeExporterSettings<HushdRuntimeSumoLogicConfig>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    webhooks: Option<HushdRuntimeExporterSettings<HushdRuntimeWebhookExporterConfig>>,
+}
+
+impl HushdRuntimeExportersConfig {
+    fn has_any(&self) -> bool {
+        self.splunk.is_some()
+            || self.elastic.is_some()
+            || self.datadog.is_some()
+            || self.sumo_logic.is_some()
+            || self.webhooks.is_some()
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeExporterSettings<T> {
+    enabled: bool,
+    #[serde(flatten)]
+    config: T,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeSplunkConfig {
+    hec_url: String,
+    hec_token: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeElasticConfig {
+    base_url: String,
+    index: String,
+    auth: HushdRuntimeElasticAuthConfig,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeElasticAuthConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    api_key: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeDatadogConfig {
+    api_key: String,
+    site: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeSumoLogicConfig {
+    http_source_url: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeWebhookExporterConfig {
+    webhooks: Vec<HushdRuntimeGenericWebhookConfig>,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeGenericWebhookConfig {
+    url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    method: Option<String>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    headers: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth: Option<HushdRuntimeWebhookAuthConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content_type: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct HushdRuntimeWebhookAuthConfig {
+    #[serde(rename = "type")]
+    auth_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token: Option<String>,
 }
 
 impl DaemonConfig {
@@ -133,6 +228,11 @@ impl DaemonManager {
         self.state_tx.subscribe()
     }
 
+    /// Return the configured hushd binary path.
+    pub fn binary_path(&self) -> PathBuf {
+        self.config.binary_path.clone()
+    }
+
     /// Get current status with health info.
     pub async fn status(&self) -> DaemonStatus {
         let state = self.state.read().await.clone();
@@ -182,7 +282,10 @@ impl DaemonManager {
             }
         }
 
-        self.spawn_and_wait_ready().await?;
+        if let Err(err) = self.spawn_and_wait_ready().await {
+            self.set_state(DaemonState::Stopped).await;
+            return Err(err);
+        }
         self.set_state(DaemonState::Running).await;
         self.start_health_monitor().await;
         tracing::info!("hushd daemon started on port {}", self.config.port);
@@ -833,9 +936,7 @@ async fn spawn_daemon_process(config: &DaemonConfig) -> Result<Child> {
     let runtime_config_path = write_runtime_config_file(config).await?;
 
     let mut cmd = Command::new(&config.binary_path);
-    cmd.arg("start")
-        .arg("--config")
-        .arg(&runtime_config_path);
+    cmd.arg("start").arg("--config").arg(&runtime_config_path);
 
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -866,6 +967,7 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
             listen,
             policy_path,
             ruleset: "default".to_string(),
+            siem: resolve_runtime_siem_config(),
         };
         let serialized = serde_yaml::to_string(&runtime)
             .with_context(|| "Failed to serialize hushd runtime config")?;
@@ -884,13 +986,209 @@ async fn write_runtime_config_file(config: &DaemonConfig) -> Result<PathBuf> {
     Ok(path)
 }
 
+fn resolve_runtime_siem_config() -> Option<HushdRuntimeSiemConfig> {
+    let settings = match crate::settings::Settings::load() {
+        Ok(settings) => settings,
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                "Failed to load agent settings while generating hushd runtime config"
+            );
+            return None;
+        }
+    };
+
+    build_runtime_siem_config(&settings)
+}
+
+fn build_runtime_siem_config(
+    settings: &crate::settings::Settings,
+) -> Option<HushdRuntimeSiemConfig> {
+    let mut exporters = HushdRuntimeExportersConfig::default();
+
+    let siem = &settings.integrations.siem;
+    let provider = siem.provider.trim().to_ascii_lowercase();
+    let endpoint = siem.endpoint.trim();
+    let api_key = siem.api_key.trim();
+    let siem_requested = siem.enabled || !endpoint.is_empty() || !api_key.is_empty();
+
+    if siem_requested {
+        match provider.as_str() {
+            "datadog" => {
+                if !endpoint.is_empty() && !api_key.is_empty() {
+                    exporters.datadog = Some(HushdRuntimeExporterSettings {
+                        enabled: true,
+                        config: HushdRuntimeDatadogConfig {
+                            api_key: api_key.to_string(),
+                            site: normalize_datadog_site(endpoint),
+                        },
+                    });
+                } else {
+                    tracing::warn!(
+                        "SIEM provider datadog requires both endpoint and API key; exporter not enabled"
+                    );
+                }
+            }
+            "splunk" => {
+                if !endpoint.is_empty() && !api_key.is_empty() {
+                    exporters.splunk = Some(HushdRuntimeExporterSettings {
+                        enabled: true,
+                        config: HushdRuntimeSplunkConfig {
+                            hec_url: endpoint.to_string(),
+                            hec_token: api_key.to_string(),
+                        },
+                    });
+                } else {
+                    tracing::warn!(
+                        "SIEM provider splunk requires both endpoint and API key; exporter not enabled"
+                    );
+                }
+            }
+            "elastic" => {
+                if !endpoint.is_empty() && !api_key.is_empty() {
+                    exporters.elastic = Some(HushdRuntimeExporterSettings {
+                        enabled: true,
+                        config: HushdRuntimeElasticConfig {
+                            base_url: endpoint.to_string(),
+                            index: "clawdstrike-security".to_string(),
+                            auth: HushdRuntimeElasticAuthConfig {
+                                api_key: Some(api_key.to_string()),
+                            },
+                        },
+                    });
+                } else {
+                    tracing::warn!(
+                        "SIEM provider elastic requires both endpoint and API key; exporter not enabled"
+                    );
+                }
+            }
+            "sumo_logic" => {
+                if !endpoint.is_empty() {
+                    exporters.sumo_logic = Some(HushdRuntimeExporterSettings {
+                        enabled: true,
+                        config: HushdRuntimeSumoLogicConfig {
+                            http_source_url: endpoint.to_string(),
+                        },
+                    });
+                } else {
+                    tracing::warn!(
+                        "SIEM provider sumo_logic requires an endpoint; exporter not enabled"
+                    );
+                }
+            }
+            "custom" => {
+                if !endpoint.is_empty() {
+                    let webhook = build_generic_webhook_exporter(endpoint, Some(api_key));
+                    exporters.webhooks = Some(HushdRuntimeExporterSettings {
+                        enabled: true,
+                        config: HushdRuntimeWebhookExporterConfig {
+                            webhooks: vec![webhook],
+                        },
+                    });
+                } else {
+                    tracing::warn!(
+                        "SIEM provider custom requires an endpoint; exporter not enabled"
+                    );
+                }
+            }
+            other => {
+                tracing::warn!(
+                    provider = %other,
+                    "Unknown SIEM provider in settings; exporter not enabled"
+                );
+            }
+        }
+    }
+
+    let webhooks = &settings.integrations.webhooks;
+    let webhook_url = webhooks.url.trim();
+    let webhook_secret = webhooks.secret.trim();
+    let webhooks_requested = webhooks.enabled || !webhook_url.is_empty();
+    if webhooks_requested && !webhook_url.is_empty() {
+        let exporter = exporters
+            .webhooks
+            .get_or_insert(HushdRuntimeExporterSettings {
+                enabled: true,
+                config: HushdRuntimeWebhookExporterConfig { webhooks: vec![] },
+            });
+
+        exporter
+            .config
+            .webhooks
+            .push(build_generic_webhook_exporter(
+                webhook_url,
+                Some(webhook_secret),
+            ));
+    }
+
+    if !exporters.has_any() {
+        return None;
+    }
+
+    Some(HushdRuntimeSiemConfig {
+        enabled: true,
+        exporters,
+    })
+}
+
+fn build_generic_webhook_exporter(
+    url: &str,
+    token: Option<&str>,
+) -> HushdRuntimeGenericWebhookConfig {
+    let token = token.map(str::trim).unwrap_or_default();
+    let auth = if token.is_empty() {
+        None
+    } else {
+        Some(HushdRuntimeWebhookAuthConfig {
+            auth_type: "bearer".to_string(),
+            token: Some(token.to_string()),
+        })
+    };
+
+    HushdRuntimeGenericWebhookConfig {
+        url: url.to_string(),
+        method: Some("POST".to_string()),
+        headers: HashMap::new(),
+        auth,
+        content_type: Some("application/json".to_string()),
+    }
+}
+
+fn normalize_datadog_site(endpoint: &str) -> String {
+    let trimmed = endpoint.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return "datadoghq.com".to_string();
+    }
+
+    if let Ok(parsed) = reqwest::Url::parse(trimmed) {
+        if let Some(host) = parsed.host_str() {
+            return host.trim_start_matches("http-intake.logs.").to_string();
+        }
+    }
+
+    let host_port = trimmed
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or("datadoghq.com");
+    host_port
+        .split(':')
+        .next()
+        .unwrap_or("datadoghq.com")
+        .trim_start_matches("http-intake.logs.")
+        .to_string()
+}
+
 fn yaml_contains_mapping_key(value: &serde_yaml::Value, needle: &str) -> bool {
     match value {
         serde_yaml::Value::Mapping(map) => map.iter().any(|(k, v)| {
             matches!(k, serde_yaml::Value::String(s) if s == needle)
                 || yaml_contains_mapping_key(v, needle)
         }),
-        serde_yaml::Value::Sequence(seq) => seq.iter().any(|v| yaml_contains_mapping_key(v, needle)),
+        serde_yaml::Value::Sequence(seq) => {
+            seq.iter().any(|v| yaml_contains_mapping_key(v, needle))
+        }
         _ => false,
     }
 }
@@ -1097,34 +1395,142 @@ fn compute_backoff(restart_streak: u32, restart_count: u32) -> Duration {
     Duration::from_millis(capped_ms.saturating_add(jitter_ms))
 }
 
-/// Find the hushd binary.
-pub fn find_hushd_binary() -> Option<PathBuf> {
-    let candidates = [
-        which::which("hushd").ok(),
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.join("hushd"))),
-        std::env::var("CARGO_MANIFEST_DIR")
-            .ok()
-            .map(|p| PathBuf::from(p).join("../../target/release/hushd")),
-        std::env::var("CARGO_MANIFEST_DIR")
-            .ok()
-            .map(|p| PathBuf::from(p).join("../../target/debug/hushd")),
-        Some(PathBuf::from("/usr/local/bin/hushd")),
-        Some(PathBuf::from("/opt/clawdstrike/bin/hushd")),
-        dirs::home_dir().map(|p| p.join(".local/bin/hushd")),
-        dirs::home_dir().map(|p| p.join(".cargo/bin/hushd")),
-    ];
+fn hushd_binary_name() -> &'static str {
+    if cfg!(windows) {
+        "hushd.exe"
+    } else {
+        "hushd"
+    }
+}
+
+pub fn managed_hushd_path() -> PathBuf {
+    crate::settings::get_config_dir()
+        .join("bin")
+        .join(hushd_binary_name())
+}
+
+fn bundled_hushd_candidates() -> Vec<PathBuf> {
+    let binary = hushd_binary_name();
+    let mut candidates = Vec::new();
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            // Local dev/build target dir.
+            candidates.push(exe_dir.join(binary));
+
+            // macOS app bundle locations.
+            if let Some(contents_dir) = exe_dir.parent() {
+                candidates.push(contents_dir.join("Resources").join(binary));
+                candidates.push(contents_dir.join("Resources").join("bin").join(binary));
+                candidates.push(
+                    contents_dir
+                        .join("Resources")
+                        .join("resources")
+                        .join(binary),
+                );
+                candidates.push(
+                    contents_dir
+                        .join("Resources")
+                        .join("resources")
+                        .join("bin")
+                        .join(binary),
+                );
+            }
+        }
+    }
+
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let root = PathBuf::from(manifest_dir);
+        candidates.push(root.join("resources").join(binary));
+        candidates.push(root.join("resources").join("bin").join(binary));
+        candidates.push(root.join("../../target/release").join(binary));
+        candidates.push(root.join("../../target/debug").join(binary));
+    }
 
     candidates
+}
+
+/// Ensure a writable managed hushd binary is available under user config.
+///
+/// Returns `Ok(Some(path))` when a bundled hushd was found and prepared,
+/// `Ok(None)` when no bundled hushd candidate is present.
+pub fn prepare_managed_hushd_binary() -> Result<Option<PathBuf>> {
+    let Some(source_path) = bundled_hushd_candidates()
         .into_iter()
-        .flatten()
-        .find(|candidate| candidate.exists())
+        .find(|candidate| candidate.is_file())
+    else {
+        return Ok(None);
+    };
+
+    let managed_path = managed_hushd_path();
+    // Seed the managed binary once. Do not overwrite an existing managed binary
+    // on startup, so OTA-applied updates remain persistent across app relaunches.
+    let copy_needed = !managed_path.is_file();
+
+    if copy_needed {
+        if let Some(parent) = managed_path.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create managed hushd directory {:?}", parent)
+            })?;
+        }
+
+        std::fs::copy(&source_path, &managed_path).with_context(|| {
+            format!(
+                "Failed to copy bundled hushd from {:?} to {:?}",
+                source_path, managed_path
+            )
+        })?;
+    } else {
+        tracing::debug!(
+            managed_path = %managed_path.display(),
+            "Managed hushd already exists; preserving current binary"
+        );
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&managed_path)
+            .with_context(|| format!("Failed to stat managed hushd at {:?}", managed_path))?
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&managed_path, perms).with_context(|| {
+            format!(
+                "Failed to set executable permissions on managed hushd at {:?}",
+                managed_path
+            )
+        })?;
+    }
+
+    Ok(Some(managed_path))
+}
+
+/// Find the hushd binary.
+pub fn find_hushd_binary() -> Option<PathBuf> {
+    let binary = hushd_binary_name();
+    let mut candidates = vec![managed_hushd_path()];
+    candidates.extend(bundled_hushd_candidates());
+    candidates.extend(
+        [
+            which::which("hushd").ok(),
+            Some(PathBuf::from("/usr/local/bin").join(binary)),
+            Some(PathBuf::from("/opt/homebrew/bin").join(binary)),
+            Some(PathBuf::from("/opt/clawdstrike/bin").join(binary)),
+            dirs::home_dir().map(|p| p.join(".local/bin").join(binary)),
+            dirs::home_dir().map(|p| p.join(".cargo/bin").join(binary)),
+        ]
+        .into_iter()
+        .flatten(),
+    );
+
+    candidates.into_iter().find(|candidate| candidate.exists())
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn daemon_state_as_str() {
@@ -1136,6 +1542,56 @@ mod tests {
     fn backoff_is_bounded() {
         let backoff = compute_backoff(10, 10);
         assert!(backoff <= Duration::from_millis(20_500));
+    }
+
+    #[test]
+    fn normalize_datadog_site_accepts_host_or_intake_url() {
+        assert_eq!(
+            normalize_datadog_site("https://us5.datadoghq.com"),
+            "us5.datadoghq.com"
+        );
+        assert_eq!(
+            normalize_datadog_site("https://http-intake.logs.datadoghq.eu/api/v2/logs"),
+            "datadoghq.eu"
+        );
+    }
+
+    #[test]
+    fn runtime_siem_config_is_generated_for_datadog_and_webhooks() {
+        let mut settings = crate::settings::Settings::default();
+        settings.integrations.siem.provider = "datadog".to_string();
+        settings.integrations.siem.endpoint = "https://us5.datadoghq.com".to_string();
+        settings.integrations.siem.api_key = "dd-key".to_string();
+        settings.integrations.siem.enabled = true;
+        settings.integrations.webhooks.url = "https://hooks.example.com/security".to_string();
+        settings.integrations.webhooks.secret = "hook-secret".to_string();
+        settings.integrations.webhooks.enabled = true;
+
+        let config = build_runtime_siem_config(&settings)
+            .unwrap_or_else(|| panic!("expected runtime SIEM config"));
+
+        assert!(config.exporters.datadog.is_some());
+        let datadog = config
+            .exporters
+            .datadog
+            .as_ref()
+            .unwrap_or_else(|| panic!("missing datadog exporter"));
+        assert_eq!(datadog.config.site, "us5.datadoghq.com");
+        assert_eq!(datadog.config.api_key, "dd-key");
+
+        let webhooks = config
+            .exporters
+            .webhooks
+            .as_ref()
+            .unwrap_or_else(|| panic!("missing webhooks exporter"));
+        assert_eq!(webhooks.config.webhooks.len(), 1);
+        assert_eq!(
+            webhooks.config.webhooks[0]
+                .auth
+                .as_ref()
+                .and_then(|auth| auth.token.as_deref()),
+            Some("hook-secret")
+        );
     }
 
     #[tokio::test]
@@ -1156,6 +1612,21 @@ mod tests {
                 .await;
         }
         assert_eq!(queue.len().await, MAX_AUDIT_QUEUE_LEN);
+    }
+
+    #[tokio::test]
+    async fn failed_start_resets_state_to_stopped() {
+        let manager = DaemonManager::new(DaemonConfig {
+            binary_path: PathBuf::from("/tmp/does-not-exist/hushd"),
+            port: 0,
+            policy_path: PathBuf::from("/tmp/policy.yaml"),
+        });
+
+        let result = manager.start().await;
+        assert!(result.is_err());
+
+        let status = manager.status().await;
+        assert_eq!(status.state, "stopped");
     }
 
     #[tokio::test]

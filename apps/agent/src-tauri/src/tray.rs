@@ -3,11 +3,16 @@
 use crate::daemon::DaemonState;
 use crate::decision::NormalizedDecision;
 use crate::events::PolicyEvent;
+use crate::settings::Settings;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use tauri::Manager;
 use tauri::{AppHandle, Emitter, Runtime};
+use tokio::net::{lookup_host, TcpStream};
 use tokio::sync::RwLock;
+use tokio::time::timeout;
 
 /// Menu item IDs.
 #[allow(dead_code)]
@@ -17,7 +22,12 @@ pub mod menu_ids {
     pub const TOGGLE_ENABLED: &str = "toggle_enabled";
     pub const EVENT_PREFIX: &str = "event_";
     pub const OPEN_DESKTOP: &str = "open_desktop";
+    pub const OPEN_WEB_UI: &str = "open_web_ui";
     pub const INSTALL_HOOKS: &str = "install_hooks";
+    pub const INTEGRATIONS_INSTALL_HOOKS: &str = "integrations_install_hooks";
+    pub const INTEGRATIONS_INSTALL_OPENCLAW: &str = "integrations_install_openclaw";
+    pub const INTEGRATIONS_CONFIGURE_SIEM: &str = "integrations_configure_siem";
+    pub const INTEGRATIONS_CONFIGURE_WEBHOOKS: &str = "integrations_configure_webhooks";
     pub const RELOAD_POLICY: &str = "reload_policy";
     pub const QUIT: &str = "quit";
 }
@@ -80,13 +90,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
     let sep2 = PredefinedMenuItem::separator(app)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
 
-    let install_hooks = MenuItem::with_id(
-        app,
-        menu_ids::INSTALL_HOOKS,
-        "Install Claude Code Hooks",
-        true,
-        None::<&str>,
-    )?;
+    let integrations_submenu = build_integrations_submenu(app)?;
     let reload_policy = MenuItem::with_id(
         app,
         menu_ids::RELOAD_POLICY,
@@ -101,6 +105,13 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
         true,
         None::<&str>,
     )?;
+    let open_web_ui = MenuItem::with_id(
+        app,
+        menu_ids::OPEN_WEB_UI,
+        "Open Web UI",
+        true,
+        None::<&str>,
+    )?;
     let quit_item = MenuItem::with_id(app, menu_ids::QUIT, "Quit", true, None::<&str>)?;
 
     let menu = Menu::with_items(
@@ -112,9 +123,10 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> tauri::R
             &sep1,
             &events_submenu,
             &sep2,
-            &install_hooks,
+            &integrations_submenu,
             &reload_policy,
             &open_desktop,
+            &open_web_ui,
             &sep3,
             &quit_item,
         ],
@@ -157,6 +169,51 @@ fn build_events_submenu<R: Runtime>(
         .collect();
 
     Submenu::with_items(app, &title, true, &item_refs)
+}
+
+fn build_integrations_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
+    let install_hooks = MenuItem::with_id(
+        app,
+        menu_ids::INTEGRATIONS_INSTALL_HOOKS,
+        "Install Claude Code Hooks",
+        true,
+        None::<&str>,
+    )?;
+    let install_openclaw = MenuItem::with_id(
+        app,
+        menu_ids::INTEGRATIONS_INSTALL_OPENCLAW,
+        "Install OpenClaw Plugin",
+        true,
+        None::<&str>,
+    )?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let configure_siem = MenuItem::with_id(
+        app,
+        menu_ids::INTEGRATIONS_CONFIGURE_SIEM,
+        "Configure SIEM Export",
+        true,
+        None::<&str>,
+    )?;
+    let configure_webhooks = MenuItem::with_id(
+        app,
+        menu_ids::INTEGRATIONS_CONFIGURE_WEBHOOKS,
+        "Configure Webhooks",
+        true,
+        None::<&str>,
+    )?;
+
+    Submenu::with_items(
+        app,
+        "Integrations",
+        true,
+        &[
+            &install_hooks as &dyn tauri::menu::IsMenuItem<R>,
+            &install_openclaw,
+            &separator,
+            &configure_siem,
+            &configure_webhooks,
+        ],
+    )
 }
 
 fn format_status_text(state: &TrayState) -> String {
@@ -207,7 +264,151 @@ fn format_event_label(event: &PolicyEvent) -> String {
         target.to_string()
     };
 
-    format!("{} {} - {}", icon, event.action_type, short_target)
+    let attribution = if let Some(ref aid) = event.agent_id {
+        let truncated: String = aid.chars().take(8).collect();
+        format!(" [{}]", truncated)
+    } else if let Some(ref sid) = event.session_id {
+        let truncated: String = sid.chars().take(8).collect();
+        format!(" [s:{}]", truncated)
+    } else {
+        String::new()
+    };
+
+    format!(
+        "{} {} - {}{}",
+        icon, event.action_type, short_target, attribution
+    )
+}
+
+fn validate_dashboard_url(candidate: &str) -> Option<String> {
+    let trimmed = candidate.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let parsed = reqwest::Url::parse(trimmed).ok()?;
+    let scheme = parsed.scheme();
+    if (scheme == "http" || scheme == "https") && parsed.host_str().is_some() {
+        Some(parsed.to_string())
+    } else {
+        None
+    }
+}
+
+fn default_local_dashboard_url(agent_api_port: u16) -> String {
+    format!("http://127.0.0.1:{}/ui", agent_api_port)
+}
+
+fn is_local_dashboard_url(candidate: &str) -> bool {
+    let parsed = match reqwest::Url::parse(candidate) {
+        Ok(url) => url,
+        Err(_) => return false,
+    };
+    let host = parsed.host_str().unwrap_or_default();
+    matches!(host, "localhost" | "127.0.0.1")
+}
+
+fn is_legacy_local_dev_dashboard_url(candidate: &str) -> bool {
+    let parsed = match reqwest::Url::parse(candidate) {
+        Ok(url) => url,
+        Err(_) => return false,
+    };
+    let host = parsed.host_str().unwrap_or_default();
+    parsed.scheme() == "http"
+        && matches!(host, "localhost" | "127.0.0.1")
+        && parsed.port_or_known_default() == Some(3100)
+        && (parsed.path() == "/" || parsed.path().is_empty())
+}
+
+async fn url_is_reachable(candidate: &str) -> bool {
+    let parsed = match reqwest::Url::parse(candidate) {
+        Ok(url) => url,
+        Err(_) => return false,
+    };
+    let host = match parsed.host_str() {
+        Some(host) => host,
+        None => return false,
+    };
+    let port = match parsed.port_or_known_default() {
+        Some(port) => port,
+        None => return false,
+    };
+    let timeout_duration = Duration::from_millis(150);
+    let addresses = match lookup_host((host, port)).await {
+        Ok(addresses) => addresses,
+        Err(_) => return false,
+    };
+    for address in addresses.take(4) {
+        if let Ok(Ok(_)) = timeout(timeout_duration, TcpStream::connect(address)).await {
+            return true;
+        }
+    }
+    false
+}
+
+async fn resolve_dashboard_url(settings: &Settings) -> Option<String> {
+    let fallback = default_local_dashboard_url(settings.agent_api_port);
+    let configured = if settings.dashboard_url.trim().is_empty() {
+        fallback.clone()
+    } else {
+        settings.dashboard_url.clone()
+    };
+
+    let validated = validate_dashboard_url(&configured)?;
+    if is_local_dashboard_url(&validated) && !url_is_reachable(&validated).await {
+        if is_legacy_local_dev_dashboard_url(&validated) {
+            tracing::warn!(
+                configured_url = %validated,
+                fallback_url = %fallback,
+                "Dashboard URL points to localhost:3100, but no service is listening; using local agent UI fallback"
+            );
+        } else {
+            tracing::warn!(
+                configured_url = %validated,
+                fallback_url = %fallback,
+                "Configured local dashboard URL is unreachable; using local agent UI fallback"
+            );
+        }
+        return validate_dashboard_url(&fallback);
+    }
+    Some(validated)
+}
+
+fn build_dashboard_settings_url(base_url: &str, section: &str) -> Option<String> {
+    let section = section.trim().trim_matches('/');
+    if section.is_empty() {
+        return None;
+    }
+
+    let mut parsed = reqwest::Url::parse(base_url).ok()?;
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+
+    let base_path = parsed.path().trim_end_matches('/');
+    let target_path = if base_path.is_empty() || base_path == "/" {
+        format!("/settings/{}", section)
+    } else if base_path.ends_with("/settings") {
+        format!("{}/{}", base_path, section)
+    } else {
+        format!("{}/settings/{}", base_path, section)
+    };
+    parsed.set_path(&target_path);
+    Some(parsed.to_string())
+}
+
+fn open_dashboard_url(url: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(url).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer.exe").arg(url).spawn();
+    }
 }
 
 /// Create and setup the tray icon.
@@ -241,9 +442,49 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             tracing::info!("Toggle enabled clicked");
             let _ = app.emit("toggle_enabled", ());
         }
-        menu_ids::INSTALL_HOOKS => {
-            tracing::info!("Install hooks clicked");
+        menu_ids::INTEGRATIONS_INSTALL_HOOKS => {
+            tracing::info!("Install hooks clicked (via Integrations menu)");
             let _ = app.emit("install_hooks", ());
+        }
+        menu_ids::INTEGRATIONS_INSTALL_OPENCLAW => {
+            tracing::info!("Install OpenClaw plugin clicked");
+            let _ = app.emit("install_openclaw_plugin", ());
+        }
+        menu_ids::INTEGRATIONS_CONFIGURE_SIEM => {
+            tracing::info!("Configure SIEM export clicked");
+            let settings: Arc<RwLock<Settings>> =
+                app.state::<Arc<RwLock<Settings>>>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                let settings_snapshot = settings.read().await.clone();
+                let Some(url) = resolve_dashboard_url(&settings_snapshot).await else {
+                    tracing::warn!("Dashboard URL is invalid; refusing to open SIEM config");
+                    return;
+                };
+                let Some(target) = build_dashboard_settings_url(&url, "siem") else {
+                    tracing::warn!("Failed to build SIEM settings URL; refusing to open");
+                    return;
+                };
+                tracing::debug!(url = %target, "Opening SIEM config");
+                open_dashboard_url(&target);
+            });
+        }
+        menu_ids::INTEGRATIONS_CONFIGURE_WEBHOOKS => {
+            tracing::info!("Configure webhooks clicked");
+            let settings: Arc<RwLock<Settings>> =
+                app.state::<Arc<RwLock<Settings>>>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                let settings_snapshot = settings.read().await.clone();
+                let Some(url) = resolve_dashboard_url(&settings_snapshot).await else {
+                    tracing::warn!("Dashboard URL is invalid; refusing to open webhook config");
+                    return;
+                };
+                let Some(target) = build_dashboard_settings_url(&url, "webhooks") else {
+                    tracing::warn!("Failed to build webhook settings URL; refusing to open");
+                    return;
+                };
+                tracing::debug!(url = %target, "Opening webhook config");
+                open_dashboard_url(&target);
+            });
         }
         menu_ids::RELOAD_POLICY => {
             tracing::info!("Reload policy clicked");
@@ -262,6 +503,20 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             {
                 let _ = std::process::Command::new("sdr-desktop").spawn();
             }
+        }
+        menu_ids::OPEN_WEB_UI => {
+            tracing::info!("Open Web UI clicked");
+            let settings: Arc<RwLock<Settings>> =
+                app.state::<Arc<RwLock<Settings>>>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                let settings_snapshot = settings.read().await.clone();
+                let Some(url) = resolve_dashboard_url(&settings_snapshot).await else {
+                    tracing::warn!("Dashboard URL is invalid; refusing to open Web UI");
+                    return;
+                };
+                tracing::debug!(url, "Opening Web UI");
+                open_dashboard_url(&url);
+            });
         }
         menu_ids::QUIT => {
             tracing::info!("Quit clicked");
@@ -369,5 +624,81 @@ impl<R: Runtime> TrayManager<R> {
         if let Err(err) = update_tray_menu(&self.app, &self.tray, &state) {
             tracing::error!(error = %err, "Failed to update tray menu");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_dashboard_settings_url, default_local_dashboard_url,
+        is_legacy_local_dev_dashboard_url, is_local_dashboard_url, validate_dashboard_url,
+    };
+
+    #[test]
+    fn validate_dashboard_url_accepts_http_https_with_host() {
+        assert_eq!(
+            validate_dashboard_url("https://example.com/path?q=1").as_deref(),
+            Some("https://example.com/path?q=1")
+        );
+        assert_eq!(
+            validate_dashboard_url("http://localhost:3100").as_deref(),
+            Some("http://localhost:3100/")
+        );
+    }
+
+    #[test]
+    fn validate_dashboard_url_rejects_non_network_or_hostless_urls() {
+        assert!(validate_dashboard_url("urn:isbn:0451450523").is_none());
+        assert!(validate_dashboard_url("javascript:alert(1)").is_none());
+        assert!(validate_dashboard_url("file:///tmp/test").is_none());
+        assert!(validate_dashboard_url("not a url").is_none());
+    }
+
+    #[test]
+    fn local_dashboard_url_uses_agent_api_port() {
+        assert_eq!(
+            default_local_dashboard_url(9878),
+            "http://127.0.0.1:9878/ui"
+        );
+    }
+
+    #[test]
+    fn local_dashboard_url_detection_is_precise() {
+        assert!(is_local_dashboard_url("http://127.0.0.1:4200"));
+        assert!(is_local_dashboard_url("https://localhost:3100/path"));
+        assert!(!is_local_dashboard_url("https://example.com/settings"));
+    }
+
+    #[test]
+    fn build_dashboard_settings_url_uses_path_routes() {
+        assert_eq!(
+            build_dashboard_settings_url("http://127.0.0.1:3100", "siem").as_deref(),
+            Some("http://127.0.0.1:3100/settings/siem")
+        );
+        assert_eq!(
+            build_dashboard_settings_url("https://dashboard.example.com/app/", "webhooks")
+                .as_deref(),
+            Some("https://dashboard.example.com/app/settings/webhooks")
+        );
+        assert_eq!(
+            build_dashboard_settings_url("https://dashboard.example.com/settings", "siem")
+                .as_deref(),
+            Some("https://dashboard.example.com/settings/siem")
+        );
+        assert_eq!(
+            build_dashboard_settings_url("http://127.0.0.1:9878/ui", "webhooks").as_deref(),
+            Some("http://127.0.0.1:9878/ui/settings/webhooks")
+        );
+    }
+
+    #[test]
+    fn legacy_local_dev_dashboard_url_detection_is_precise() {
+        assert!(is_legacy_local_dev_dashboard_url("http://localhost:3100"));
+        assert!(is_legacy_local_dev_dashboard_url("http://127.0.0.1:3100/"));
+        assert!(!is_legacy_local_dev_dashboard_url("http://localhost:4200"));
+        assert!(!is_legacy_local_dev_dashboard_url("https://localhost:3100"));
+        assert!(!is_legacy_local_dev_dashboard_url(
+            "http://example.com:3100"
+        ));
     }
 }
