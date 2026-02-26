@@ -28,6 +28,10 @@ hushd:
   persistence:
     enabled: false
 
+nats:
+  jetstream:
+    maxFileStoreBytes: "25769803776"
+
 bridges:
   tetragon:
     enabled: true
