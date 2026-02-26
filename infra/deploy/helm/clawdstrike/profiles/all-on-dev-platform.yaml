@@ -13,7 +13,7 @@ namespace:
 
 spine:
   image:
-    tag: "spine-checkpointer-eb1010f98a88d44d9c900af0363d48a8b3e601ec"
+    tag: "spine-checkpointer-d21381cda5511e41cd1de10202fb41a8a257b97a"
   checkpointer:
     logSeedHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
     streamReplicas: 1
@@ -22,7 +22,7 @@ spine:
 
 hushd:
   image:
-    tag: "eb1010f98a88d44d9c900af0363d48a8b3e601ec"
+    tag: "d21381cda5511e41cd1de10202fb41a8a257b97a"
   auth:
     enabled: false
   persistence:
@@ -32,7 +32,7 @@ bridges:
   tetragon:
     enabled: true
     image:
-      tag: "eb1010f98a88d44d9c900af0363d48a8b3e601ec"
+      tag: "d21381cda5511e41cd1de10202fb41a8a257b97a"
     grpcEndpoint: "http://localhost:54321"
     hostNetwork: true
     dnsPolicy: ClusterFirstWithHostNet
@@ -42,7 +42,7 @@ bridges:
     enabled: true
     replicas: 1
     image:
-      tag: "eb1010f98a88d44d9c900af0363d48a8b3e601ec"
+      tag: "d21381cda5511e41cd1de10202fb41a8a257b97a"
     grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:4245"
     nodeSelector:
       kubernetes.io/arch: amd64
