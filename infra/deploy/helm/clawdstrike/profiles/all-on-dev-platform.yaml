@@ -43,7 +43,7 @@ bridges:
     replicas: 1
     image:
       tag: "eb1010f98a88d44d9c900af0363d48a8b3e601ec"
-    grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:80"
+    grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:4245"
     nodeSelector:
       kubernetes.io/arch: amd64
 
@@ -51,7 +51,7 @@ ingress:
   enabled: true
   className: alb
   commonAnnotations:
-    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
     alb.ingress.kubernetes.io/group.name: clawdstrike
@@ -70,7 +70,7 @@ ingress:
     pathType: Prefix
     annotations:
       alb.ingress.kubernetes.io/healthcheck-path: /healthz
-      external-dns.alpha.kubernetes.io/hostname: proofs-api.clawdstrike.dev.backbay.industries
+      external-dns.alpha.kubernetes.io/hostname: proofs-api.clawdstrike.dev.backbay.io
 
 serviceMonitor:
   enabled: true

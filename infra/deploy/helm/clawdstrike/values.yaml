@@ -195,7 +195,7 @@ bridges:
     image:
       repository: ghcr.io/backbay-labs/clawdstrike/hubble-bridge
       tag: ""
-    grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:80"
+    grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:4245"
     hostNetwork: false
     dnsPolicy: ClusterFirst
     env:
