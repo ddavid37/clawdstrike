@@ -194,6 +194,70 @@ pub enum PkgCommands {
         #[arg(long)]
         registry: Option<String>,
     },
+    /// Organization management
+    Org {
+        #[command(subcommand)]
+        command: OrgCommands,
+    },
+    /// Mirror packages from an upstream registry for air-gapped or local use
+    Mirror {
+        #[command(subcommand)]
+        command: crate::mirror::MirrorCommands,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum OrgCommands {
+    /// Create a new organization
+    Create {
+        /// Organization name (used as @scope)
+        name: String,
+        /// Display name
+        #[arg(long)]
+        display_name: Option<String>,
+        /// Registry URL
+        #[arg(long)]
+        registry: Option<String>,
+    },
+    /// List organization members
+    Members {
+        /// Organization name
+        name: String,
+        /// Registry URL
+        #[arg(long)]
+        registry: Option<String>,
+    },
+    /// Invite a member to the organization
+    Invite {
+        /// Organization name
+        org: String,
+        /// Member's public key (hex)
+        publisher_key: String,
+        /// Role: owner, maintainer, member
+        #[arg(long, default_value = "member")]
+        role: String,
+        /// Registry URL
+        #[arg(long)]
+        registry: Option<String>,
+    },
+    /// Remove a member from the organization
+    Remove {
+        /// Organization name
+        org: String,
+        /// Member's public key (hex)
+        publisher_key: String,
+        /// Registry URL
+        #[arg(long)]
+        registry: Option<String>,
+    },
+    /// Show organization info
+    Info {
+        /// Organization name
+        name: String,
+        /// Registry URL
+        #[arg(long)]
+        registry: Option<String>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +321,8 @@ pub fn cmd_pkg(command: PkgCommands, stdout: &mut dyn Write, stderr: &mut dyn Wr
             version,
             registry,
         } => cmd_pkg_yank(&name, &version, registry.as_deref(), stdout, stderr),
+        PkgCommands::Org { command } => cmd_pkg_org(command, stdout, stderr),
+        PkgCommands::Mirror { command } => crate::mirror::cmd_mirror(command, stdout, stderr),
     }
 }
 
@@ -295,6 +361,15 @@ fn cmd_pkg_init(
     ExitCode::Ok
 }
 
+/// Write a template file into the given directory, creating parent dirs as needed.
+fn write_template_file(dir: &Path, filename: &str, content: &str) -> std::io::Result<()> {
+    let path = dir.join(filename);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, content)
+}
+
 fn scaffold_package(dir: &Path, pkg_type: &PkgType, name: &str) -> std::io::Result<()> {
     // Create type-specific directories
     match pkg_type {
@@ -306,6 +381,7 @@ fn scaffold_package(dir: &Path, pkg_type: &PkgType, name: &str) -> std::io::Resu
         PkgType::PolicyPack => {
             std::fs::create_dir_all(dir.join("policies"))?;
             std::fs::create_dir_all(dir.join("data"))?;
+            std::fs::create_dir_all(dir.join("tests"))?;
         }
         PkgType::Adapter => {
             std::fs::create_dir_all(dir.join("src"))?;
@@ -323,11 +399,14 @@ fn scaffold_package(dir: &Path, pkg_type: &PkgType, name: &str) -> std::io::Resu
 
     // Write the package manifest
     let manifest_toml = generate_manifest_toml(name, pkg_type);
-    std::fs::write(dir.join("clawdstrike-pkg.toml"), manifest_toml)?;
+    write_template_file(dir, "clawdstrike-pkg.toml", &manifest_toml)?;
 
-    // Guard-specific template files
-    if *pkg_type == PkgType::Guard {
-        scaffold_guard_templates(dir, name)?;
+    // Type-specific template files
+    match pkg_type {
+        PkgType::Guard => scaffold_guard_templates(dir, name)?,
+        PkgType::PolicyPack => scaffold_policy_pack_templates(dir, name)?,
+        PkgType::Bundle => scaffold_bundle_templates(dir, name)?,
+        _ => {}
     }
 
     Ok(())
@@ -377,6 +456,154 @@ fn scaffold_guard_templates(dir: &Path, name: &str) -> std::io::Result<()> {
     )?;
 
     Ok(())
+}
+
+fn scaffold_policy_pack_templates(dir: &Path, name: &str) -> std::io::Result<()> {
+    // policies/default.yaml
+    write_template_file(
+        dir,
+        "policies/default.yaml",
+        &generate_policy_pack_default_yaml(name),
+    )?;
+
+    // tests/policy-test.yaml
+    write_template_file(
+        dir,
+        "tests/policy-test.yaml",
+        &generate_policy_pack_test(name),
+    )?;
+
+    // README.md
+    write_template_file(dir, "README.md", &generate_policy_pack_readme(name))?;
+
+    Ok(())
+}
+
+fn scaffold_bundle_templates(dir: &Path, name: &str) -> std::io::Result<()> {
+    // README.md
+    write_template_file(dir, "README.md", &generate_bundle_readme(name))?;
+
+    Ok(())
+}
+
+fn generate_policy_pack_default_yaml(name: &str) -> String {
+    format!(
+        r#"# {name} — Default Policy
+version: "1.2.0"
+name: {name}
+description: Default policy for {name}
+extends: clawdstrike:default
+
+guards:
+  forbidden_path:
+    patterns:
+      - "**/.ssh/**"
+      - "**/.aws/**"
+      - "**/.env"
+      - "**/.env.*"
+      - "/etc/shadow"
+      - "/etc/passwd"
+    exceptions: []
+
+  secret_leak:
+    patterns:
+      - name: aws_access_key
+        pattern: "AKIA[0-9A-Z]{{16}}"
+        severity: critical
+      - name: private_key
+        pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----"
+        severity: critical
+    skip_paths:
+      - "**/test/**"
+      - "**/tests/**"
+
+settings:
+  fail_fast: false
+  verbose_logging: false
+  session_timeout_secs: 3600
+"#
+    )
+}
+
+fn generate_policy_pack_test(name: &str) -> String {
+    format!(
+        r#"# Test suite for {name} policy pack
+suite: "{name} policy tests"
+tests:
+  - name: "blocks access to .ssh directory"
+    action:
+      type: "file_access"
+      path: "/home/user/.ssh/id_rsa"
+    policy: "policies/default.yaml"
+    expect:
+      allowed: false
+
+  - name: "allows access to safe path"
+    action:
+      type: "file_access"
+      path: "/tmp/safe-file.txt"
+    policy: "policies/default.yaml"
+    expect:
+      allowed: true
+"#
+    )
+}
+
+fn generate_policy_pack_readme(name: &str) -> String {
+    format!(
+        r#"# {name}
+
+A Clawdstrike policy pack.
+
+## Policies
+
+| Policy | Description |
+|--------|-------------|
+| `policies/default.yaml` | Default policy configuration |
+
+## Usage
+
+```yaml
+extends: "{name}/policies/default"
+```
+
+```bash
+clawdstrike pkg install {name}
+clawdstrike check --ruleset {name}/policies/default --action-type file /path/to/check
+```
+
+## Compliance Mapping
+
+| Requirement | Control | Guard |
+|---|---|---|
+| *Add your compliance mapping here* | | |
+"#
+    )
+}
+
+fn generate_bundle_readme(name: &str) -> String {
+    format!(
+        r#"# {name}
+
+A Clawdstrike bundle package that combines guards and policy packs.
+
+## Dependencies
+
+This bundle includes the following packages (see `[dependencies]` in `clawdstrike-pkg.toml`):
+
+| Package | Version | Description |
+|---------|---------|-------------|
+| *Add dependencies to clawdstrike-pkg.toml* | | |
+
+## Usage
+
+```bash
+clawdstrike pkg install {name}
+```
+
+All bundled guards and policies are installed together as a single unit.
+"#
+    )
 }
 
 fn generate_guard_lib_rs(name: &str, struct_name: &str) -> String {
@@ -490,6 +717,15 @@ fixtures:
 }
 
 fn generate_manifest_toml(name: &str, pkg_type: &PkgType) -> String {
+    let deps = if *pkg_type == PkgType::Bundle {
+        r#"[dependencies]
+# "@clawdstrike/example-guard" = "^0.1"
+# "@clawdstrike/example-policy" = "^0.1"
+"#
+    } else {
+        "[dependencies]\n"
+    };
+
     format!(
         r#"[package]
 name = "{name}"
@@ -506,8 +742,7 @@ min_version = "{clawdstrike_version}"
 level = "untrusted"
 sandbox = "wasm"
 
-[dependencies]
-"#,
+{deps}"#,
         clawdstrike_version = env!("CARGO_PKG_VERSION"),
     )
 }
@@ -546,6 +781,17 @@ fn cmd_pkg_pack(path: Option<&Path>, stdout: &mut dyn Write, stderr: &mut dyn Wr
         }
     };
 
+    // Pre-pack validation based on package type
+    if let Err(msg) = validate_pack_contents(&source_dir, &manifest) {
+        let _ = writeln!(stderr, "Error: {msg}");
+        return ExitCode::ConfigError;
+    }
+
+    // Warn on missing README.md
+    if !source_dir.join("README.md").exists() {
+        let _ = writeln!(stderr, "Warning: README.md not found; consider adding one");
+    }
+
     // Build archive name
     let archive_name = format!(
         "{}-{}.cpkg",
@@ -566,6 +812,49 @@ fn cmd_pkg_pack(path: Option<&Path>, stdout: &mut dyn Write, stderr: &mut dyn Wr
     let _ = writeln!(stdout, "Packed: {}", output_path.display());
     let _ = writeln!(stdout, "Hash:   {}", hash.to_hex());
     ExitCode::Ok
+}
+
+/// Validate that a package directory contains the expected contents for its type.
+fn validate_pack_contents(source_dir: &Path, manifest: &PkgManifest) -> Result<(), String> {
+    match manifest.package.pkg_type {
+        PkgType::PolicyPack => {
+            let policies_dir = source_dir.join("policies");
+            if !policies_dir.is_dir() {
+                return Err("policy-pack must contain a policies/ directory".to_string());
+            }
+            let has_yaml = std::fs::read_dir(&policies_dir)
+                .map(|entries| {
+                    entries.filter_map(|e| e.ok()).any(|e| {
+                        e.path()
+                            .extension()
+                            .is_some_and(|ext| ext == "yaml" || ext == "yml")
+                    })
+                })
+                .unwrap_or(false);
+            if !has_yaml {
+                return Err(
+                    "policy-pack policies/ directory must contain at least one .yaml file"
+                        .to_string(),
+                );
+            }
+        }
+        PkgType::Guard => {
+            if !source_dir.join("src/lib.rs").exists() {
+                return Err(
+                    "guard package must contain src/lib.rs (or a WASM entrypoint)".to_string(),
+                );
+            }
+        }
+        PkgType::Bundle => {
+            if manifest.dependencies.is_empty() {
+                return Err(
+                    "bundle package must have at least one entry in [dependencies]".to_string(),
+                );
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -2084,6 +2373,439 @@ fn load_runtime_options(pkg_dir: &Path) -> clawdstrike::plugins::WasmGuardRuntim
 }
 
 // ---------------------------------------------------------------------------
+// pkg org
+// ---------------------------------------------------------------------------
+
+fn cmd_pkg_org(command: OrgCommands, stdout: &mut dyn Write, stderr: &mut dyn Write) -> ExitCode {
+    match command {
+        OrgCommands::Create {
+            name,
+            display_name,
+            registry,
+        } => cmd_org_create(
+            &name,
+            display_name.as_deref(),
+            registry.as_deref(),
+            stdout,
+            stderr,
+        ),
+        OrgCommands::Members { name, registry } => {
+            cmd_org_members(&name, registry.as_deref(), stdout, stderr)
+        }
+        OrgCommands::Invite {
+            org,
+            publisher_key,
+            role,
+            registry,
+        } => cmd_org_invite(
+            &org,
+            &publisher_key,
+            &role,
+            registry.as_deref(),
+            stdout,
+            stderr,
+        ),
+        OrgCommands::Remove {
+            org,
+            publisher_key,
+            registry,
+        } => cmd_org_remove(&org, &publisher_key, registry.as_deref(), stdout, stderr),
+        OrgCommands::Info { name, registry } => {
+            cmd_org_info(&name, registry.as_deref(), stdout, stderr)
+        }
+    }
+}
+
+fn cmd_org_create(
+    name: &str,
+    display_name: Option<&str>,
+    registry: Option<&str>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> ExitCode {
+    let cfg = RegistryConfig::load(registry);
+
+    let auth_token = match &cfg.auth_token {
+        Some(t) => t.clone(),
+        None => {
+            let _ = writeln!(
+                stderr,
+                "Error: not authenticated. Run `clawdstrike pkg login` first."
+            );
+            return ExitCode::ConfigError;
+        }
+    };
+
+    let keypair = match load_or_generate_publisher_keypair(&cfg, stderr) {
+        Ok(kp) => kp,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: cannot create HTTP client: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    let url = format!("{}/api/v1/orgs", cfg.registry_url.trim_end_matches('/'));
+
+    let mut body = serde_json::json!({
+        "name": name,
+        "publisher_key": keypair.public_key().to_hex(),
+    });
+    if let Some(dn) = display_name {
+        body["display_name"] = serde_json::Value::String(dn.to_string());
+    }
+
+    let resp = match client
+        .post(&url)
+        .bearer_auth(&auth_token)
+        .json(&body)
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: request failed: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let resp_body = resp.text().unwrap_or_default();
+        let _ = writeln!(
+            stderr,
+            "Error: registry returned HTTP {status}: {resp_body}"
+        );
+        return ExitCode::RuntimeError;
+    }
+
+    let _ = writeln!(stdout, "Created organization @{}", name);
+    ExitCode::Ok
+}
+
+fn cmd_org_members(
+    name: &str,
+    registry: Option<&str>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> ExitCode {
+    let cfg = RegistryConfig::load(registry);
+
+    let auth_token = match &cfg.auth_token {
+        Some(t) => t.clone(),
+        None => {
+            let _ = writeln!(
+                stderr,
+                "Error: not authenticated. Run `clawdstrike pkg login` first."
+            );
+            return ExitCode::ConfigError;
+        }
+    };
+
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: cannot create HTTP client: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    let url = format!(
+        "{}/api/v1/orgs/{}/members",
+        cfg.registry_url.trim_end_matches('/'),
+        urlencoding_simple(name)
+    );
+
+    let resp = match client.get(&url).bearer_auth(&auth_token).send() {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: request failed: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        let _ = writeln!(stderr, "Error: registry returned HTTP {status}: {body}");
+        return ExitCode::RuntimeError;
+    }
+
+    let resp_json: serde_json::Value = match resp.json() {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: invalid response: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    let members = match resp_json.get("members").and_then(|m| m.as_array()) {
+        Some(m) => m,
+        None => {
+            let _ = writeln!(stdout, "No members found.");
+            return ExitCode::Ok;
+        }
+    };
+
+    let _ = writeln!(stdout, "Members of @{}:\n", name);
+    let _ = writeln!(stdout, "{:<48} {:<12} JOINED", "KEY", "ROLE");
+    let _ = writeln!(stdout, "{}", "-".repeat(80));
+
+    for member in members {
+        let key = member
+            .get("publisher_key")
+            .and_then(|k| k.as_str())
+            .unwrap_or("?");
+        let role = member.get("role").and_then(|r| r.as_str()).unwrap_or("?");
+        let joined = member
+            .get("joined_at")
+            .and_then(|j| j.as_str())
+            .unwrap_or("?");
+        let key_display = if key.len() > 44 {
+            format!("{}...", &key[..44])
+        } else {
+            key.to_string()
+        };
+        let _ = writeln!(stdout, "{:<48} {:<12} {}", key_display, role, joined);
+    }
+
+    let _ = writeln!(stdout, "\n{} member(s)", members.len());
+    ExitCode::Ok
+}
+
+fn cmd_org_invite(
+    org: &str,
+    publisher_key: &str,
+    role: &str,
+    registry: Option<&str>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> ExitCode {
+    if !matches!(role, "owner" | "maintainer" | "member") {
+        let _ = writeln!(
+            stderr,
+            "Error: invalid role '{}'. Must be one of: owner, maintainer, member",
+            role
+        );
+        return ExitCode::ConfigError;
+    }
+
+    let cfg = RegistryConfig::load(registry);
+
+    let auth_token = match &cfg.auth_token {
+        Some(t) => t.clone(),
+        None => {
+            let _ = writeln!(
+                stderr,
+                "Error: not authenticated. Run `clawdstrike pkg login` first."
+            );
+            return ExitCode::ConfigError;
+        }
+    };
+
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: cannot create HTTP client: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    let url = format!(
+        "{}/api/v1/orgs/{}/members",
+        cfg.registry_url.trim_end_matches('/'),
+        urlencoding_simple(org)
+    );
+
+    let body = serde_json::json!({
+        "publisher_key": publisher_key,
+        "role": role,
+    });
+
+    let resp = match client
+        .post(&url)
+        .bearer_auth(&auth_token)
+        .json(&body)
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: request failed: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let resp_body = resp.text().unwrap_or_default();
+        let _ = writeln!(
+            stderr,
+            "Error: registry returned HTTP {status}: {resp_body}"
+        );
+        return ExitCode::RuntimeError;
+    }
+
+    let _ = writeln!(stdout, "Invited {} to @{} as {}", publisher_key, org, role);
+    ExitCode::Ok
+}
+
+fn cmd_org_remove(
+    org: &str,
+    publisher_key: &str,
+    registry: Option<&str>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> ExitCode {
+    let cfg = RegistryConfig::load(registry);
+
+    let auth_token = match &cfg.auth_token {
+        Some(t) => t.clone(),
+        None => {
+            let _ = writeln!(
+                stderr,
+                "Error: not authenticated. Run `clawdstrike pkg login` first."
+            );
+            return ExitCode::ConfigError;
+        }
+    };
+
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: cannot create HTTP client: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    let url = format!(
+        "{}/api/v1/orgs/{}/members/{}",
+        cfg.registry_url.trim_end_matches('/'),
+        urlencoding_simple(org),
+        urlencoding_simple(publisher_key)
+    );
+
+    let resp = match client.delete(&url).bearer_auth(&auth_token).send() {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: request failed: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        let _ = writeln!(stderr, "Error: registry returned HTTP {status}: {body}");
+        return ExitCode::RuntimeError;
+    }
+
+    let _ = writeln!(stdout, "Removed {} from @{}", publisher_key, org);
+    ExitCode::Ok
+}
+
+fn cmd_org_info(
+    name: &str,
+    registry: Option<&str>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> ExitCode {
+    let cfg = RegistryConfig::load(registry);
+
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: cannot create HTTP client: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    let url = format!(
+        "{}/api/v1/orgs/{}",
+        cfg.registry_url.trim_end_matches('/'),
+        urlencoding_simple(name)
+    );
+
+    let resp = match client.get(&url).send() {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: request failed: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        let _ = writeln!(stderr, "Error: registry returned HTTP {status}: {body}");
+        return ExitCode::RuntimeError;
+    }
+
+    let resp_json: serde_json::Value = match resp.json() {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: invalid response: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    let org_name = resp_json
+        .get("name")
+        .and_then(|n| n.as_str())
+        .unwrap_or("?");
+    let display = resp_json
+        .get("display_name")
+        .and_then(|d| d.as_str())
+        .unwrap_or("");
+    let verified = resp_json
+        .get("verified")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let members = resp_json
+        .get("member_count")
+        .and_then(|m| m.as_i64())
+        .unwrap_or(0);
+    let packages = resp_json
+        .get("package_count")
+        .and_then(|p| p.as_i64())
+        .unwrap_or(0);
+
+    let _ = writeln!(stdout, "Organization: @{}", org_name);
+    if !display.is_empty() {
+        let _ = writeln!(stdout, "Display Name: {}", display);
+    }
+    let _ = writeln!(
+        stdout,
+        "Verified:     {}",
+        if verified { "yes" } else { "no" }
+    );
+    let _ = writeln!(stdout, "Members:      {}", members);
+    let _ = writeln!(stdout, "Packages:     {}", packages);
+
+    ExitCode::Ok
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -2343,5 +3065,230 @@ sandbox = "native"
         // Should fail because no auth token is configured
         assert_eq!(code, ExitCode::ConfigError);
         assert!(stderr.contains("not authenticated"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Enhanced scaffolding template tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_scaffold_policy_pack_creates_templates() {
+        let tmp = tempfile::tempdir().unwrap();
+        scaffold_package(tmp.path(), &PkgType::PolicyPack, "@acme/my-policies").unwrap();
+
+        assert!(tmp.path().join("policies").is_dir());
+        assert!(tmp.path().join("data").is_dir());
+        assert!(tmp.path().join("tests").is_dir());
+        assert!(tmp.path().join("clawdstrike-pkg.toml").exists());
+        assert!(tmp.path().join("policies/default.yaml").exists());
+        assert!(tmp.path().join("tests/policy-test.yaml").exists());
+        assert!(tmp.path().join("README.md").exists());
+
+        let policy = std::fs::read_to_string(tmp.path().join("policies/default.yaml")).unwrap();
+        assert!(policy.contains("version:"));
+        assert!(policy.contains("guards:"));
+        assert!(policy.contains("forbidden_path:"));
+
+        let test_yaml = std::fs::read_to_string(tmp.path().join("tests/policy-test.yaml")).unwrap();
+        assert!(test_yaml.contains("tests:"));
+        assert!(test_yaml.contains("file_access"));
+
+        let readme = std::fs::read_to_string(tmp.path().join("README.md")).unwrap();
+        assert!(readme.contains("@acme/my-policies"));
+    }
+
+    #[test]
+    fn test_scaffold_bundle_creates_templates() {
+        let tmp = tempfile::tempdir().unwrap();
+        scaffold_package(tmp.path(), &PkgType::Bundle, "my-bundle").unwrap();
+
+        assert!(tmp.path().join("clawdstrike-pkg.toml").exists());
+        assert!(tmp.path().join("README.md").exists());
+
+        let manifest = std::fs::read_to_string(tmp.path().join("clawdstrike-pkg.toml")).unwrap();
+        assert!(manifest.contains("[dependencies]"));
+        assert!(manifest.contains("bundle"));
+
+        let readme = std::fs::read_to_string(tmp.path().join("README.md")).unwrap();
+        assert!(readme.contains("bundle"));
+        assert!(readme.contains("my-bundle"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Pre-pack validation tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_validate_policy_pack_missing_policies_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest = parse_pkg_manifest_toml(
+            r#"
+[package]
+name = "test-pack"
+version = "0.1.0"
+pkg_type = "policy-pack"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+"#,
+        )
+        .unwrap();
+        let result = validate_pack_contents(tmp.path(), &manifest);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("policies/ directory"));
+    }
+
+    #[test]
+    fn test_validate_policy_pack_empty_policies_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("policies")).unwrap();
+        let manifest = parse_pkg_manifest_toml(
+            r#"
+[package]
+name = "test-pack"
+version = "0.1.0"
+pkg_type = "policy-pack"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+"#,
+        )
+        .unwrap();
+        let result = validate_pack_contents(tmp.path(), &manifest);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("at least one .yaml"));
+    }
+
+    #[test]
+    fn test_validate_policy_pack_with_yaml() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("policies")).unwrap();
+        std::fs::write(tmp.path().join("policies/test.yaml"), "version: \"1.2.0\"").unwrap();
+        let manifest = parse_pkg_manifest_toml(
+            r#"
+[package]
+name = "test-pack"
+version = "0.1.0"
+pkg_type = "policy-pack"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+"#,
+        )
+        .unwrap();
+        assert!(validate_pack_contents(tmp.path(), &manifest).is_ok());
+    }
+
+    #[test]
+    fn test_validate_guard_missing_src() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest = parse_pkg_manifest_toml(
+            r#"
+[package]
+name = "test-guard"
+version = "0.1.0"
+pkg_type = "guard"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+"#,
+        )
+        .unwrap();
+        let result = validate_pack_contents(tmp.path(), &manifest);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("src/lib.rs"));
+    }
+
+    #[test]
+    fn test_validate_bundle_empty_deps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest = parse_pkg_manifest_toml(
+            r#"
+[package]
+name = "test-bundle"
+version = "0.1.0"
+pkg_type = "bundle"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+"#,
+        )
+        .unwrap();
+        let result = validate_pack_contents(tmp.path(), &manifest);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("[dependencies]"));
+    }
+
+    #[test]
+    fn test_validate_bundle_with_deps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest = parse_pkg_manifest_toml(
+            r#"
+[package]
+name = "test-bundle"
+version = "0.1.0"
+pkg_type = "bundle"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+
+[dependencies]
+"@acme/guard" = "^0.1"
+"#,
+        )
+        .unwrap();
+        assert!(validate_pack_contents(tmp.path(), &manifest).is_ok());
+    }
+
+    #[test]
+    fn test_pack_policy_pack_without_policies_fails() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("clawdstrike-pkg.toml"),
+            r#"[package]
+name = "no-policies"
+version = "0.1.0"
+pkg_type = "policy-pack"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+"#,
+        )
+        .unwrap();
+        let (_, stderr, code) = run_cmd(PkgCommands::Pack {
+            path: Some(tmp.path().to_path_buf()),
+        });
+        assert_eq!(code, ExitCode::ConfigError);
+        assert!(stderr.contains("policies/ directory"));
+    }
+
+    #[test]
+    fn test_pack_guard_without_src_fails() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("clawdstrike-pkg.toml"),
+            r#"[package]
+name = "no-src"
+version = "0.1.0"
+pkg_type = "guard"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+"#,
+        )
+        .unwrap();
+        let (_, stderr, code) = run_cmd(PkgCommands::Pack {
+            path: Some(tmp.path().to_path_buf()),
+        });
+        assert_eq!(code, ExitCode::ConfigError);
+        assert!(stderr.contains("src/lib.rs"));
     }
 }

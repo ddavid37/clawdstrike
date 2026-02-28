@@ -41,6 +41,7 @@ mod canonical_commandline;
 mod guard_cli;
 mod guard_report_json;
 mod hush_run;
+mod mirror;
 mod pkg_cli;
 mod policy_bundle;
 mod policy_diff;

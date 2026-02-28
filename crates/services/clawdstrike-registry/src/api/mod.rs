@@ -7,6 +7,7 @@ pub mod download;
 pub mod health;
 pub mod index;
 pub mod info;
+pub mod org;
 pub mod proof;
 pub mod publish;
 pub mod search;
@@ -56,12 +57,24 @@ pub fn create_router(state: AppState) -> Router {
             "/api/v1/transparency/checkpoint",
             get(checkpoint::get_checkpoint),
         )
-        .route("/api/v1/audit/{name}", get(audit::get_audit));
+        .route("/api/v1/audit/{name}", get(audit::get_audit))
+        // Organization public endpoints.
+        .route("/api/v1/orgs/{name}", get(org::get_org))
+        .route("/api/v1/orgs/{name}/packages", get(org::list_org_packages));
 
-    // Authenticated routes (publish, yank).
+    // Authenticated routes (publish, yank, org management).
     let auth_routes = Router::new()
         .route("/api/v1/packages", post(publish::publish))
         .route("/api/v1/packages/{name}/{version}", delete(yank::yank))
+        .route("/api/v1/orgs", post(org::create_org))
+        .route(
+            "/api/v1/orgs/{name}/members",
+            get(org::list_members).post(org::invite_member),
+        )
+        .route(
+            "/api/v1/orgs/{name}/members/{key}",
+            delete(org::remove_member),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             require_publish_auth,

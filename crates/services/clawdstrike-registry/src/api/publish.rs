@@ -47,6 +47,16 @@ pub async fn publish(
     let name = manifest.package.name.clone();
     let version = manifest.package.version.clone();
 
+    // 1b. Scope authorization for @scope/name packages.
+    if let Some((scope, _basename)) = crate::auth::parse_package_scope(&name) {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| RegistryError::Internal(format!("db lock poisoned: {e}")))?;
+        crate::auth::authorize_scoped_publish(&db, &scope, &req.publisher_key)?;
+        drop(db);
+    }
+
     // 2. Decode archive bytes.
     use base64::Engine as _;
     let archive_bytes = base64::engine::general_purpose::STANDARD

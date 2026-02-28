@@ -1,0 +1,52 @@
+# Clawdstrike Publish to Registry
+#
+# Publishes a guard/policy-pack package to the Clawdstrike registry on release.
+# Copy this file to your repo's .github/workflows/ directory to enable.
+#
+# Required secrets:
+#   CLAWDSTRIKE_TOKEN - Registry authentication token (from `clawdstrike pkg login`)
+#
+# Optional environment variables:
+#   CLAWDSTRIKE_REGISTRY_URL - Override the default registry URL
+
+name: Publish to Registry
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    name: Pack & Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - name: Install Clawdstrike CLI
+        run: cargo install clawdstrike-cli
+
+      - name: Build (WASM)
+        run: cargo build --target wasm32-wasip2 --release
+        if: hashFiles('Cargo.toml') != ''
+
+      - name: Pack
+        run: clawdstrike pkg pack
+
+      - name: Verify package before publish
+        run: |
+          for f in *.cpkg; do
+            echo "Verifying $f ..."
+            clawdstrike guard validate .
+          done
+
+      - name: Publish
+        env:
+          CLAWDSTRIKE_REGISTRY_TOKEN: ${{ secrets.CLAWDSTRIKE_TOKEN }}
+        run: clawdstrike pkg publish --registry "${CLAWDSTRIKE_REGISTRY_URL:-https://registry.clawdstrike.com}"
