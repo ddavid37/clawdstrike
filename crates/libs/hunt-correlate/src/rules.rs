@@ -326,7 +326,7 @@ conditions:
     bind: file_access
   - source: [receipt, hubble]
     action_type: egress
-    not_target_pattern: "->\\s*(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.[0-9]{1,3}\\.|192\\.168\\.)"
+    not_target_pattern: "->\\s*(localhost|127\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)|10\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)|172\\.(1[6-9]|2[0-9]|3[01])\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)|192\\.168\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d))(?::\\d{1,5})?(?:\\b|$)"
     after: file_access
     within: 30s
     bind: egress_event
@@ -431,6 +431,22 @@ output:
         assert!(
             !re.is_match("10.0.0.1 -> 93.184.216.34:443"),
             "private source at start should not be excluded when destination is public"
+        );
+        assert!(
+            !re.is_match("egress TCP 10.0.0.1:8080 -> 100.1.2.3:443"),
+            "public 100.x.x.x must not be treated as private 10.x.x.x"
+        );
+        assert!(
+            !re.is_match("egress TCP 10.0.0.1:8080 -> 1270.0.0.1:443"),
+            "public 1270.x.x.x must not be treated as private 127.x.x.x"
+        );
+        assert!(
+            !re.is_match("egress TCP 10.0.0.1:8080 -> 172.25.999.1:443"),
+            "invalid octets must not match private-IP exclusion"
+        );
+        assert!(
+            re.is_match("egress TCP 10.0.0.1:8080 -> 172.25.99.1:443"),
+            "valid RFC1918 addresses should still be excluded"
         );
     }
 

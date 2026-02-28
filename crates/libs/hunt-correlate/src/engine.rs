@@ -426,7 +426,7 @@ conditions:
     bind: file_access
   - source: [receipt, hubble]
     action_type: egress
-    not_target_pattern: "->\\s*(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.[0-9]{1,3}\\.|192\\.168\\.)"
+    not_target_pattern: "->\\s*(localhost|127\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)|10\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)|172\\.(1[6-9]|2[0-9]|3[01])\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)|192\\.168\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d))(?::\\d{1,5})?(?:\\b|$)"
     after: file_access
     within: 30s
     bind: egress_event
@@ -632,6 +632,39 @@ output:
             alerts.len(),
             1,
             "172.2.x.x is a public IP and should trigger exfiltration alert"
+        );
+    }
+
+    #[test]
+    fn egress_to_100_not_excluded_as_public() {
+        // 100.x.x.x is public and must not be excluded by a 10.x prefix.
+        let rule = exfil_rule();
+        let mut engine = CorrelationEngine::new(vec![rule]).unwrap();
+
+        let ts1 = Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap();
+        let ts2 = Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 10).unwrap();
+
+        let e1 = make_event(
+            EventSource::Receipt,
+            "file",
+            NormalizedVerdict::Allow,
+            "read /etc/passwd",
+            ts1,
+        );
+        engine.process_event(&e1);
+
+        let e2 = make_event(
+            EventSource::Receipt,
+            "egress",
+            NormalizedVerdict::Allow,
+            "egress TCP 10.0.0.1:8080 -> 100.1.2.3:8080",
+            ts2,
+        );
+        let alerts = engine.process_event(&e2);
+        assert_eq!(
+            alerts.len(),
+            1,
+            "100.x.x.x is a public IP and should trigger exfiltration alert"
         );
     }
 
