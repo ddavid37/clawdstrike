@@ -70,12 +70,57 @@
 
 ## Quick Start
 
+### Desktop Agent (Recommended)
+
+Use the desktop agent for local runtime management:
+- tray controls
+- managed daemon
+- built-in MCP server
+
+```bash
+# Build and run the desktop agent
+cd apps/agent
+cargo tauri dev
+```
+
+Prefer a packaged build? Download the latest release:
+[github.com/backbay-labs/clawdstrike/releases/latest](https://github.com/backbay-labs/clawdstrike/releases/latest)
+(current: `v0.1.3`).
+
+When running, the agent manages these local services:
+
+| Service | Default |
+|---|---|
+| `hushd` policy daemon | `127.0.0.1:9876` |
+| MCP `policy_check` server | `127.0.0.1:9877` |
+| Authenticated agent API | `127.0.0.1:9878` |
+| Local management dashboard (Web UI) | `http://127.0.0.1:9878/ui` |
+
+Tray menu actions:
+- enable/disable enforcement
+- reload policy
+- install Claude Code hooks
+- open the local Web UI
+
+Integrations menu:
+- `Configure SIEM Export` (providers: Datadog, Splunk, Elastic, Sumo Logic, Custom endpoint)
+- `Configure Webhooks` (generic webhook forwarding for SOAR/automation endpoints)
+
+For full setup and configuration, see [`apps/agent/README.md`](apps/agent/README.md).
+
 ### CLI
+
+#### Install
 
 ```bash
 brew tap backbay-labs/tap
 brew install clawdstrike
+clawdstrike --version
+```
 
+#### Enforce
+
+```bash
 # Block access to sensitive paths
 clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 # → BLOCKED [Critical]: Access to forbidden path: ~/.ssh/id_rsa
@@ -88,11 +133,33 @@ clawdstrike check --action-type egress --ruleset strict api.openai.com:443
 clawdstrike check --action-type mcp --ruleset strict shell_exec
 # → BLOCKED [Error]: Tool 'shell_exec' is blocked by policy
 
-# Show available rulesets
+# Show available built-in rulesets
 clawdstrike policy list
 
-# Diff two policies
+# Diff two policies to understand enforcement differences
 clawdstrike policy diff strict default
+
+# Enforce policy while running a real command
+clawdstrike run --policy clawdstrike:strict -- python my_agent.py
+```
+
+#### Hunt
+
+```bash
+# Scan local MCP configs/tooling for risky exposure
+clawdstrike hunt scan --target cursor --include-builtin
+
+# Query recent denied events
+clawdstrike hunt query --source receipt --verdict deny --start 1h --limit 50
+
+# Natural-language hunt query
+clawdstrike hunt query --nl "blocked egress last 30 minutes" --jsonl
+
+# Build a timeline across sources
+clawdstrike hunt timeline --source tetragon,hubble --start 1h
+
+# Correlate events against detection rules
+clawdstrike hunt correlate --rules ./rules/exfil.yaml --start 1h
 ```
 
 ### TypeScript
