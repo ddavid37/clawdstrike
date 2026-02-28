@@ -242,6 +242,23 @@ jobs:
       - name: E2E pipeline tests
         run: cargo test -p sdr-integration-tests --test e2e_pipeline
 
+  adaptive-cloud-integration:
+    name: Adaptive Cloud Integration (NATS + Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: check
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Run cloud-api adaptive integration tests
+        run: cargo test -p clawdstrike-cloud-api integration_tests:: -- --nocapture
+
   msrv:
     name: Minimum Supported Rust Version
     runs-on: ubuntu-latest
