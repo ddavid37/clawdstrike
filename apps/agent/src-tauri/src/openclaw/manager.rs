@@ -547,6 +547,49 @@ impl OpenClawManager {
 
         let (mut sink, mut stream) = ws_stream.split();
 
+        let connect_challenge_nonce = match tokio::time::timeout(
+            Duration::from_millis(150),
+            stream.next(),
+        )
+        .await
+        {
+            Ok(Some(Ok(Message::Text(text)))) => match parse_gateway_frame(&text) {
+                Some(GatewayFrame::Event(event)) if event.event == "connect.challenge" => {
+                    let nonce = event
+                        .payload
+                        .as_ref()
+                        .and_then(|payload| payload.get("nonce"))
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string());
+                    if nonce.is_none() {
+                        tracing::warn!(
+                            gateway_id = %gateway_id,
+                            "gateway emitted connect.challenge without nonce; continuing with token auth"
+                        );
+                    }
+                    nonce
+                }
+                _ => None,
+            },
+            Ok(Some(Ok(Message::Close(frame)))) => {
+                return Ok(ConnectionExit::RemoteClosed(format!(
+                    "closed before connect: {:?}",
+                    frame
+                )))
+            }
+            Ok(Some(Err(err))) => {
+                return Err(anyhow::anyhow!(
+                    "failed while waiting for pre-connect challenge: {err}"
+                ))
+            }
+            Ok(None) => {
+                return Ok(ConnectionExit::RemoteClosed(
+                    "stream ended before connect".to_string(),
+                ))
+            }
+            Err(_) | Ok(Some(Ok(_))) => None,
+        };
+
         let connect_id = create_request_id("connect");
         let role = "operator".to_string();
         let scopes = default_gateway_scopes();
@@ -563,7 +606,13 @@ impl OpenClawManager {
             instance_id: Some(format!("agent:{}", gateway_id)),
         };
         let device =
-            match build_gateway_device_proof(&client, &role, &scopes, auth_token.as_deref()) {
+            match build_gateway_device_proof(
+                &client,
+                &role,
+                &scopes,
+                auth_token.as_deref(),
+                connect_challenge_nonce.as_deref(),
+            ) {
                 Ok(value) => value,
                 Err(err) => {
                     tracing::warn!(
@@ -1028,7 +1077,13 @@ fn build_gateway_device_proof(
     role: &str,
     scopes: &[String],
     auth_token: Option<&str>,
+    nonce: Option<&str>,
 ) -> Result<Option<GatewayDeviceProof>> {
+    // Gateways can require challenge-bound nonces for device proofs.
+    // If no nonce challenge is available, rely on token auth for compatibility.
+    if nonce.is_none() {
+        return Ok(None);
+    }
     let identity = match load_openclaw_device_identity()? {
         Some(value) => value,
         None => return Ok(None),
@@ -1044,7 +1099,7 @@ fn build_gateway_device_proof(
         scopes,
         now,
         auth_token,
-        None,
+        nonce,
         now,
     )?;
     Ok(Some(proof))
@@ -1607,6 +1662,67 @@ mod tests {
         assert!(
             verifying_key.verify(payload.as_bytes(), &signature).is_ok(),
             "device signature failed verification"
+        );
+    }
+
+    #[test]
+    fn gateway_device_proof_with_nonce_signs_openclaw_v2_payload() {
+        let signing_key = SigningKey::from_bytes(&[9u8; 32]);
+        let verifying_key = signing_key.verifying_key();
+        let private_key_pem = signing_key
+            .to_pkcs8_pem(Default::default())
+            .unwrap_or_else(|err| panic!("failed to encode private key pem: {err}"))
+            .to_string();
+        let public_key_raw_base64url = URL_SAFE_NO_PAD.encode(verifying_key.as_bytes());
+        let device_id = hush_core::sha256(verifying_key.as_bytes()).to_hex();
+        let identity = OpenClawDeviceIdentity {
+            device_id: device_id.clone(),
+            public_key_raw_base64url: public_key_raw_base64url.clone(),
+            private_key_pem: Zeroizing::new(private_key_pem),
+        };
+        let scopes = default_gateway_scopes();
+        let signed_at = now_ms();
+        let nonce = "nonce-123";
+
+        let proof = build_gateway_device_proof_from_identity(
+            &identity,
+            "cli",
+            "cli",
+            "operator",
+            &scopes,
+            signed_at,
+            Some("gateway-token"),
+            Some(nonce),
+            signed_at,
+        )
+        .unwrap_or_else(|err| panic!("failed to build v2 device proof: {err}"));
+
+        assert_eq!(proof.id, device_id);
+        assert_eq!(proof.public_key, public_key_raw_base64url);
+        assert_eq!(proof.nonce.as_deref(), Some(nonce));
+
+        let payload = build_device_auth_payload(
+            &proof.id,
+            "cli",
+            "cli",
+            "operator",
+            &scopes,
+            proof.signed_at,
+            Some("gateway-token"),
+            Some(nonce),
+        );
+        assert!(
+            payload.starts_with("v2|"),
+            "nonce-aware payload should use v2 format"
+        );
+        let sig_bytes = URL_SAFE_NO_PAD
+            .decode(&proof.signature)
+            .unwrap_or_else(|err| panic!("failed to decode signature: {err}"));
+        let signature = Signature::from_slice(&sig_bytes)
+            .unwrap_or_else(|err| panic!("failed to parse signature bytes: {err}"));
+        assert!(
+            verifying_key.verify(payload.as_bytes(), &signature).is_ok(),
+            "v2 device signature failed verification"
         );
     }
 
