@@ -8,8 +8,9 @@ global:
 nats:
   replicas: 1
   jetstream:
+    maxFileStoreBytes: 1073741824
     storage:
-      size: 1Gi
+      size: 2Gi
 
 spine:
   checkpointer:
