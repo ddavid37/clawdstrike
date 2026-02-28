@@ -1,5 +1,6 @@
 //! OIDC token validation for trusted publishing from CI/CD environments.
 
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -94,24 +95,48 @@ impl OidcClaims {
 // JWKS Cache
 // ---------------------------------------------------------------------------
 
+/// Per-provider cached JWKS entry.
+struct CachedJwks {
+    jwks: JwkSet,
+    fetched_at: Instant,
+}
+
+/// JWKS cache keyed by provider name to avoid serving the wrong JWKS
+/// when validating tokens from different providers (e.g. GitHub vs GitLab).
 pub struct JwksCache {
-    jwks: Option<JwkSet>,
-    fetched_at: Option<Instant>,
+    entries: HashMap<String, CachedJwks>,
 }
 
 impl JwksCache {
     pub fn new() -> Self {
         Self {
-            jwks: None,
-            fetched_at: None,
+            entries: HashMap::new(),
         }
     }
 
-    fn is_expired(&self) -> bool {
-        match self.fetched_at {
-            Some(t) => t.elapsed().as_secs() > JWKS_CACHE_DURATION_SECS,
-            None => true,
+    fn get_or_fetch(
+        &mut self,
+        provider: &str,
+        jwks_url: &str,
+    ) -> Result<JwkSet, RegistryError> {
+        let is_valid = self
+            .entries
+            .get(provider)
+            .map(|e| e.fetched_at.elapsed().as_secs() <= JWKS_CACHE_DURATION_SECS)
+            .unwrap_or(false);
+
+        if !is_valid {
+            let fetched = fetch_jwks(jwks_url)?;
+            self.entries.insert(
+                provider.to_string(),
+                CachedJwks {
+                    jwks: fetched,
+                    fetched_at: Instant::now(),
+                },
+            );
         }
+
+        Ok(self.entries[provider].jwks.clone())
     }
 }
 
@@ -139,20 +164,12 @@ pub fn validate_oidc_token(
         }
     };
 
-    // Fetch or use cached JWKS.
+    // Fetch or use cached JWKS (keyed by provider to avoid cross-provider confusion).
     let jwks = {
         let mut cache = jwks_cache
             .lock()
             .map_err(|e| RegistryError::Internal(format!("jwks cache lock poisoned: {e}")))?;
-        if cache.is_expired() {
-            let fetched = fetch_jwks(jwks_url)?;
-            cache.jwks = Some(fetched);
-            cache.fetched_at = Some(Instant::now());
-        }
-        cache
-            .jwks
-            .clone()
-            .ok_or_else(|| RegistryError::Internal("JWKS cache empty after fetch".into()))?
+        cache.get_or_fetch(provider, jwks_url)?
     };
 
     // Decode the JWT header to find the key ID.
@@ -244,10 +261,17 @@ pub fn match_trusted_publisher<'a>(
         }
 
         // If the publisher specifies a workflow, it must match.
+        // GitHub workflow_ref looks like "owner/repo/.github/workflows/release.yml@refs/heads/main".
+        // We strip the ref suffix and check that the path ends with the required workflow
+        // at a path boundary to prevent partial-name attacks (e.g., "pre-release.yml"
+        // should not match a requirement of "release.yml").
         if let Some(ref required_workflow) = publisher.workflow {
             match claims.workflow() {
                 Some(actual) => {
-                    if !actual.contains(required_workflow.as_str()) {
+                    let workflow_path = actual.split('@').next().unwrap_or(actual);
+                    let matches = workflow_path == required_workflow.as_str()
+                        || workflow_path.ends_with(&format!("/{}", required_workflow));
+                    if !matches {
                         continue;
                     }
                 }
@@ -426,5 +450,41 @@ mod tests {
         assert_eq!(gl.provider(), "gitlab");
         assert_eq!(gl.workflow(), Some("main"));
         assert_eq!(gl.environment(), Some("staging"));
+    }
+
+    #[test]
+    fn no_match_partial_workflow_name() {
+        // "pre-release.yml" should NOT match a requirement of "release.yml"
+        let claims = make_github_claims(
+            "acme/my-guard",
+            Some("acme/my-guard/.github/workflows/pre-release.yml@refs/heads/main"),
+            None,
+        );
+        let publishers = [make_publisher(
+            "github",
+            "acme/my-guard",
+            Some("release.yml"),
+            None,
+        )];
+        let err = match_trusted_publisher(&claims, &publishers).unwrap_err();
+        assert!(err.to_string().contains("no trusted publisher"));
+    }
+
+    #[test]
+    fn match_full_workflow_path() {
+        // Full path should match when specified
+        let claims = make_github_claims(
+            "acme/my-guard",
+            Some("acme/my-guard/.github/workflows/release.yml@refs/heads/main"),
+            None,
+        );
+        let publishers = [make_publisher(
+            "github",
+            "acme/my-guard",
+            Some(".github/workflows/release.yml"),
+            None,
+        )];
+        let matched = match_trusted_publisher(&claims, &publishers).unwrap();
+        assert_eq!(matched.repository, "acme/my-guard");
     }
 }
