@@ -992,19 +992,23 @@ fn build_hunt_query(args: &HuntQueryArgs) -> Result<HuntQuery, (ExitCode, String
             .flat_map(|s| s.split(',').map(str::trim))
             .filter(|s| !s.is_empty())
             .collect();
+        let mut unknown_values: Vec<&str> = Vec::new();
 
-        for s in source_strs {
-            query.sources.extend(EventSource::parse_list(s));
+        for raw in &raw_values {
+            match EventSource::parse(raw) {
+                Some(source) => query.sources.push(source),
+                None => unknown_values.push(raw),
+            }
         }
 
-        // If the user provided source values but none were recognized, reject
-        if !raw_values.is_empty() && query.sources.is_empty() {
+        // Reject any unknown values to avoid silently dropping mistyped tokens.
+        if !unknown_values.is_empty() {
             let valid = "tetragon, hubble, receipt, scan";
             return Err((
                 ExitCode::InvalidArgs,
                 format!(
                     "Unknown --source value(s): '{}'. Valid sources: {valid}",
-                    raw_values.join("', '")
+                    unknown_values.join("', '")
                 ),
             ));
         }
@@ -2066,9 +2070,7 @@ mod tests {
     }
 
     #[test]
-    fn build_hunt_query_accepts_mixed_valid_and_invalid_sources() {
-        // If at least one source is valid, it should succeed (only fully
-        // unknown lists are rejected).
+    fn build_hunt_query_rejects_mixed_valid_and_invalid_sources() {
         let args = HuntQueryArgs {
             source: Some(vec!["tetragon,bogus".to_string()]),
             verdict: None,
@@ -2091,9 +2093,10 @@ mod tests {
             entity: None,
         };
         let result = build_hunt_query(&args);
-        assert!(result.is_ok());
-        let query = result.unwrap();
-        assert_eq!(query.sources.len(), 1);
+        assert!(result.is_err());
+        let (code, msg) = result.unwrap_err();
+        assert_eq!(code, ExitCode::InvalidArgs);
+        assert!(msg.contains("bogus"), "msg: {msg}");
     }
 
     // -----------------------------------------------------------------------

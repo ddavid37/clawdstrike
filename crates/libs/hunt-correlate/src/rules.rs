@@ -326,7 +326,7 @@ conditions:
     bind: file_access
   - source: [receipt, hubble]
     action_type: egress
-    not_target_pattern: "^(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.)"
+    not_target_pattern: "^(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.[0-9]{1,3}\\.|192\\.168\\.)"
     after: file_access
     within: 30s
     bind: egress_event
@@ -393,6 +393,22 @@ output:
 "#;
         let rule = parse_rule(yaml).unwrap();
         assert_eq!(rule.conditions[0].source, vec!["tetragon".to_string()]);
+    }
+
+    #[test]
+    fn exfil_not_target_pattern_keeps_public_172_160() {
+        let rule = parse_rule(EXAMPLE_RULE).unwrap();
+        let pattern = rule.conditions[1]
+            .not_target_pattern
+            .as_ref()
+            .expect("pattern");
+        let re = regex::Regex::new(pattern).expect("valid regex");
+
+        assert!(re.is_match("172.16.0.1"), "RFC1918 172.16/12 must match");
+        assert!(
+            !re.is_match("172.160.0.1"),
+            "public 172.160.x.x must not be treated as private"
+        );
     }
 
     #[test]

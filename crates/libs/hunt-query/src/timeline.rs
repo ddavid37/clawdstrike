@@ -103,14 +103,16 @@ pub fn parse_envelope(envelope: &Value, verify: bool) -> Option<TimelineEvent> {
 
     match schema {
         "clawdstrike.sdr.fact.tetragon_event.v1" => {
-            parse_tetragon(fact, timestamp, signature_valid)
+            parse_tetragon(fact, timestamp, signature_valid, envelope.clone())
         }
-        "clawdstrike.sdr.fact.hubble_flow.v1" => parse_hubble(fact, timestamp, signature_valid),
+        "clawdstrike.sdr.fact.hubble_flow.v1" => {
+            parse_hubble(fact, timestamp, signature_valid, envelope.clone())
+        }
         s if s.starts_with("clawdstrike.sdr.fact.receipt") => {
-            parse_receipt(fact, timestamp, signature_valid)
+            parse_receipt(fact, timestamp, signature_valid, envelope.clone())
         }
         s if s.starts_with("clawdstrike.sdr.fact.scan") => {
-            parse_scan(fact, timestamp, signature_valid)
+            parse_scan(fact, timestamp, signature_valid, envelope.clone())
         }
         _ => None,
     }
@@ -121,6 +123,7 @@ fn parse_tetragon(
     fact: &Value,
     timestamp: DateTime<Utc>,
     sig: Option<bool>,
+    raw: Value,
 ) -> Option<TimelineEvent> {
     let event_type = fact
         .get("event_type")
@@ -168,7 +171,7 @@ fn parse_tetragon(
         pod: pod_name,
         action_type: Some("process".to_string()),
         signature_valid: sig,
-        raw: None,
+        raw: Some(raw),
     })
 }
 
@@ -177,6 +180,7 @@ fn parse_hubble(
     fact: &Value,
     timestamp: DateTime<Utc>,
     sig: Option<bool>,
+    raw: Value,
 ) -> Option<TimelineEvent> {
     let verdict_str = fact
         .get("verdict")
@@ -229,7 +233,7 @@ fn parse_hubble(
             .to_string(),
         ),
         signature_valid: sig,
-        raw: None,
+        raw: Some(raw),
     })
 }
 
@@ -238,6 +242,7 @@ fn parse_receipt(
     fact: &Value,
     timestamp: DateTime<Utc>,
     sig: Option<bool>,
+    raw: Value,
 ) -> Option<TimelineEvent> {
     let decision = fact
         .get("decision")
@@ -277,12 +282,17 @@ fn parse_receipt(
         pod: None,
         action_type: action,
         signature_valid: sig,
-        raw: None,
+        raw: Some(raw),
     })
 }
 
 /// Parse a scan result event.
-fn parse_scan(fact: &Value, timestamp: DateTime<Utc>, sig: Option<bool>) -> Option<TimelineEvent> {
+fn parse_scan(
+    fact: &Value,
+    timestamp: DateTime<Utc>,
+    sig: Option<bool>,
+    raw: Value,
+) -> Option<TimelineEvent> {
     let scan_type = fact
         .get("scan_type")
         .and_then(|v| v.as_str())
@@ -317,7 +327,7 @@ fn parse_scan(fact: &Value, timestamp: DateTime<Utc>, sig: Option<bool>) -> Opti
         pod: None,
         action_type: Some("scan".to_string()),
         signature_valid: sig,
-        raw: None,
+        raw: Some(raw),
     })
 }
 
@@ -387,6 +397,15 @@ mod tests {
         assert_eq!(event.severity.as_deref(), Some("info"));
         assert_eq!(event.summary, "process_exec /usr/bin/curl");
         assert!(event.signature_valid.is_none());
+        assert_eq!(
+            event
+                .raw
+                .as_ref()
+                .and_then(|v| v.get("fact"))
+                .and_then(|v| v.get("schema"))
+                .and_then(|v| v.as_str()),
+            Some("clawdstrike.sdr.fact.tetragon_event.v1")
+        );
     }
 
     #[test]
