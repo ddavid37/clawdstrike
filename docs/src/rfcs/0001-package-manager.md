@@ -39,7 +39,7 @@ The package manager supports six distinct package types, each with different art
 
 Compiled WebAssembly modules implementing the `Guard` trait. Guards are sandboxed via wasmtime with capability-based permissions declared in the manifest.
 
-```
+```text
 clawdstrike-pkg.toml (type = "guard")
           |
           v
@@ -51,7 +51,7 @@ clawdstrike-pkg.toml (type = "guard")
 
 The WASM guest ABI exports three functions corresponding to the `Guard` trait:
 
-```rust
+```rust,ignore
 // Guest ABI exports (wit-bindgen)
 fn name() -> String;
 fn handles(action: &GuardAction) -> bool;
@@ -60,7 +60,7 @@ fn check(action: &GuardAction, context: &GuardContext) -> GuardResult;
 
 These map directly to the existing trait defined in `crates/libs/clawdstrike/src/guards/mod.rs`:
 
-```rust
+```rust,ignore
 #[async_trait]
 pub trait Guard: Send + Sync {
     fn name(&self) -> &str;
@@ -157,7 +157,7 @@ profile = "release"
 
 This structure directly extends the existing `PluginManifest` type:
 
-```rust
+```rust,ignore
 // Existing: crates/libs/clawdstrike/src/plugins/manifest.rs
 pub struct PluginManifest {
     pub plugin: PluginMetadata,                         // -> [package]
@@ -175,10 +175,9 @@ The `[package]` section supersedes the existing `[plugin]` section with addition
 
 A `.cpkg` file is a zstd-compressed tarball with a fixed layout:
 
-```
+```text
 acme-phi-guard-1.2.0.cpkg
   |-- clawdstrike-pkg.toml          # Package manifest
-  |-- RECEIPT.json                   # Ed25519-signed publication receipt
   |-- artifacts/
   |   |-- phi_detector.wasm          # Compiled guard module
   |   `-- default_config.yaml        # Optional default configuration
@@ -186,9 +185,14 @@ acme-phi-guard-1.2.0.cpkg
   `-- LICENSE                        # License file (optional)
 ```
 
-### RECEIPT.json
+### Publication Attestation (Target Hosted Model)
 
-Every published package includes a `RECEIPT.json` containing an Ed25519-signed publication attestation. This is a **publication-specific receipt variant** that extends the core receipt concept (see `hush-core::receipt`) with package-specific fields. It uses the same Ed25519 signing primitives but carries package metadata rather than enforcement verdicts:
+Target hosted model: packages may optionally include a publication receipt artifact.
+
+**Implementation status (2026-02-28):** current registry flow uses detached publish metadata:
+- publisher signs archive hash (`publisher_sig`)
+- registry counter-signs archive hash (`registry_sig`)
+- registry stores attestation + transparency metadata server-side
 
 ```json
 {
@@ -283,7 +287,7 @@ Archive integrity: SHA-256 match
 
 The registry uses a three-tier architecture optimized for different access patterns.
 
-```
+```text
                   +-----------------------+
                   |    CDN / Edge Cache   |
                   |  (sparse index, .cpkg)|
@@ -306,7 +310,7 @@ The registry uses a three-tier architecture optimized for different access patte
 
 The sparse index follows the Cargo registry index protocol. Each package has a file in the index keyed by name, containing one JSON line per published version.
 
-```
+```text
 index/
   ac/me/acme-phi-guard
   cl/aw/clawdstrike-threat-intel
@@ -357,7 +361,7 @@ The REST API handles mutations and rich queries that the sparse index cannot ser
 `POST /api/v1/packages` and does OIDC validation inline in publish requests.
 `/api/v1/auth/oidc` below is retained as a future hosted-token-exchange design target.
 
-```
+```text
 POST   /api/v1/packages                 # Publish
 DELETE /api/v1/packages/{name}/{version} # Yank
 GET    /api/v1/packages/{name}           # Package metadata
@@ -430,19 +434,20 @@ Trust is established through three independent layers that can be verified indep
 
 ### Layer 1: Publisher Ed25519 Signature
 
-Every `.cpkg` includes a `RECEIPT.json` signed with the publisher's Ed25519 key. This extends the existing `SignedPolicyBundle` pattern. Verification uses the same `hush_core::signing::verify_signature` function used for receipt verification throughout the codebase.
+Current implementation verifies publisher signatures over the archive SHA-256 digest (`publisher_sig` over hash bytes). This is detached metadata, not a required embedded `RECEIPT.json` file.
 
 ### Layer 2: Registry Counter-Signature
 
-When the registry accepts a publication, it wraps the publisher's receipt in a Spine signed envelope (counter-signature). This attests that the registry validated the package at acceptance time: manifest schema, capability constraints, and publisher identity.
+When the registry accepts a publication, it counter-signs the archive hash (`registry_sig`) and records signed attestation metadata. This attests that the registry validated the package at acceptance time: manifest schema, capability constraints, and publisher identity.
 
 ### Layer 3: Transparency Log
 
-All publications are appended to an RFC 6962-compatible Merkle tree using the same implementation in `crates/libs/hush-core/src/merkle.rs`:
+All publications are appended to an RFC 6962-compatible Merkle tree using `crates/libs/clawdstrike/src/pkg/merkle.rs`:
 
-```
-LeafHash(receipt_bytes) = SHA256(0x00 || receipt_bytes)
-NodeHash(left, right)   = SHA256(0x01 || left || right)
+```text
+leaf_data = { package_name, version, content_hash, publisher_key, timestamp }
+LeafHash(canonical_json(leaf_data)) = SHA256(0x00 || canonical_json(leaf_data))
+NodeHash(left, right)               = SHA256(0x01 || left || right)
 ```
 
 Clients request inclusion proofs and verify them locally.  
@@ -456,14 +461,14 @@ Packages are assigned a trust level based on the verification layers present:
 |-------|----------|---------|
 | `unverified` | No valid signature | Red warning |
 | `signed` | Valid publisher Ed25519 signature | Yellow |
-| `verified` | Publisher signature + registry counter-signature | Green |
-| `certified` | All above + transparency log inclusion proof | Green + badge |
+| `verified` | Publisher signature + registry counter-signature, anchored to configured registry public key | Green |
+| `certified` | All above + checkpoint signature + transparency inclusion proof (same anchored registry key) | Green + badge |
 
 ### OIDC Trusted Publishing
 
 Publisher authentication uses OIDC federated identity (GitHub Actions, GitLab CI, Google Cloud) rather than long-lived API tokens. This follows the model established by PyPI Trusted Publishing and npm provenance.
 
-```
+```text
 CI workflow
     |
     v
@@ -487,7 +492,7 @@ The OIDC subject claim binds the publication to a specific repository and workfl
 
 Guard packages are executed in a wasmtime sandbox with capability-based security. The runtime bridges between the host `Guard` trait and the WASM guest ABI.
 
-```
+```text
 +--------------------------------------------+
 |              Host (clawdstrike)             |
 |                                            |
@@ -524,7 +529,7 @@ Capability enforcement matches the existing `PluginManifest` validation rules. P
 
 A new `clawdstrike-guard-sdk` crate provides the guest-side interface:
 
-```rust
+```rust,ignore
 // clawdstrike-guard-sdk (guest side)
 use clawdstrike_guard_sdk::{export_guard, GuardAction, GuardContext, GuardResult};
 
@@ -620,7 +625,7 @@ Resolution must satisfy three independent compatibility constraints:
 
 The resolver uses the PubGrub algorithm (same approach as Cargo and uv) for client-side dependency resolution. Resolution runs entirely on the client using the sparse index, with no server-side computation.
 
-```
+```text
 Input: root dependencies + clawdstrike version + policy schema
   |
   v
@@ -669,13 +674,13 @@ source = "registry+https://registry.clawdstrike.dev"
 
 Installed packages reside under the Clawdstrike data directory:
 
-```
+```text
 $XDG_DATA_HOME/clawdstrike/
   packages/
     acme-phi-guard/
       1.2.0/
         clawdstrike-pkg.toml
-        RECEIPT.json
+        .pkg-meta.json
         artifacts/
           phi_detector.wasm
     acme-common/
@@ -702,7 +707,7 @@ Consistent with Clawdstrike's core design philosophy:
 
 1. **Content-addressable storage.** Archives are identified by SHA-256 checksum. The checksum is recorded in the sparse index and verified on download.
 
-2. **Receipt chain.** Each package version has a `RECEIPT.json` linking publisher identity, archive checksum, and timestamp. The receipt hash is included in the index entry.
+2. **Attestation chain.** Each package version has publisher signature + registry counter-signature metadata linking publisher identity, archive checksum, and timestamp.
 
 3. **Append-only log.** The Merkle tree transparency log provides cryptographic proof that a package was published at a specific sequence number. Clients can detect index tampering by verifying inclusion proofs.
 
@@ -862,6 +867,6 @@ Using git repositories directly (extending the existing `git+` extends scheme) p
 - Clawdstrike PluginManifest: `crates/libs/clawdstrike/src/plugins/manifest.rs`
 - Clawdstrike PolicyResolver: `crates/libs/clawdstrike/src/policy.rs`
 - Spine Envelope: `crates/libs/spine/src/envelope.rs`
-- Merkle tree: `crates/libs/hush-core/src/merkle.rs`
+- Merkle tree: `crates/libs/clawdstrike/src/pkg/merkle.rs`
 - Remote extends: `crates/services/hush-cli/src/remote_extends.rs`
 - Signed policy bundles: `crates/libs/clawdstrike/src/policy_bundle.rs`

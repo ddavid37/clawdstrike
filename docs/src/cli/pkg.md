@@ -24,10 +24,11 @@ Package manager commands for initializing, installing, verifying, publishing, se
 
 - `unverified`: no registry signature requirements.
 - `signed`: publisher signature is required and verified.
-- `verified`: publisher + registry counter-signatures are required and verified.
-- `certified`: verified + cryptographically verified transparency proof.
+- `verified`: publisher + registry counter-signatures are required and verified against configured registry public key.
+- `certified`: verified + cryptographically verified checkpoint signature + transparency proof.
 
 ## Notes
 
 - Registry auth token is read from `CLAWDSTRIKE_AUTH_TOKEN` or `~/.clawdstrike/credentials.toml`.
+- Registry trust anchor key is read from `[registry].public_key` or `CLAWDSTRIKE_REGISTRY_PUBLIC_KEY` for `verified`/`certified`.
 - `pkg login` prepares local publisher keys and validates config; token setup is currently manual.

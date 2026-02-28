@@ -10,6 +10,10 @@ use serde::Serialize;
 use crate::error::RegistryError;
 use crate::state::AppState;
 
+fn checkpoint_signature_message(root: &str, tree_size: u64, timestamp: &str) -> String {
+    format!("clawdstrike-checkpoint:v1:{root}:{tree_size}:{timestamp}")
+}
+
 /// Transparency log checkpoint.
 #[derive(Clone, Debug, Serialize)]
 pub struct CheckpointResponse {
@@ -19,7 +23,8 @@ pub struct CheckpointResponse {
     pub tree_size: u64,
     /// ISO-8601 timestamp of the checkpoint.
     pub timestamp: String,
-    /// Hex-encoded registry Ed25519 signature over `root || tree_size || timestamp`.
+    /// Hex-encoded registry Ed25519 signature over
+    /// `clawdstrike-checkpoint:v1:{root}:{tree_size}:{timestamp}`.
     pub registry_sig: String,
     /// Hex-encoded registry public key for verification.
     pub registry_key: String,
@@ -49,8 +54,8 @@ pub async fn get_checkpoint(
         }
     };
 
-    // Build the checkpoint message: root || tree_size || timestamp
-    let checkpoint_msg = format!("{root_hex}{tree_size}{timestamp}");
+    // Build the canonical checkpoint message.
+    let checkpoint_msg = checkpoint_signature_message(&root_hex, tree_size, &timestamp);
 
     let signature = state.registry_keypair.sign(checkpoint_msg.as_bytes());
     let sig_hex = signature.to_hex();
@@ -106,7 +111,7 @@ mod tests {
 
         let key = PublicKey::from_hex(&resp.0.registry_key).unwrap();
         let sig = Signature::from_hex(&resp.0.registry_sig).unwrap();
-        let msg = format!("{}{}{}", resp.0.root, resp.0.tree_size, resp.0.timestamp);
+        let msg = checkpoint_signature_message(&resp.0.root, resp.0.tree_size, &resp.0.timestamp);
         assert!(key.verify(msg.as_bytes(), &sig));
     }
 
@@ -123,7 +128,7 @@ mod tests {
 
         let key = PublicKey::from_hex(&resp.0.registry_key).unwrap();
         let sig = Signature::from_hex(&resp.0.registry_sig).unwrap();
-        let msg = format!("{}{}{}", resp.0.root, resp.0.tree_size, resp.0.timestamp);
+        let msg = checkpoint_signature_message(&resp.0.root, resp.0.tree_size, &resp.0.timestamp);
         assert!(key.verify(msg.as_bytes(), &sig));
     }
 }

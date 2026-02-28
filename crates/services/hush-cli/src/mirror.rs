@@ -161,6 +161,7 @@ const HEX_UPPER: [u8; 16] = *b"0123456789ABCDEF";
 fn verify_attestation(
     attestation: &MirrorAttestation,
     expected_hash: Option<&hush_core::Hash>,
+    expected_registry_key: Option<&str>,
 ) -> Result<(bool, bool), String> {
     let content_hash = hush_core::Hash::from_hex(&attestation.checksum)
         .map_err(|e| format!("invalid checksum in attestation: {e}"))?;
@@ -183,6 +184,14 @@ fn verify_attestation(
             .registry_key
             .as_deref()
             .ok_or_else(|| "registry signature present without registry key".to_string())?;
+        let Some(expected) = expected_registry_key else {
+            return Ok((true, false));
+        };
+        if expected != registry_key_hex {
+            return Err(
+                "attestation registry key does not match configured trust anchor".to_string(),
+            );
+        }
         let registry_key = PublicKey::from_hex(registry_key_hex)
             .map_err(|e| format!("invalid registry key in attestation: {e}"))?;
         let registry_sig = Signature::from_hex(registry_sig_hex)
@@ -198,6 +207,10 @@ fn verify_attestation(
     Ok((true, registry_verified))
 }
 
+fn checkpoint_signature_message(root: &str, tree_size: u64, timestamp: &str) -> String {
+    format!("clawdstrike-checkpoint:v1:{root}:{tree_size}:{timestamp}")
+}
+
 fn verify_checkpoint_signature(
     root: &str,
     tree_size: u64,
@@ -205,10 +218,14 @@ fn verify_checkpoint_signature(
     sig_hex: &str,
     key_hex: &str,
 ) -> Result<(), String> {
+    hush_core::Hash::from_hex(root).map_err(|e| format!("invalid checkpoint root hex: {e}"))?;
+    chrono::DateTime::parse_from_rfc3339(timestamp)
+        .map_err(|e| format!("invalid checkpoint timestamp: {e}"))?;
+
     let key = PublicKey::from_hex(key_hex).map_err(|e| format!("invalid checkpoint key: {e}"))?;
     let sig =
         Signature::from_hex(sig_hex).map_err(|e| format!("invalid checkpoint signature: {e}"))?;
-    let message = format!("{root}{tree_size}{timestamp}");
+    let message = checkpoint_signature_message(root, tree_size, timestamp);
     if key.verify(message.as_bytes(), &sig) {
         Ok(())
     } else {
@@ -221,6 +238,7 @@ fn verify_transparency_proof(
     version: &str,
     attestation: &MirrorAttestation,
     proof: &MirrorProof,
+    expected_registry_key: &str,
 ) -> Result<(), String> {
     let root = proof
         .root
@@ -238,6 +256,11 @@ fn verify_transparency_proof(
         .checkpoint_key
         .as_deref()
         .ok_or_else(|| "proof response missing checkpoint key".to_string())?;
+    if checkpoint_key != expected_registry_key {
+        return Err(
+            "proof checkpoint key does not match configured/attested registry key".to_string(),
+        );
+    }
     verify_checkpoint_signature(
         root,
         proof.tree_size,
@@ -270,6 +293,24 @@ fn verify_transparency_proof(
         Ok(())
     } else {
         Err("merkle inclusion proof verification failed".to_string())
+    }
+}
+
+fn required_registry_public_key_for_trust<'a>(
+    cfg: &'a RegistryConfig,
+    trust_level: &str,
+) -> Result<Option<&'a str>, String> {
+    if matches!(trust_level, "verified" | "certified") {
+        cfg.registry_public_key
+            .as_deref()
+            .ok_or_else(|| {
+                "registry public key trust anchor is required for verified/certified trust; \
+                 set [registry].public_key or CLAWDSTRIKE_REGISTRY_PUBLIC_KEY"
+                    .to_string()
+            })
+            .map(Some)
+    } else {
+        Ok(None)
     }
 }
 
@@ -345,6 +386,9 @@ fn cmd_mirror_sync(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
+    let cfg = RegistryConfig::load(None);
+    let expected_registry_key = cfg.registry_public_key.as_deref();
+
     let client = match build_client() {
         Ok(c) => c,
         Err(e) => {
@@ -420,7 +464,7 @@ fn cmd_mirror_sync(
         }
     };
     let (publisher_verified, registry_verified) =
-        match verify_attestation(&attestation, Some(&hash)) {
+        match verify_attestation(&attestation, Some(&hash), expected_registry_key) {
             Ok(v) => v,
             Err(e) => {
                 let _ = writeln!(stderr, "Error: trust verification failed: {e}");
@@ -442,7 +486,14 @@ fn cmd_mirror_sync(
         match client.get(&proof_url).send() {
             Ok(resp) if resp.status().is_success() => match resp.json::<MirrorProof>() {
                 Ok(proof) => {
-                    match verify_transparency_proof(name, version_segment, &attestation, &proof) {
+                    let key_for_proof = expected_registry_key
+                        .or(attestation.registry_key.as_deref())
+                        .ok_or_else(|| {
+                            "registry key unavailable for transparency verification".to_string()
+                        });
+                    match key_for_proof.and_then(|k| {
+                        verify_transparency_proof(name, version_segment, &attestation, &proof, k)
+                    }) {
                         Ok(()) => true,
                         Err(e) => {
                             let _ =
@@ -665,6 +716,15 @@ fn cmd_mirror_bulk_sync(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
+    let cfg = RegistryConfig::load(None);
+    let expected_registry_key = match required_registry_public_key_for_trust(&cfg, min_trust) {
+        Ok(k) => k,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: {e}");
+            return ExitCode::ConfigError;
+        }
+    };
+
     let client = match build_client() {
         Ok(c) => c,
         Err(e) => {
@@ -743,7 +803,7 @@ fn cmd_mirror_bulk_sync(
                 continue;
             }
         };
-        let trust_level = match verify_attestation(&attestation, None) {
+        let trust_level = match verify_attestation(&attestation, None, expected_registry_key) {
             Ok((_publisher_ok, registry_ok)) => {
                 let proof_url = format!(
                     "{}/api/v1/packages/{}/{}/proof",
@@ -755,13 +815,18 @@ fn cmd_mirror_bulk_sync(
                     match client.get(&proof_url).send() {
                         Ok(resp) if resp.status().is_success() => {
                             match resp.json::<MirrorProof>() {
-                                Ok(proof) => verify_transparency_proof(
-                                    &pkg.name,
-                                    version,
-                                    &attestation,
-                                    &proof,
-                                )
-                                .is_ok(),
+                                Ok(proof) => expected_registry_key
+                                    .or(attestation.registry_key.as_deref())
+                                    .is_some_and(|k| {
+                                        verify_transparency_proof(
+                                            &pkg.name,
+                                            version,
+                                            &attestation,
+                                            &proof,
+                                            k,
+                                        )
+                                        .is_ok()
+                                    }),
                                 Err(_) => false,
                             }
                         }
@@ -1057,7 +1122,7 @@ mod tests {
             publisher_key: "publisher".to_string(),
             publisher_sig: "sig".to_string(),
             registry_sig: Some("sig".to_string()),
-            registry_key: Some("key".to_string()),
+            registry_key: Some(registry.public_key().to_hex()),
             published_at: Some("2026-02-28T00:00:00Z".to_string()),
         };
         let leaf = LeafData {
@@ -1073,7 +1138,7 @@ mod tests {
         let root = tree.root().unwrap();
         let ts = "2026-02-28T00:00:00Z".to_string();
         let checkpoint_sig = registry
-            .sign(format!("{root}{}{ts}", inclusion.tree_size).as_bytes())
+            .sign(checkpoint_signature_message(root.as_str(), inclusion.tree_size, &ts).as_bytes())
             .to_hex();
 
         let proof = MirrorProof {
@@ -1086,7 +1151,14 @@ mod tests {
             checkpoint_key: Some(registry.public_key().to_hex()),
         };
 
-        let err = verify_transparency_proof("demo", "1.0.0", &attestation, &proof).unwrap_err();
+        let err = verify_transparency_proof(
+            "demo",
+            "1.0.0",
+            &attestation,
+            &proof,
+            &registry.public_key().to_hex(),
+        )
+        .unwrap_err();
         assert!(err.contains("merkle inclusion proof verification failed"));
     }
 
@@ -1098,7 +1170,7 @@ mod tests {
             publisher_key: "publisher".to_string(),
             publisher_sig: "sig".to_string(),
             registry_sig: Some("sig".to_string()),
-            registry_key: Some("key".to_string()),
+            registry_key: Some(registry.public_key().to_hex()),
             published_at: Some("2026-02-28T00:00:00Z".to_string()),
         };
         let leaf = LeafData {
@@ -1114,7 +1186,7 @@ mod tests {
         let root = tree.root().unwrap();
         let ts = "2026-02-28T00:00:00Z".to_string();
         let checkpoint_sig = registry
-            .sign(format!("{root}{}{ts}", inclusion.tree_size).as_bytes())
+            .sign(checkpoint_signature_message(root.as_str(), inclusion.tree_size, &ts).as_bytes())
             .to_hex();
 
         let proof = MirrorProof {
@@ -1127,6 +1199,113 @@ mod tests {
             checkpoint_key: Some(registry.public_key().to_hex()),
         };
 
-        verify_transparency_proof("demo", "1.0.0", &attestation, &proof).unwrap();
+        verify_transparency_proof(
+            "demo",
+            "1.0.0",
+            &attestation,
+            &proof,
+            &registry.public_key().to_hex(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn certified_transparency_verification_rejects_checkpoint_key_mismatch() {
+        let trusted_registry = hush_core::Keypair::from_seed(&[57u8; 32]);
+        let proof_signer = hush_core::Keypair::from_seed(&[58u8; 32]);
+        let attestation = MirrorAttestation {
+            checksum: "abcd".to_string(),
+            publisher_key: "publisher".to_string(),
+            publisher_sig: "sig".to_string(),
+            registry_sig: Some("sig".to_string()),
+            registry_key: Some(trusted_registry.public_key().to_hex()),
+            published_at: Some("2026-02-28T00:00:00Z".to_string()),
+        };
+        let leaf = LeafData {
+            package_name: "demo".to_string(),
+            version: "1.0.0".to_string(),
+            content_hash: "abcd".to_string(),
+            publisher_key: "publisher".to_string(),
+            timestamp: "2026-02-28T00:00:00Z".to_string(),
+        };
+        let mut tree = clawdstrike::pkg::merkle::MerkleTree::new();
+        let idx = tree.append_hash(leaf.leaf_hash().unwrap());
+        let inclusion = tree.generate_inclusion_proof(idx).unwrap();
+        let root = tree.root().unwrap();
+        let ts = "2026-02-28T00:00:00Z".to_string();
+        let checkpoint_sig = proof_signer
+            .sign(checkpoint_signature_message(root.as_str(), inclusion.tree_size, &ts).as_bytes())
+            .to_hex();
+
+        let proof = MirrorProof {
+            leaf_index: inclusion.leaf_index,
+            tree_size: inclusion.tree_size,
+            hashes: inclusion.proof_path,
+            root: Some(root),
+            checkpoint_timestamp: Some(ts),
+            checkpoint_sig: Some(checkpoint_sig),
+            checkpoint_key: Some(proof_signer.public_key().to_hex()),
+        };
+
+        let err = verify_transparency_proof(
+            "demo",
+            "1.0.0",
+            &attestation,
+            &proof,
+            &trusted_registry.public_key().to_hex(),
+        )
+        .unwrap_err();
+        assert!(err.contains("checkpoint key does not match"));
+    }
+
+    #[test]
+    fn certified_transparency_verification_rejects_invalid_checkpoint_timestamp() {
+        let registry = hush_core::Keypair::from_seed(&[59u8; 32]);
+        let attestation = MirrorAttestation {
+            checksum: "abcd".to_string(),
+            publisher_key: "publisher".to_string(),
+            publisher_sig: "sig".to_string(),
+            registry_sig: Some("sig".to_string()),
+            registry_key: Some(registry.public_key().to_hex()),
+            published_at: Some("2026-02-28T00:00:00Z".to_string()),
+        };
+        let leaf = LeafData {
+            package_name: "demo".to_string(),
+            version: "1.0.0".to_string(),
+            content_hash: "abcd".to_string(),
+            publisher_key: "publisher".to_string(),
+            timestamp: "2026-02-28T00:00:00Z".to_string(),
+        };
+        let mut tree = clawdstrike::pkg::merkle::MerkleTree::new();
+        let idx = tree.append_hash(leaf.leaf_hash().unwrap());
+        let inclusion = tree.generate_inclusion_proof(idx).unwrap();
+        let root = tree.root().unwrap();
+        let bad_ts = "not-a-timestamp".to_string();
+        let checkpoint_sig = registry
+            .sign(
+                checkpoint_signature_message(root.as_str(), inclusion.tree_size, &bad_ts)
+                    .as_bytes(),
+            )
+            .to_hex();
+
+        let proof = MirrorProof {
+            leaf_index: inclusion.leaf_index,
+            tree_size: inclusion.tree_size,
+            hashes: inclusion.proof_path,
+            root: Some(root),
+            checkpoint_timestamp: Some(bad_ts),
+            checkpoint_sig: Some(checkpoint_sig),
+            checkpoint_key: Some(registry.public_key().to_hex()),
+        };
+
+        let err = verify_transparency_proof(
+            "demo",
+            "1.0.0",
+            &attestation,
+            &proof,
+            &registry.public_key().to_hex(),
+        )
+        .unwrap_err();
+        assert!(err.contains("invalid checkpoint timestamp"));
     }
 }

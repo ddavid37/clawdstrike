@@ -10,6 +10,10 @@ use serde::Serialize;
 use crate::error::RegistryError;
 use crate::state::AppState;
 
+fn checkpoint_signature_message(root: &str, tree_size: u64, timestamp: &str) -> String {
+    format!("clawdstrike-checkpoint:v1:{root}:{tree_size}:{timestamp}")
+}
+
 /// Merkle inclusion proof for a published package version.
 #[derive(Clone, Debug, Serialize)]
 pub struct InclusionProofResponse {
@@ -27,7 +31,7 @@ pub struct InclusionProofResponse {
     pub root: String,
     /// RFC-3339 checkpoint timestamp for `root` and `tree_size`.
     pub checkpoint_timestamp: String,
-    /// Registry signature over `root || tree_size || checkpoint_timestamp`.
+    /// Registry signature over `clawdstrike-checkpoint:v1:{root}:{tree_size}:{checkpoint_timestamp}`.
     pub checkpoint_sig: String,
     /// Registry public key used for `checkpoint_sig`.
     pub checkpoint_key: String,
@@ -74,7 +78,8 @@ pub async fn get_proof(
     drop(tree);
 
     let checkpoint_timestamp = chrono::Utc::now().to_rfc3339();
-    let checkpoint_message = format!("{root}{}{checkpoint_timestamp}", proof.tree_size);
+    let checkpoint_message =
+        checkpoint_signature_message(&root, proof.tree_size, &checkpoint_timestamp);
     let checkpoint_sig = state
         .registry_keypair
         .sign(checkpoint_message.as_bytes())

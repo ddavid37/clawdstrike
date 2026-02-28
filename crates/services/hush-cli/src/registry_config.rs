@@ -20,6 +20,8 @@ pub struct RegistryConfig {
     pub registry_url: String,
     pub auth_token: Option<String>,
     pub publisher_key_path: Option<PathBuf>,
+    /// Optional pinned Ed25519 public key hex for registry signature trust.
+    pub registry_public_key: Option<String>,
 }
 
 /// Deserialization shape for `~/.clawdstrike/config.toml`.
@@ -33,6 +35,7 @@ struct ConfigFile {
 struct RegistrySection {
     url: Option<String>,
     publisher_key: Option<PathBuf>,
+    public_key: Option<String>,
 }
 
 /// Deserialization shape for `~/.clawdstrike/credentials.toml`.
@@ -58,6 +61,7 @@ impl RegistryConfig {
         let mut url = DEFAULT_REGISTRY_URL.to_string();
         let mut auth_token: Option<String> = None;
         let mut publisher_key_path: Option<PathBuf> = None;
+        let mut registry_public_key: Option<String> = None;
 
         // -- Layer 2: config.toml --
         if let Some(ref dir) = clawdstrike_dir {
@@ -69,6 +73,9 @@ impl RegistryConfig {
                     }
                     if let Some(k) = cfg.registry.publisher_key {
                         publisher_key_path = Some(k);
+                    }
+                    if let Some(k) = cfg.registry.public_key {
+                        registry_public_key = Some(k);
                     }
                 }
             }
@@ -105,6 +112,11 @@ impl RegistryConfig {
                 auth_token = Some(env_token);
             }
         }
+        if let Ok(env_registry_key) = std::env::var("CLAWDSTRIKE_REGISTRY_PUBLIC_KEY") {
+            if !env_registry_key.is_empty() {
+                registry_public_key = Some(env_registry_key);
+            }
+        }
 
         // -- Layer 5: CLI flag --
         if let Some(cli_url) = cli_registry {
@@ -115,6 +127,7 @@ impl RegistryConfig {
             registry_url: url,
             auth_token,
             publisher_key_path,
+            registry_public_key,
         }
     }
 
@@ -124,6 +137,7 @@ impl RegistryConfig {
         let mut url = DEFAULT_REGISTRY_URL.to_string();
         let mut auth_token: Option<String> = None;
         let mut publisher_key_path: Option<PathBuf> = None;
+        let mut registry_public_key: Option<String> = None;
 
         if let Ok(cfg) = toml::from_str::<ConfigFile>(config_toml) {
             if let Some(u) = cfg.registry.url {
@@ -131,6 +145,9 @@ impl RegistryConfig {
             }
             if let Some(k) = cfg.registry.publisher_key {
                 publisher_key_path = Some(k);
+            }
+            if let Some(k) = cfg.registry.public_key {
+                registry_public_key = Some(k);
             }
         }
 
@@ -142,6 +159,7 @@ impl RegistryConfig {
             registry_url: url,
             auth_token,
             publisher_key_path,
+            registry_public_key,
         }
     }
 }
@@ -252,6 +270,7 @@ mod tests {
         assert_eq!(cfg.registry_url, DEFAULT_REGISTRY_URL);
         assert!(cfg.auth_token.is_none());
         assert!(cfg.publisher_key_path.is_none());
+        assert!(cfg.registry_public_key.is_none());
     }
 
     #[test]
@@ -260,10 +279,15 @@ mod tests {
 [registry]
 url = "https://registry.example.com"
 publisher_key = "/tmp/my.key"
+public_key = "abababababababababababababababababababababababababababababababab"
 "#;
         let cfg = RegistryConfig::from_toml_str(config, "");
         assert_eq!(cfg.registry_url, "https://registry.example.com");
         assert_eq!(cfg.publisher_key_path, Some(PathBuf::from("/tmp/my.key")));
+        assert_eq!(
+            cfg.registry_public_key.as_deref(),
+            Some("abababababababababababababababababababababababababababababababab")
+        );
     }
 
     #[test]

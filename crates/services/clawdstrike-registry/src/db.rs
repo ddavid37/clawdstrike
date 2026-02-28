@@ -474,8 +474,10 @@ impl RegistryDb {
         Ok(())
     }
 
-    /// List all versions across all packages, ordered by `published_at ASC`.
-    /// Used to rebuild the Merkle tree on startup.
+    /// List all versions across all packages in deterministic transparency order.
+    ///
+    /// Indexed rows are ordered by `leaf_index ASC` first, then legacy
+    /// unindexed rows by publish timestamp/name/version.
     pub fn list_all_versions_ordered(&self) -> Result<Vec<VersionRow>, RegistryError> {
         let mut stmt = self.conn.prepare(
             "SELECT name, version, pkg_type, checksum, manifest_toml, publisher_key, publisher_sig, registry_sig, dependencies_json, yanked, published_at, attestation_hash, key_id, leaf_index, download_count

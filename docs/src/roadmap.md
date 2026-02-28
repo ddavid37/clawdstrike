@@ -111,7 +111,7 @@ Clawdstrike is a fail-closed policy engine and cryptographic attestation runtime
 
 Clawdstrike evolves from a standalone policy engine into an **ecosystem platform** — a place where the security community builds, shares, and composes guards, policies, and compliance packs for AI agent security. The trajectory:
 
-```
+```text
 Standalone Engine ──> Package Manager ──> Registry ──> Ecosystem Platform
      (today)         (local packages)    (shared)      (community + enterprise)
 ```
@@ -135,7 +135,7 @@ The package manager is the highest-priority initiative. It transforms Clawdstrik
 
 **Goal:** Users can package guards and policies into `.cpkg` archives and install them locally. The engine loads them at startup.
 
-```
+```text
 Developer writes guard
         |
         v
@@ -193,7 +193,7 @@ clawdstrike-guard-sdk = "0.1"
 
 **Goal:** Third-party guards execute in sandboxed WebAssembly with declared capabilities and resource limits. No native code execution from community packages.
 
-```
+```text
 .cpkg contains .wasm guard
         |
         v
@@ -226,7 +226,7 @@ clawdstrike-guard-sdk = "0.1"
 
 **Capability model:**
 
-```
+```text
 +------------------+-------------------------------------------+
 | Capability       | Host Import Granted                       |
 +------------------+-------------------------------------------+
@@ -247,7 +247,7 @@ clawdstrike-guard-sdk = "0.1"
 
 **Goal:** A public package registry where authors publish guards and policies, and users install them with dependency resolution.
 
-```
+```text
 Author                          Registry                        User
   |                                |                              |
   |  clawdstrike pkg publish       |                              |
@@ -258,7 +258,7 @@ Author                          Registry                        User
   |                                |   clawdstrike pkg install    |
   |                                |<-----------------------------|
   |                                |  resolve deps (pubgrub)      |
-  |                                |  download .cpkg from OCI     |
+  |                                |  download .cpkg from registry blob storage |
   |                                |  verify signatures           |
   |                                |----------------------------->|
   |                                |  write lockfile              |
@@ -286,7 +286,7 @@ Author                          Registry                        User
 
 **Goal:** Cryptographic trust chain from author to deployment. Every package is signed, counter-signed by the registry, and recorded in a transparency log.
 
-```
+```text
 Author signs package
         |
         v
@@ -306,20 +306,20 @@ Author signs package
 | Ed25519 author signing | Authors sign packages with their Ed25519 keypair. Key management via `clawdstrike pkg keygen` |
 | Spine counter-signatures | Registry wraps each publish event in a Spine envelope, adding its own signature |
 | Merkle transparency log | RFC 6962-style append-only log. Every publish is a leaf. Clients verify inclusion proofs |
-| Trust levels | `unverified` (no signature) -> `signed` (publisher Ed25519) -> `verified` (publisher + registry counter-sig) -> `certified` (all above + cryptographically verified transparency proof) |
+| Trust levels | `unverified` (no signature) -> `signed` (publisher Ed25519) -> `verified` (publisher + registry counter-sig + pinned registry public key trust anchor) -> `certified` (all above + cryptographically verified checkpoint signature + transparency inclusion proof) |
 | OIDC trusted publishing | GitHub Actions, GitLab CI, and other OIDC providers can publish without long-lived keys |
 | Key rotation ceremony | Documented procedure for rotating registry signing keys with overlapping validity windows |
 | Audit monitor | Independent service that watches the transparency log and alerts on anomalies |
 
 **Trust level enforcement:**
 
-```
+```text
 +------------+---------------------------------------------+
 | Level      | Requirements                                |
 +------------+---------------------------------------------+
 | unverified | No valid signature. Install requires --allow-unverified flag |
 | signed     | Valid publisher Ed25519 signature            |
-| verified   | Publisher sig + registry counter-signature   |
+| verified   | Publisher sig + registry counter-signature + pinned registry public key |
 | certified  | All above + checkpoint-signature verification + inclusion-proof verification |
 +------------+---------------------------------------------+
 ```
@@ -440,7 +440,7 @@ Author signs package
 
 ### Milestones
 
-```
+```text
   Q2 2026          Q3 2026          Q4 2026          2027
      |                |                |               |
      v                v                v               v
@@ -552,7 +552,7 @@ Automatic mode transition between standalone, connected, and degraded enforcemen
 
 ## Timeline Overview
 
-```
+```text
 2026
 =====
 

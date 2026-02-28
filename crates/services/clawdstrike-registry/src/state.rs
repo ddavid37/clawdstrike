@@ -60,17 +60,19 @@ impl AppState {
         let mut tree = MerkleTree::new();
         let versions = db.list_all_versions_ordered()?;
         for v in &versions {
+            let Some(idx) = v.leaf_index else {
+                // Legacy versions may not be included in the transparency log.
+                continue;
+            };
             let expected_index = tree.tree_size();
-            if let Some(idx) = v.leaf_index {
-                if idx != expected_index {
-                    return Err(anyhow::anyhow!(
-                        "transparency log leaf_index sequence mismatch while rebuilding tree: expected {}, found {} for {}@{}",
-                        expected_index,
-                        idx,
-                        v.name,
-                        v.version
-                    ));
-                }
+            if idx != expected_index {
+                return Err(anyhow::anyhow!(
+                    "transparency log leaf_index sequence mismatch while rebuilding tree: expected {}, found {} for {}@{}",
+                    expected_index,
+                    idx,
+                    v.name,
+                    v.version
+                ));
             }
             let leaf_data = LeafData {
                 package_name: v.name.clone(),
@@ -195,5 +197,60 @@ mod tests {
             err.to_string().contains("leaf_index sequence mismatch"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn app_state_new_allows_legacy_unindexed_versions_before_indexed_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = test_config(tmp.path());
+        std::fs::create_dir_all(cfg.data_dir.clone()).unwrap();
+        std::fs::create_dir_all(cfg.index_dir()).unwrap();
+        std::fs::create_dir_all(cfg.keys_dir()).unwrap();
+
+        let db = RegistryDb::open(&cfg.db_path()).unwrap();
+        db.upsert_package("legacy", None, "2025-01-01T00:00:00Z")
+            .unwrap();
+        db.upsert_package("indexed", None, "2025-01-02T00:00:00Z")
+            .unwrap();
+        db.insert_version(&crate::db::VersionRow {
+            name: "legacy".into(),
+            version: "0.1.0".into(),
+            pkg_type: "guard".into(),
+            checksum: "legacy_hash".into(),
+            manifest_toml: "".into(),
+            publisher_key: "legacy_pk".into(),
+            publisher_sig: "sig".into(),
+            registry_sig: None,
+            dependencies_json: "{}".into(),
+            yanked: false,
+            published_at: "2025-01-01T00:00:00Z".into(),
+            attestation_hash: None,
+            key_id: None,
+            leaf_index: None,
+            download_count: 0,
+        })
+        .unwrap();
+        db.insert_version(&crate::db::VersionRow {
+            name: "indexed".into(),
+            version: "1.0.0".into(),
+            pkg_type: "guard".into(),
+            checksum: "indexed_hash".into(),
+            manifest_toml: "".into(),
+            publisher_key: "indexed_pk".into(),
+            publisher_sig: "sig".into(),
+            registry_sig: None,
+            dependencies_json: "{}".into(),
+            yanked: false,
+            published_at: "2025-01-02T00:00:00Z".into(),
+            attestation_hash: None,
+            key_id: None,
+            leaf_index: Some(0),
+            download_count: 0,
+        })
+        .unwrap();
+        drop(db);
+
+        let state = AppState::new(cfg).expect("legacy unindexed versions should be ignored");
+        assert_eq!(state.merkle_tree.lock().unwrap().tree_size(), 1);
     }
 }
