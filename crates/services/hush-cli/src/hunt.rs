@@ -2167,9 +2167,9 @@ mod tests {
         dir
     }
 
-    fn make_invalid_local_events_dir(prefix: &str) -> PathBuf {
+    fn make_missing_local_events_dir(prefix: &str) -> PathBuf {
         let dir = make_temp_dir(prefix);
-        std::fs::write(dir.join("bad.json"), "{not valid json").unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
         dir
     }
 
@@ -2325,7 +2325,7 @@ mod tests {
 
     #[tokio::test]
     async fn hunt_query_fails_when_offline_local_source_is_unreadable() {
-        let local_dir = make_invalid_local_events_dir("hush-query-invalid-local");
+        let local_dir = make_missing_local_events_dir("hush-query-missing-local");
         let args = HuntQueryArgs {
             source: None,
             verdict: None,
@@ -2352,16 +2352,15 @@ mod tests {
         let code = cmd_hunt_query(args, &mut stdout, &mut stderr).await;
         assert_eq!(code, ExitCode::RuntimeError);
         assert!(
-            String::from_utf8_lossy(&stderr).contains("local file query error"),
+            String::from_utf8_lossy(&stderr).contains("no readable local event directories"),
             "stderr: {}",
             String::from_utf8_lossy(&stderr)
         );
-        let _ = std::fs::remove_dir_all(&local_dir);
     }
 
     #[tokio::test]
     async fn hunt_timeline_fails_when_offline_local_source_is_unreadable() {
-        let local_dir = make_invalid_local_events_dir("hush-timeline-invalid-local");
+        let local_dir = make_missing_local_events_dir("hush-timeline-missing-local");
         let args = HuntQueryArgs {
             source: None,
             verdict: None,
@@ -2388,19 +2387,16 @@ mod tests {
         let code = cmd_hunt_timeline(args, &mut stdout, &mut stderr).await;
         assert_eq!(code, ExitCode::RuntimeError);
         assert!(
-            String::from_utf8_lossy(&stderr).contains("local file query error"),
+            String::from_utf8_lossy(&stderr).contains("no readable local event directories"),
             "stderr: {}",
             String::from_utf8_lossy(&stderr)
         );
-        let _ = std::fs::remove_dir_all(&local_dir);
     }
 
     #[tokio::test]
     async fn hunt_correlate_fails_when_offline_local_source_is_unreadable() {
-        let tmp = make_temp_dir("hush-correlate-invalid-local");
+        let tmp = make_temp_dir("hush-correlate-missing-local");
         let local_dir = tmp.join("events");
-        std::fs::create_dir_all(&local_dir).unwrap();
-        std::fs::write(local_dir.join("bad.json"), "{not valid json").unwrap();
         let rule_path = tmp.join("rule.yaml");
         std::fs::write(
             &rule_path,
@@ -2447,7 +2443,7 @@ output:
         let code = cmd_hunt_correlate(args, &mut stdout, &mut stderr).await;
         assert_eq!(code, ExitCode::RuntimeError);
         assert!(
-            String::from_utf8_lossy(&stderr).contains("local file query error"),
+            String::from_utf8_lossy(&stderr).contains("no readable local event directories"),
             "stderr: {}",
             String::from_utf8_lossy(&stderr)
         );
@@ -2456,10 +2452,8 @@ output:
 
     #[tokio::test]
     async fn hunt_ioc_fails_when_offline_local_source_is_unreadable() {
-        let tmp = make_temp_dir("hush-ioc-invalid-local");
+        let tmp = make_temp_dir("hush-ioc-missing-local");
         let local_dir = tmp.join("events");
-        std::fs::create_dir_all(&local_dir).unwrap();
-        std::fs::write(local_dir.join("bad.json"), "{not valid json").unwrap();
         let feed_path = tmp.join("feed.txt");
         std::fs::write(&feed_path, "evil.com\n").unwrap();
 
@@ -2483,7 +2477,7 @@ output:
         let code = cmd_hunt_ioc(args, &mut stdout, &mut stderr).await;
         assert_eq!(code, ExitCode::RuntimeError);
         assert!(
-            String::from_utf8_lossy(&stderr).contains("local file query error"),
+            String::from_utf8_lossy(&stderr).contains("no readable local event directories"),
             "stderr: {}",
             String::from_utf8_lossy(&stderr)
         );

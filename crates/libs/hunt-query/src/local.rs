@@ -42,13 +42,43 @@ pub fn query_local_files(
 
         let entries = std::fs::read_dir(dir)?;
         for entry in entries {
-            let entry = entry?;
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) => {
+                    tracing::warn!(
+                        "skipping unreadable directory entry in {}: {}",
+                        dir.display(),
+                        e
+                    );
+                    continue;
+                }
+            };
             let path = entry.path();
 
             if path.is_file() {
                 let events = match path.extension().and_then(|e| e.to_str()) {
-                    Some("jsonl") => read_jsonl_file(&path, verify)?,
-                    Some("json") => read_json_file(&path, verify)?,
+                    Some("jsonl") => match read_jsonl_file(&path, verify) {
+                        Ok(events) => events,
+                        Err(e) => {
+                            tracing::warn!(
+                                "skipping unreadable/invalid JSONL file {}: {}",
+                                path.display(),
+                                e
+                            );
+                            continue;
+                        }
+                    },
+                    Some("json") => match read_json_file(&path, verify) {
+                        Ok(events) => events,
+                        Err(e) => {
+                            tracing::warn!(
+                                "skipping unreadable/invalid JSON file {}: {}",
+                                path.display(),
+                                e
+                            );
+                            continue;
+                        }
+                    },
                     _ => continue,
                 };
 
@@ -279,6 +309,33 @@ mod tests {
         let dirs = vec![dir.path().to_path_buf()];
         let result = query_local_files(&query, &dirs, false);
         assert!(result.is_ok(), "should succeed even with mixed file types");
+        assert_eq!(result.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn query_local_files_skips_corrupt_json_file() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let envelope = make_envelope(
+            "clawdstrike.sdr.fact.receipt.v1",
+            "2025-01-15T10:00:00Z",
+            "allow",
+            "test",
+        );
+        fs::write(
+            dir.path().join("valid.json"),
+            serde_json::to_string(&envelope).unwrap(),
+        )
+        .expect("failed to write test file");
+        fs::write(dir.path().join("corrupt.json"), "{not valid json")
+            .expect("failed to write test file");
+
+        let query = HuntQuery::default();
+        let dirs = vec![dir.path().to_path_buf()];
+        let result = query_local_files(&query, &dirs, false);
+        assert!(
+            result.is_ok(),
+            "single corrupt file should not fail entire query"
+        );
         assert_eq!(result.unwrap().len(), 1);
     }
 

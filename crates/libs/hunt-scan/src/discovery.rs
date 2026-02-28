@@ -335,38 +335,38 @@ fn shorthand_table() -> Vec<(&'static str, Vec<&'static str>)> {
 
 /// Expand shorthand client names to their config file paths.
 ///
-/// If **any** target fails the regex `^[A-Za-z0-9_-]+$`, the entire list is
-/// treated as raw file paths and returned as-is (after tilde expansion).
+/// Targets are resolved independently:
+/// - shorthand-shaped values (`^[A-Za-z0-9_-]+$`) are treated as client
+///   shorthands and expanded via the platform table.
+/// - non-shorthand values are treated as raw file paths (after tilde
+///   expansion).
 ///
 /// Unknown shorthands produce an error.
 pub fn client_shorthands_to_paths(targets: &[String]) -> Result<Vec<PathBuf>, String> {
     let shorthand_re =
         regex::Regex::new(r"^[A-Za-z0-9_-]+$").map_err(|e| format!("regex error: {e}"))?;
 
-    // If any target is not a simple shorthand, treat all as raw file paths.
-    let all_shorthands = targets.iter().all(|t| shorthand_re.is_match(t));
-
-    if !all_shorthands {
-        return Ok(targets.iter().filter_map(|t| expand_tilde(t)).collect());
-    }
-
     let table = shorthand_table();
     let mut result = Vec::new();
 
     for target in targets {
-        let lower = target.to_lowercase();
-        let entry = table.iter().find(|(name, _)| *name == lower.as_str());
-        match entry {
-            Some((_, paths)) => {
-                for p in paths {
-                    if let Some(expanded) = expand_tilde(p) {
-                        result.push(expanded);
+        if shorthand_re.is_match(target) {
+            let lower = target.to_lowercase();
+            let entry = table.iter().find(|(name, _)| *name == lower.as_str());
+            match entry {
+                Some((_, paths)) => {
+                    for p in paths {
+                        if let Some(expanded) = expand_tilde(p) {
+                            result.push(expanded);
+                        }
                     }
                 }
+                None => {
+                    return Err(format!("unknown client shorthand: {target}"));
+                }
             }
-            None => {
-                return Err(format!("unknown client shorthand: {target}"));
-            }
+        } else if let Some(expanded) = expand_tilde(target) {
+            result.push(expanded);
         }
     }
 
@@ -609,6 +609,34 @@ mod tests {
         assert!(result.is_ok());
         let paths = result.unwrap();
         assert_eq!(paths.len(), 2);
+    }
+
+    #[test]
+    fn test_shorthand_mixed_with_raw_path_resolves_per_item() {
+        let result = client_shorthands_to_paths(&["cursor".into(), "/tmp/test.json".into()]);
+        assert!(result.is_ok());
+        let paths = result.unwrap();
+        assert!(
+            paths.iter().any(|p| p.to_string_lossy().contains("cursor")),
+            "cursor shorthand should still expand when mixed with raw paths"
+        );
+        assert!(
+            paths.iter().any(|p| p == &PathBuf::from("/tmp/test.json")),
+            "raw path should be preserved alongside shorthand expansion"
+        );
+    }
+
+    #[test]
+    fn test_shorthand_unknown_in_mixed_targets_still_errors() {
+        let result = client_shorthands_to_paths(&[
+            "cursor".into(),
+            "cursorr".into(),
+            "/tmp/test.json".into(),
+        ]);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("unknown client shorthand: cursorr"));
     }
 
     #[test]

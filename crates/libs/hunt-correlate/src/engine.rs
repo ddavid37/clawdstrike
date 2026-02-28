@@ -150,6 +150,8 @@ impl CorrelationEngine {
 
     /// Flush all windows and return alerts for any fully-matched sequences.
     pub fn flush(&mut self) -> Vec<Alert> {
+        self.evict_expired();
+
         let mut alerts = Vec::new();
 
         for (ri, windows) in self.windows.drain() {
@@ -1069,6 +1071,36 @@ output:
         assert!(
             alerts.is_empty(),
             "incomplete window should not produce alert on flush"
+        );
+    }
+
+    #[test]
+    fn flush_does_not_emit_alerts_from_expired_windows() {
+        let rule = single_condition_rule();
+        let mut engine = CorrelationEngine::new(vec![rule]).unwrap();
+        let stale_ts = Utc::now() - chrono::Duration::minutes(10);
+        let stale_event = make_event(
+            EventSource::Receipt,
+            "file",
+            NormalizedVerdict::Deny,
+            "/etc/passwd",
+            stale_ts,
+        );
+
+        let mut bound_events = std::collections::HashMap::new();
+        bound_events.insert("denied_access".to_string(), vec![stale_event]);
+        engine.windows.insert(
+            0,
+            vec![WindowState {
+                bound_events,
+                window_start: stale_ts,
+            }],
+        );
+
+        let alerts = engine.flush();
+        assert!(
+            alerts.is_empty(),
+            "expired windows should be evicted before flush emits alerts"
         );
     }
 

@@ -260,6 +260,16 @@ fn parse_receipt(
         .get("severity")
         .and_then(|s| s.as_str())
         .map(String::from);
+    let ns = fact
+        .get("source")
+        .and_then(|s| s.get("namespace"))
+        .and_then(|n| n.as_str())
+        .map(String::from);
+    let pod_name = fact
+        .get("source")
+        .and_then(|s| s.get("pod_name").or_else(|| s.get("pod")))
+        .and_then(|n| n.as_str())
+        .map(String::from);
 
     let verdict = match decision.to_lowercase().as_str() {
         "allow" | "allowed" | "pass" | "passed" => NormalizedVerdict::Allow,
@@ -278,8 +288,8 @@ fn parse_receipt(
         severity,
         summary,
         process: None,
-        namespace: None,
-        pod: None,
+        namespace: ns,
+        pod: pod_name,
         action_type: action,
         signature_valid: sig,
         raw: Some(raw),
@@ -547,6 +557,28 @@ mod tests {
         assert_eq!(event.action_type.as_deref(), Some("file"));
         assert_eq!(event.severity.as_deref(), Some("critical"));
         assert!(event.summary.contains("ForbiddenPathGuard"));
+    }
+
+    #[test]
+    fn parse_receipt_envelope_preserves_source_metadata() {
+        let envelope = json!({
+            "issued_at": "2025-06-15T12:10:00Z",
+            "fact": {
+                "schema": "clawdstrike.sdr.fact.receipt.v1",
+                "decision": "deny",
+                "guard": "ForbiddenPathGuard",
+                "action_type": "file",
+                "source": {
+                    "namespace": "prod",
+                    "pod_name": "agent-worker-1"
+                }
+            }
+        });
+
+        let event = parse_envelope(&envelope, false).unwrap();
+        assert_eq!(event.source, EventSource::Receipt);
+        assert_eq!(event.namespace.as_deref(), Some("prod"));
+        assert_eq!(event.pod.as_deref(), Some("agent-worker-1"));
     }
 
     #[test]
