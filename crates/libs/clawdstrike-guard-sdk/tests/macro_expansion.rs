@@ -2,6 +2,8 @@
 //! generates valid ABI exports that compile and behave correctly on native
 //! targets.
 
+#![allow(clippy::unwrap_used)]
+
 use clawdstrike_guard_sdk::prelude::*;
 
 /// A trivial guard that denies everything for testing.

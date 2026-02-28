@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Input envelope deserialized from the JSON the host writes to linear memory.
 ///
-/// Matches [`WasmGuardInputEnvelope`] in the host runtime.
+/// Matches `WasmGuardInputEnvelope` in the host runtime.
 #[derive(Clone, Debug, Deserialize)]
 pub struct GuardInput {
     /// Guard name (as declared in the plugin manifest).
@@ -21,7 +21,7 @@ pub struct GuardInput {
 
 /// Output the guard sends back to the host via the `set_output` hostcall.
 ///
-/// Matches [`WasmGuardOutput`] in the host runtime.
+/// Matches `WasmGuardOutput` in the host runtime.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GuardOutput {
     /// Whether the action is allowed.

@@ -222,6 +222,18 @@ pub fn load_or_generate_publisher_keypair(
     Ok(keypair)
 }
 
+/// Heuristic: is the given string a local file path (vs. a registry package name)?
+pub fn is_file_source(source: &str) -> bool {
+    source.ends_with(".cpkg")
+        || source.starts_with('/')
+        || source.starts_with("./")
+        || source.starts_with("../")
+        || (source.contains('/') && !source.starts_with('@'))
+        || Path::new(source)
+            .extension()
+            .is_some_and(|ext| ext == "cpkg")
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -304,16 +316,4 @@ auth_token = "tok_abc123"
     fn is_file_source(source: &str) -> bool {
         super::is_file_source(source)
     }
-}
-
-/// Heuristic: is the given string a local file path (vs. a registry package name)?
-pub fn is_file_source(source: &str) -> bool {
-    source.ends_with(".cpkg")
-        || source.starts_with('/')
-        || source.starts_with("./")
-        || source.starts_with("../")
-        || (source.contains('/') && !source.starts_with('@'))
-        || Path::new(source)
-            .extension()
-            .is_some_and(|ext| ext == "cpkg")
 }
