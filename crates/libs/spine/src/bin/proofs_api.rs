@@ -250,30 +250,47 @@ async fn load_leaves_for_tree_range(
         .get_stream(log_stream)
         .await
         .map_err(|_| ApiError::internal("failed to get spine log stream"))?;
-    let consumer = stream
-        .create_consumer(async_nats::jetstream::consumer::pull::Config {
-            deliver_policy: async_nats::jetstream::consumer::DeliverPolicy::ByStartSequence {
-                start_sequence: start_seq,
-            },
-            ..Default::default()
-        })
-        .await
-        .map_err(|_| ApiError::internal("failed to create spine log consumer"))?;
-
-    let mut messages = consumer
-        .fetch()
-        .max_messages(max_messages)
-        .messages()
-        .await
-        .map_err(|_| ApiError::internal("failed to fetch spine log leaves"))?;
-
     let mut leaves = Vec::with_capacity(max_messages);
-    while let Some(msg) = messages.next().await {
-        let msg = msg.map_err(|_| ApiError::internal("failed to read spine log leaf"))?;
-        if msg.payload.len() != 32 {
-            return Err(ApiError::internal("invalid spine log leaf payload length"));
+    let mut next_start_seq = start_seq;
+
+    while leaves.len() < max_messages {
+        let remaining = max_messages - leaves.len();
+        let batch_size = next_leaf_batch_size(remaining);
+
+        let consumer = stream
+            .create_consumer(async_nats::jetstream::consumer::pull::Config {
+                deliver_policy: async_nats::jetstream::consumer::DeliverPolicy::ByStartSequence {
+                    start_sequence: next_start_seq,
+                },
+                ack_policy: async_nats::jetstream::consumer::AckPolicy::None,
+                ..Default::default()
+            })
+            .await
+            .map_err(|_| ApiError::internal("failed to create spine log consumer"))?;
+
+        let mut messages = consumer
+            .fetch()
+            .max_messages(batch_size)
+            .messages()
+            .await
+            .map_err(|_| ApiError::internal("failed to fetch spine log leaves"))?;
+
+        let mut pulled = 0_usize;
+        while let Some(msg) = messages.next().await {
+            let msg = msg.map_err(|_| ApiError::internal("failed to read spine log leaf"))?;
+            if msg.payload.len() != 32 {
+                return Err(ApiError::internal("invalid spine log leaf payload length"));
+            }
+            leaves.push(msg.payload.to_vec());
+            pulled += 1;
         }
-        leaves.push(msg.payload.to_vec());
+
+        if pulled == 0 {
+            break;
+        }
+
+        next_start_seq +=
+            u64::try_from(pulled).map_err(|_| ApiError::internal("spine log sequence overflow"))?;
     }
 
     if leaves.len() != max_messages {
@@ -283,6 +300,24 @@ async fn load_leaves_for_tree_range(
     }
 
     Ok(leaves)
+}
+
+const LEAF_FETCH_BATCH_SIZE: usize = 512;
+
+fn next_leaf_batch_size(remaining: usize) -> usize {
+    remaining.min(LEAF_FETCH_BATCH_SIZE)
+}
+
+#[cfg(test)]
+fn leaf_fetch_plan(total: usize) -> Vec<usize> {
+    let mut remaining = total;
+    let mut plan = Vec::new();
+    while remaining > 0 {
+        let batch = next_leaf_batch_size(remaining);
+        plan.push(batch);
+        remaining -= batch;
+    }
+    plan
 }
 
 async fn healthz() -> &'static str {
@@ -920,5 +955,17 @@ mod tests {
         }
         assert!(!truncated);
         assert!(selected.is_empty());
+    }
+
+    #[test]
+    fn leaf_fetch_plan_batches_large_tree_sizes() {
+        let plan = leaf_fetch_plan(2000);
+        assert_eq!(plan, vec![512, 512, 512, 464]);
+    }
+
+    #[test]
+    fn leaf_fetch_plan_handles_small_tree_sizes() {
+        let plan = leaf_fetch_plan(17);
+        assert_eq!(plan, vec![17]);
     }
 }
