@@ -191,7 +191,7 @@ pub struct RuleOutput {
 /// A correlation rule loaded from YAML.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CorrelationRule {
-    /// Schema identifier — must be [`SUPPORTED_SCHEMA`].
+    /// Schema identifier — must be `clawdstrike.hunt.correlation.v1`.
     pub schema: String,
     /// Human-readable rule name.
     pub name: String,
@@ -218,7 +218,7 @@ pub struct CorrelationRule {
 /// Validate a parsed correlation rule.
 ///
 /// Checks:
-/// - Schema must equal [`SUPPORTED_SCHEMA`].
+/// - Schema must equal `clawdstrike.hunt.correlation.v1`.
 /// - At least one condition is required.
 /// - All `after` references must point to a bind name defined by an earlier condition.
 /// - All `output.evidence` entries must reference a valid bind name.

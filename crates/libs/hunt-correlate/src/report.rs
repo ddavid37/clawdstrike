@@ -423,10 +423,10 @@ mod tests {
 
         // Verification should fail (either error or false).
         let result = verify_report(&report);
-        match result {
-            Ok(valid) => assert!(!valid),
-            Err(_) => {} // Also acceptable — invalid hex parse.
+        if let Ok(valid) = result {
+            assert!(!valid);
         }
+        // Err is also acceptable — invalid hex parse.
     }
 
     #[test]
