@@ -186,7 +186,7 @@ pub async fn publish(
             publisher_signature: &req.publisher_sig,
             content_hash: &checksum,
             registry_signature: &registry_sig_hex,
-            leaf_index: Some(leaf_index as u64),
+            leaf_index: Some(leaf_index),
             timestamp: &now,
         });
 
@@ -219,7 +219,7 @@ pub async fn publish(
             published_at: now,
             attestation_hash: Some(attestation_hash.clone()),
             key_id: Some(key_id.clone()),
-            leaf_index: Some(leaf_index as u64),
+            leaf_index: Some(leaf_index),
             download_count: 0,
         })?;
 

@@ -233,3 +233,44 @@ async fn main() -> anyhow::Result<()> {
         tokio::time::sleep(std::time::Duration::from_secs(cli.interval)).await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_state_file_has_expected_suffix() {
+        let path = default_state_file();
+        let text = path.to_string_lossy();
+        assert!(text.contains(".clawdstrike"));
+        assert!(text.contains("audit-monitor"));
+        assert!(text.ends_with("state.json"));
+    }
+
+    #[test]
+    fn load_state_missing_returns_none() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
+        let path = tmp.path().join("missing.json");
+        assert!(load_state(&path).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn save_and_load_state_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
+        let path = tmp.path().join("state.json");
+        let original = MonitorState {
+            tree_size: 42,
+            root: "abcd".to_string(),
+            last_checked: "2026-02-28T00:00:00Z".to_string(),
+        };
+        save_state(&path, &original)?;
+        let loaded = load_state(&path).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "state was not persisted")
+        })?;
+        assert_eq!(loaded.tree_size, 42);
+        assert_eq!(loaded.root, "abcd");
+        assert_eq!(loaded.last_checked, "2026-02-28T00:00:00Z");
+        Ok(())
+    }
+}
