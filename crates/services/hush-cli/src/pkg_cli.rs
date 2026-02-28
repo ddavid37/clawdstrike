@@ -1022,13 +1022,6 @@ fn cmd_pkg_install_registry(
     stderr: &mut dyn Write,
 ) -> ExitCode {
     let cfg = RegistryConfig::load(registry);
-    let version_segment = version.unwrap_or("latest");
-    let url = format!(
-        "{}/api/v1/packages/{}/{}/download",
-        cfg.registry_url.trim_end_matches('/'),
-        name,
-        version_segment
-    );
 
     let client = match reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
@@ -1040,6 +1033,76 @@ fn cmd_pkg_install_registry(
             return ExitCode::RuntimeError;
         }
     };
+
+    // When version is omitted, resolve the latest version from the registry.
+    let resolved_version: String;
+    let version_segment: &str = match version {
+        Some(v) => v,
+        None => {
+            let info_url = format!(
+                "{}/api/v1/packages/{}/stats",
+                cfg.registry_url.trim_end_matches('/'),
+                urlencoding_simple(name)
+            );
+            let info_resp = match client.get(&info_url).send() {
+                Ok(r) => r,
+                Err(e) => {
+                    let _ = writeln!(
+                        stderr,
+                        "Error: cannot fetch package info to resolve latest version: {e}"
+                    );
+                    return ExitCode::RuntimeError;
+                }
+            };
+            if !info_resp.status().is_success() {
+                let status = info_resp.status();
+                let _ = writeln!(
+                    stderr,
+                    "Error: cannot resolve latest version (HTTP {status}). \
+                     Specify --version explicitly."
+                );
+                return ExitCode::RuntimeError;
+            }
+            let info: serde_json::Value = match info_resp.json() {
+                Ok(v) => v,
+                Err(e) => {
+                    let _ = writeln!(
+                        stderr,
+                        "Error: invalid package info response: {e}"
+                    );
+                    return ExitCode::RuntimeError;
+                }
+            };
+            // The package info response has a `versions` array sorted by
+            // published_at ascending, so the last entry is the latest.
+            let latest = info["versions"]
+                .as_array()
+                .and_then(|arr| arr.last())
+                .and_then(|entry| entry["version"].as_str())
+                .or_else(|| info["latest_version"].as_str());
+            match latest {
+                Some(v) => {
+                    resolved_version = v.to_string();
+                    &resolved_version
+                }
+                None => {
+                    let _ = writeln!(
+                        stderr,
+                        "Error: cannot determine latest version for '{name}'. \
+                         Specify --version explicitly."
+                    );
+                    return ExitCode::RuntimeError;
+                }
+            }
+        }
+    };
+
+    let url = format!(
+        "{}/api/v1/packages/{}/{}/download",
+        cfg.registry_url.trim_end_matches('/'),
+        urlencoding_simple(name),
+        urlencoding_simple(version_segment)
+    );
 
     let _ = writeln!(stdout, "Downloading {} v{} ...", name, version_segment);
 
@@ -1154,8 +1217,8 @@ fn verify_install_trust(
     let attestation_url = format!(
         "{}/api/v1/packages/{}/{}/attestation",
         cfg.registry_url.trim_end_matches('/'),
-        name,
-        version
+        urlencoding_simple(name),
+        urlencoding_simple(version)
     );
 
     let resp = match client.get(&attestation_url).send() {
@@ -1217,8 +1280,8 @@ fn verify_install_trust(
     let proof_url = format!(
         "{}/api/v1/packages/{}/{}/proof",
         cfg.registry_url.trim_end_matches('/'),
-        name,
-        version
+        urlencoding_simple(name),
+        urlencoding_simple(version)
     );
 
     let proof_resp = match client.get(&proof_url).send() {
@@ -1428,8 +1491,8 @@ fn cmd_pkg_verify(
     let attestation_url = format!(
         "{}/api/v1/packages/{}/{}/attestation",
         cfg.registry_url.trim_end_matches('/'),
-        name,
-        version
+        urlencoding_simple(name),
+        urlencoding_simple(version)
     );
 
     let attestation: Option<serde_json::Value> = client
@@ -1464,8 +1527,8 @@ fn cmd_pkg_verify(
     let proof_url = format!(
         "{}/api/v1/packages/{}/{}/proof",
         cfg.registry_url.trim_end_matches('/'),
-        name,
-        version
+        urlencoding_simple(name),
+        urlencoding_simple(version)
     );
 
     let transparency_ok = client
@@ -2584,8 +2647,8 @@ fn cmd_pkg_yank(
     let url = format!(
         "{}/api/v1/packages/{}/{}",
         cfg.registry_url.trim_end_matches('/'),
-        name,
-        version
+        urlencoding_simple(name),
+        urlencoding_simple(version)
     );
 
     let client = match reqwest::blocking::Client::builder()

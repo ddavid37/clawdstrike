@@ -87,6 +87,20 @@ pub fn unpack(archive_path: &Path, target_dir: &Path) -> Result<Hash> {
 
     for entry in archive.entries()? {
         let mut entry = entry?;
+
+        // Skip symlinks and hard links entirely to prevent symlink-based
+        // escape attacks.  A malicious archive could plant a symlink inside
+        // target_dir pointing outside it, then write a later entry through
+        // that symlink.  Security packages should never contain symlinks.
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_symlink() || entry_type.is_hard_link() {
+            tracing::warn!(
+                "skipping symlink/hard-link entry in archive: {}",
+                entry.path().unwrap_or_default().display()
+            );
+            continue;
+        }
+
         let entry_path = entry.path()?;
 
         // Resolve the destination and check for path traversal BEFORE

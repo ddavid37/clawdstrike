@@ -147,7 +147,26 @@ fn find_policy_file(pkg_dir: &Path, sub_path: Option<&str>) -> Result<std::path:
                 path.display()
             )));
         }
-        return Ok(path);
+        // Canonicalize both paths and verify the resolved path stays within
+        // pkg_dir to prevent path traversal via `..` components.
+        let canonical = path.canonicalize().map_err(|e| {
+            Error::PkgError(format!(
+                "failed to canonicalize sub-path {}: {e}",
+                path.display()
+            ))
+        })?;
+        let canonical_base = pkg_dir.canonicalize().map_err(|e| {
+            Error::PkgError(format!(
+                "failed to canonicalize package dir {}: {e}",
+                pkg_dir.display()
+            ))
+        })?;
+        if !canonical.starts_with(&canonical_base) {
+            return Err(Error::PkgError(format!(
+                "path traversal detected in package reference: {sub}"
+            )));
+        }
+        return Ok(canonical);
     }
 
     // Default: policies/main.yaml

@@ -182,7 +182,7 @@ impl Guard for WasmGuard {
 
 /// Factory that produces [`WasmGuard`] instances from cached WASM bytes.
 ///
-/// Registered in the [`crate::guards::custom::CustomGuardRegistry`] and invoked
+/// Registered in the [`crate::guards::CustomGuardRegistry`] and invoked
 /// when a policy references the guard by id.
 pub struct WasmGuardFactory {
     /// Guard identifier (matches the `id` used in policy YAML).

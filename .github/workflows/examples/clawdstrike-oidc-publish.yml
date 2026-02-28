@@ -18,7 +18,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install clawdstrike CLI
-        run: cargo install --path crates/services/hush-cli
+        run: cargo install clawdstrike-cli
 
       - name: Publish with OIDC
         run: clawdstrike pkg publish --oidc
