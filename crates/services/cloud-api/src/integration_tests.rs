@@ -299,8 +299,12 @@ async fn approvals_list_and_resolve_publish_signed_payload_and_mark_outbox_sent(
     assert_eq!(envelope["fact"]["resolution"], "approved");
     assert_eq!(envelope["fact"]["resolved_by"], "integration-tester");
 
-    // Verify the outbox row was created (dispatch to "sent" is best-effort
-    // and depends on JetStream ACK timing, so we only assert existence).
+    // Verify the outbox row was created.  The outbox poller claims rows with
+    // `FOR UPDATE SKIP LOCKED` and publishes via JetStream; however, the
+    // claim/ACK cycle is racy in a test that shares a single Postgres
+    // connection, so we only assert the row exists rather than checking
+    // status == "sent".  A future improvement could use a dedicated poller
+    // task with its own connection to make the full assertion reliable.
     let row =
         sqlx::query::query("SELECT status FROM approval_resolution_outbox WHERE approval_id = $1")
             .bind(approval_id)

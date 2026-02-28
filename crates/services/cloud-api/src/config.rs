@@ -366,18 +366,42 @@ mod tests {
     /// Serialize env-var tests so parallel threads don't clobber each other.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// Helper: set env vars, run closure, then remove them.
+    /// Helper: set env vars, run closure, then restore originals.
+    ///
+    /// Uses `catch_unwind` so env vars are always cleaned up, even on
+    /// assertion failures.
     fn with_env_vars<F: FnOnce()>(vars: &[(&str, &str)], removed: &[&str], f: F) {
         let _guard = ENV_LOCK.lock().expect("env lock");
-        for key in removed {
+
+        // Save originals so we can restore after the closure.
+        let saved_removed: Vec<(&str, Option<String>)> = removed
+            .iter()
+            .map(|key| (*key, std::env::var(key).ok()))
+            .collect();
+        let saved_vars: Vec<(&str, Option<String>)> = vars
+            .iter()
+            .map(|(key, _)| (*key, std::env::var(key).ok()))
+            .collect();
+
+        for (key, _) in &saved_removed {
             unsafe { std::env::remove_var(key) };
         }
         for (key, val) in vars {
             unsafe { std::env::set_var(key, val) };
         }
-        f();
-        for (key, _) in vars {
-            unsafe { std::env::remove_var(key) };
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+
+        // Restore all vars to their original state.
+        for (key, original) in saved_vars.iter().chain(saved_removed.iter()) {
+            match original {
+                Some(val) => unsafe { std::env::set_var(key, val) },
+                None => unsafe { std::env::remove_var(key) },
+            }
+        }
+
+        if let Err(e) = result {
+            std::panic::resume_unwind(e);
         }
     }
 
