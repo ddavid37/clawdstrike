@@ -92,6 +92,16 @@ static NAMESPACE_RE: LazyLock<Regex> =
 static POD_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\bpod\s+(\S+)").expect("valid regex"));
 
+fn duration_from_time_clause(value: i64, unit: &str) -> Option<Duration> {
+    match unit {
+        "hour" | "hr" => Duration::try_hours(value),
+        "minute" | "min" => Duration::try_minutes(value),
+        "day" => Duration::try_days(value),
+        "second" | "sec" => Duration::try_seconds(value),
+        _ => Duration::try_hours(value),
+    }
+}
+
 /// Apply natural language keywords to a `HuntQuery`, setting fields.
 ///
 /// NL extraction is *supplemental*: it never overrides fields that are
@@ -102,14 +112,9 @@ pub fn apply_nl_query(query: &mut HuntQuery, nl: &str) {
         if let Some(caps) = TIME_RE.captures(nl) {
             if let Ok(n) = caps[1].parse::<i64>() {
                 let unit = caps[2].to_lowercase();
-                let duration = match unit.as_str() {
-                    "hour" | "hr" => Duration::hours(n),
-                    "minute" | "min" => Duration::minutes(n),
-                    "day" => Duration::days(n),
-                    "second" | "sec" => Duration::seconds(n),
-                    _ => Duration::hours(n),
-                };
-                query.start = Some(Utc::now() - duration);
+                if let Some(duration) = duration_from_time_clause(n, unit.as_str()) {
+                    query.start = Some(Utc::now() - duration);
+                }
             }
         } else if TODAY_RE.is_match(nl) {
             let today = Utc::now().date_naive().and_hms_opt(0, 0, 0);
@@ -247,6 +252,14 @@ mod tests {
         let expected_approx = Utc::now() - Duration::seconds(10);
         let diff = (start - expected_approx).num_seconds().unsigned_abs();
         assert!(diff < 5);
+    }
+
+    #[test]
+    fn nl_large_duration_does_not_panic_or_set_start() {
+        let mut q = empty_query();
+        let nl = format!("last {} hours", i64::MAX);
+        apply_nl_query(&mut q, &nl);
+        assert!(q.start.is_none());
     }
 
     #[test]

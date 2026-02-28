@@ -162,8 +162,19 @@ async fn stdio_send(writer: &mut tokio::process::ChildStdin, msg: &[u8]) -> Resu
 
 /// Read one JSON-RPC response line from the reader, skipping blank lines and
 /// non-JSON lines (some MCP servers emit logging to stdout).
+fn is_response_for_request(resp: &JsonRpcResponse, expected_id: Option<u64>) -> bool {
+    let Some(resp_id) = resp.id else {
+        return false;
+    };
+    match expected_id {
+        Some(expected) => resp_id == expected,
+        None => true,
+    }
+}
+
 async fn stdio_recv(
     reader: &mut BufReader<tokio::process::ChildStdout>,
+    expected_id: Option<u64>,
 ) -> Result<JsonRpcResponse, McpError> {
     let mut line = String::new();
     loop {
@@ -181,7 +192,14 @@ async fn stdio_recv(
         }
         // Try to parse as JSON-RPC response; skip non-JSON lines (server logs)
         match serde_json::from_str::<JsonRpcResponse>(trimmed) {
-            Ok(resp) => return Ok(resp),
+            Ok(resp) => {
+                if is_response_for_request(&resp, expected_id) {
+                    return Ok(resp);
+                }
+                // Ignore notifications and unrelated responses while waiting
+                // for the current request's reply.
+                continue;
+            }
             Err(_) => continue,
         }
     }
@@ -320,7 +338,7 @@ async fn run_stdio_session(
     );
     let init_bytes = serde_json::to_vec(&init_req)?;
     stdio_send(&mut stdin, &init_bytes).await?;
-    let init_resp = stdio_recv(&mut reader).await?;
+    let init_resp = stdio_recv(&mut reader, Some(init_req.id)).await?;
     let init_result_value = extract_result(init_resp)?;
     let metadata = init_result_value.clone();
 
@@ -416,7 +434,7 @@ async fn list_call_stdio(
     let req = session.build_request(method, Some(serde_json::json!({})));
     let bytes = serde_json::to_vec(&req)?;
     stdio_send(stdin, &bytes).await?;
-    let resp = stdio_recv(reader).await?;
+    let resp = stdio_recv(reader, Some(req.id)).await?;
     let result = extract_result(resp)?;
     Ok(result
         .get(result_key)
@@ -1175,6 +1193,39 @@ mod tests {
         };
         let result = extract_result(resp).unwrap();
         assert!(result.is_null());
+    }
+
+    #[test]
+    fn test_is_response_for_request_accepts_matching_id() {
+        let resp = JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id: Some(7),
+            result: Some(serde_json::json!({"ok": true})),
+            error: None,
+        };
+        assert!(is_response_for_request(&resp, Some(7)));
+    }
+
+    #[test]
+    fn test_is_response_for_request_rejects_notification_without_id() {
+        let resp = JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id: None,
+            result: Some(serde_json::json!({"progress": 1})),
+            error: None,
+        };
+        assert!(!is_response_for_request(&resp, Some(1)));
+    }
+
+    #[test]
+    fn test_is_response_for_request_rejects_wrong_id() {
+        let resp = JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id: Some(2),
+            result: Some(serde_json::json!({"ok": true})),
+            error: None,
+        };
+        assert!(!is_response_for_request(&resp, Some(1)));
     }
 
     #[test]

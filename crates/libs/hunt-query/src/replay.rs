@@ -62,7 +62,7 @@ fn parse_envelope_payload(
 ///
 /// Uses a timeout mechanism to detect when the historical backlog has been
 /// drained: after receiving at least one message, if no new message arrives
-/// within [`DEFAULT_REPLAY_TIMEOUT`], the stream is considered exhausted.
+/// within the default replay timeout, the stream is considered exhausted.
 pub async fn replay_stream(
     js: &async_nats::jetstream::Context,
     source: &EventSource,

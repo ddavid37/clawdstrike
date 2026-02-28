@@ -556,3 +556,14 @@ pub fn elapsed_since_timestamp(timestamp: &str, now: DateTime<Utc>) -> Option<Du
 
     (now - entered).to_std().ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_duration;
+
+    #[test]
+    fn parse_duration_rejects_overflow_values() {
+        let huge = format!("{}h", i64::MAX);
+        assert_eq!(parse_duration(&huge), None);
+    }
+}

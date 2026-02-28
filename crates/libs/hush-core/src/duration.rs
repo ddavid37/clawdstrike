@@ -28,10 +28,10 @@ pub fn parse_human_duration(s: &str) -> Option<Duration> {
     let value: i64 = digits.parse().ok()?;
 
     match suffix.as_str() {
-        "s" | "sec" | "secs" | "second" | "seconds" => Some(Duration::seconds(value)),
-        "m" | "min" | "mins" | "minute" | "minutes" => Some(Duration::minutes(value)),
-        "h" | "hr" | "hrs" | "hour" | "hours" => Some(Duration::hours(value)),
-        "d" | "day" | "days" => Some(Duration::days(value)),
+        "s" | "sec" | "secs" | "second" | "seconds" => Duration::try_seconds(value),
+        "m" | "min" | "mins" | "minute" | "minutes" => Duration::try_minutes(value),
+        "h" | "hr" | "hrs" | "hour" | "hours" => Duration::try_hours(value),
+        "d" | "day" | "days" => Duration::try_days(value),
         _ => None,
     }
 }
@@ -64,5 +64,13 @@ mod tests {
         assert_eq!(parse_human_duration("10x"), None);
         assert_eq!(parse_human_duration("1"), None);
         assert_eq!(parse_human_duration("30秒"), None);
+    }
+
+    #[test]
+    fn parse_human_duration_rejects_overflow() {
+        let huge_hours = format!("{}h", i64::MAX);
+        let huge_days = format!("{}days", i64::MAX);
+        assert_eq!(parse_human_duration(&huge_hours), None);
+        assert_eq!(parse_human_duration(&huge_days), None);
     }
 }

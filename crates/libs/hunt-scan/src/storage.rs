@@ -66,14 +66,24 @@ impl ScanDiff {
 // Hashing
 // ---------------------------------------------------------------------------
 
-/// Compute a SHA-256 hash of a server signature's tool names and descriptions
+/// Compute a SHA-256 hash of a server signature's full tool definitions
 /// (sorted for determinism).
 pub fn hash_server_signature(sig: &ServerSignature) -> String {
-    let mut entries: Vec<String> = sig
-        .tools
-        .iter()
-        .map(|t| format!("{}:{}", t.name, t.description.as_deref().unwrap_or("")))
-        .collect();
+    let mut entries = Vec::with_capacity(sig.tools.len());
+    for tool in &sig.tools {
+        // Hash the full serialized tool definition (including inputSchema) so
+        // drift detection catches capability changes beyond name/description.
+        let entry = match serde_json::to_value(tool) {
+            Ok(value) => hush_core::canonicalize_json(&value)
+                .unwrap_or_else(|_| format!("{}:{value}", tool.name)),
+            Err(_) => format!(
+                "{}:{}",
+                tool.name,
+                tool.description.as_deref().unwrap_or("")
+            ),
+        };
+        entries.push(entry);
+    }
     entries.sort();
 
     let mut hasher = Sha256::new();
@@ -275,6 +285,22 @@ mod tests {
         let sig1 = make_sig(&["tool_a", "tool_b"]);
         let sig2 = make_sig(&["tool_b", "tool_a"]);
         assert_eq!(hash_server_signature(&sig1), hash_server_signature(&sig2));
+    }
+
+    #[test]
+    fn test_hash_changes_when_input_schema_changes() {
+        let mut sig1 = make_sig(&["tool_a"]);
+        let mut sig2 = make_sig(&["tool_a"]);
+        sig1.tools[0].input_schema = Some(serde_json::json!({
+            "type": "object",
+            "properties": {"path": {"type": "string"}}
+        }));
+        sig2.tools[0].input_schema = Some(serde_json::json!({
+            "type": "object",
+            "properties": {"path": {"type": "number"}}
+        }));
+
+        assert_ne!(hash_server_signature(&sig1), hash_server_signature(&sig2));
     }
 
     #[test]
