@@ -206,12 +206,13 @@ start_local_gateway() {
   if [[ -n "${GATEWAY_TOKEN}" ]]; then
     "${OPENCLAW_BIN}" --profile "${GATEWAY_PROFILE}" config set --strict-json gateway.auth.token "\"${GATEWAY_TOKEN}\"" >/dev/null 2>&1 || true
   fi
-  if [[ -f "${profile_dir}/openclaw.json" ]]; then
-    local profile_token
+  local profile_token
+  profile_token="$("${OPENCLAW_BIN}" --profile "${GATEWAY_PROFILE}" config get --json gateway.auth.token 2>/dev/null | jq -r '. // empty' || true)"
+  if [[ -z "${profile_token}" && -f "${profile_dir}/openclaw.json" ]]; then
     profile_token="$(jq -r '.gateway.auth.token // empty' "${profile_dir}/openclaw.json" 2>/dev/null || true)"
-    if [[ -n "${profile_token}" ]]; then
-      GATEWAY_TOKEN="${profile_token}"
-    fi
+  fi
+  if [[ -n "${profile_token}" ]]; then
+    GATEWAY_TOKEN="${profile_token}"
   fi
   if [[ -z "${GATEWAY_TOKEN}" ]]; then
     GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-smoke-token}"
@@ -219,7 +220,8 @@ start_local_gateway() {
 
   GATEWAY_LOG="$(mktemp -t openclaw-gateway-smoke.XXXXXX.log)"
   log "Starting local gateway with ${OPENCLAW_BIN} profile=${GATEWAY_PROFILE}; logs: ${GATEWAY_LOG}"
-  OPENCLAW_GATEWAY_TOKEN="${GATEWAY_TOKEN}" "${OPENCLAW_BIN}" --profile "${GATEWAY_PROFILE}" gateway run --force --allow-unconfigured --port 18789 >"${GATEWAY_LOG}" 2>&1 &
+  OPENCLAW_GATEWAY_TOKEN="${GATEWAY_TOKEN}" \
+    "${OPENCLAW_BIN}" --profile "${GATEWAY_PROFILE}" gateway run --force --allow-unconfigured --port 18789 --token "${GATEWAY_TOKEN}" >"${GATEWAY_LOG}" 2>&1 &
   GATEWAY_PID="$!"
   sleep 2
 }

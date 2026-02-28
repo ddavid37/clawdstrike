@@ -20,7 +20,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "build:local-deps": "bun --cwd ../../policy/clawdstrike-policy run build && bun --cwd ../clawdstrike-adapter-core run build",
+    "build:local-deps": "(cd ../../policy/clawdstrike-policy && ([ -d node_modules ] || npm ci) && npm run build) && (cd ../clawdstrike-adapter-core && ([ -d node_modules ] || npm ci) && npm run build)",
     "e2e": "npm run build && node dist/e2e/openclaw-e2e.js",
     "test": "vitest run",
     "test:workspace": "bun run build:local-deps && vitest run",

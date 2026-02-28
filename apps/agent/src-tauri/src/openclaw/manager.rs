@@ -564,7 +564,7 @@ impl OpenClawManager {
                     if nonce.is_none() {
                         tracing::warn!(
                             gateway_id = %gateway_id,
-                            "gateway emitted connect.challenge without nonce; continuing with token auth"
+                            "gateway emitted connect.challenge without nonce; using fallback device nonce"
                         );
                     }
                     nonce
@@ -1079,15 +1079,16 @@ fn build_gateway_device_proof(
     auth_token: Option<&str>,
     nonce: Option<&str>,
 ) -> Result<Option<GatewayDeviceProof>> {
-    // Gateways can require challenge-bound nonces for device proofs.
-    // If no nonce challenge is available, rely on token auth for compatibility.
-    if nonce.is_none() {
-        return Ok(None);
-    }
     let identity = match load_openclaw_device_identity()? {
         Some(value) => value,
         None => return Ok(None),
     };
+
+    // Newer gateways require `device.nonce` whenever a device proof is present.
+    // Prefer challenge-bound nonce; otherwise generate a fallback nonce.
+    let nonce_value = nonce
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     let client_mode = client.mode.as_deref().unwrap_or("cli");
     let now = now_ms();
@@ -1099,7 +1100,7 @@ fn build_gateway_device_proof(
         scopes,
         now,
         auth_token,
-        nonce,
+        Some(nonce_value.as_str()),
         now,
     )?;
     Ok(Some(proof))
