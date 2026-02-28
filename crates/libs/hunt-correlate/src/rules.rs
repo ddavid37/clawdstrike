@@ -35,6 +35,11 @@ pub fn parse_duration_str(s: &str) -> Option<Duration> {
         return None;
     }
 
+    // Guard against splitting inside a multi-byte UTF-8 sequence (e.g. "30秒").
+    if !s.is_char_boundary(digit_end) {
+        return None;
+    }
+
     let digits = &s[..digit_end];
     let suffix = s[digit_end..].trim();
     let value: i64 = digits.parse().ok()?;
@@ -268,6 +273,16 @@ pub fn validate_rule(rule: &CorrelationRule) -> Result<()> {
                     rule.window
                 )));
             }
+        }
+
+        // Reject duplicate bind names — two conditions sharing a name cause
+        // premature alert firing because the correlator cannot distinguish
+        // which condition actually matched.
+        if known_binds.contains(&cond.bind.as_str()) {
+            return Err(Error::InvalidRule(format!(
+                "condition {i} reuses bind name '{}'; bind names must be unique",
+                cond.bind
+            )));
         }
 
         known_binds.push(&cond.bind);
@@ -532,6 +547,45 @@ output:
         assert_eq!(parse_duration_str("1day"), Some(Duration::days(1)));
         assert_eq!(parse_duration_str("10seconds"), Some(Duration::seconds(10)));
         assert_eq!(parse_duration_str("2minutes"), Some(Duration::minutes(2)));
+    }
+
+    #[test]
+    fn parse_duration_str_multibyte_utf8_returns_none() {
+        // Multi-byte UTF-8 suffixes must not panic (previously used split_at
+        // which could panic on non-ASCII boundaries).
+        assert_eq!(parse_duration_str("30秒"), None);
+        assert_eq!(parse_duration_str("5分"), None);
+        assert_eq!(parse_duration_str("1時間"), None);
+        // Emoji suffix.
+        assert_eq!(parse_duration_str("10🕐"), None);
+    }
+
+    #[test]
+    fn reject_duplicate_bind_names() {
+        let yaml = r#"
+schema: clawdstrike.hunt.correlation.v1
+name: "Duplicate bind"
+severity: high
+description: "test"
+window: 30s
+conditions:
+  - source: receipt
+    action_type: file
+    bind: evt
+  - source: hubble
+    action_type: egress
+    bind: evt
+output:
+  title: "test"
+  evidence:
+    - evt
+"#;
+        let err = parse_rule(yaml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("reuses bind name 'evt'"),
+            "expected duplicate bind error, got: {msg}"
+        );
     }
 
     #[test]

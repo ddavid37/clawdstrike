@@ -233,10 +233,15 @@ impl IocDatabase {
         let mut db = Self::new();
         let mut lines = content.lines();
 
-        // Skip header if present
+        // Skip header if present — require a comma-separated header pattern
+        // (e.g. "indicator,type" or "indicator,") to avoid dropping data rows
+        // whose indicator value happens to start with "indicator".
         if let Some(first) = lines.next() {
             let first_lower = first.trim().to_lowercase();
-            if !first_lower.starts_with("indicator") {
+            let is_header = first_lower.starts_with("indicator,")
+                || first_lower.starts_with("indicator_type,")
+                || first_lower == "indicator";
+            if !is_header {
                 // Not a header — process it as data
                 if let Some(entry) = parse_csv_line(first) {
                     db.add_entry(entry);
@@ -481,6 +486,50 @@ fn contains_word_bounded(haystack: &str, needle: &str) -> bool {
     false
 }
 
+/// Lowercased event fields used for IOC scanning.
+struct EventFields {
+    summary: String,
+    process: String,
+    raw: String,
+}
+
+/// Scan a single IOC index against the three lowercased event fields and push
+/// any matches into `matches`.
+///
+/// `matcher` is the function used to test whether a needle appears in a
+/// haystack (e.g. `str::contains` for hashes, [`contains_word_bounded`] for
+/// domains/IPs/URLs).
+fn scan_index<F>(
+    index: &HashMap<String, Vec<usize>>,
+    entries: &[IocEntry],
+    event: &TimelineEvent,
+    fields: &EventFields,
+    matcher: F,
+    matches: &mut Vec<IocMatch>,
+) where
+    F: Fn(&str, &str) -> bool,
+{
+    for (needle, indices) in index {
+        let field = if matcher(&fields.summary, needle) {
+            Some("summary")
+        } else if matcher(&fields.process, needle) {
+            Some("process")
+        } else if matcher(&fields.raw, needle) {
+            Some("raw")
+        } else {
+            None
+        };
+        if let Some(f) = field {
+            let matched_iocs: Vec<IocEntry> = indices.iter().map(|&i| entries[i].clone()).collect();
+            matches.push(IocMatch {
+                event: event.clone(),
+                matched_iocs,
+                match_field: f.to_string(),
+            });
+        }
+    }
+}
+
 /// Check a single timeline event against the IOC database.
 ///
 /// Fields checked: `summary`, `process`, and `raw` JSON (serialised to string).
@@ -489,97 +538,55 @@ fn contains_word_bounded(haystack: &str, needle: &str) -> bool {
 pub fn match_event(db: &IocDatabase, event: &TimelineEvent) -> Vec<IocMatch> {
     let mut matches: Vec<IocMatch> = Vec::new();
 
-    let summary_lower = event.summary.to_lowercase();
-    let process_lower = event.process.as_deref().unwrap_or("").to_lowercase();
-    let raw_str = event
-        .raw
-        .as_ref()
-        .map(|v| v.to_string().to_lowercase())
-        .unwrap_or_default();
+    let fields = EventFields {
+        summary: event.summary.to_lowercase(),
+        process: event.process.as_deref().unwrap_or("").to_lowercase(),
+        raw: event
+            .raw
+            .as_ref()
+            .map(|v| v.to_string().to_lowercase())
+            .unwrap_or_default(),
+    };
 
-    // Check hashes (exact substring match — hashes are long enough to be unique)
-    for (hash, indices) in &db.hash_index {
-        let mut field = None;
-        if summary_lower.contains(hash.as_str()) {
-            field = Some("summary");
-        } else if process_lower.contains(hash.as_str()) {
-            field = Some("process");
-        } else if raw_str.contains(hash.as_str()) {
-            field = Some("raw");
-        }
-        if let Some(f) = field {
-            let matched_iocs: Vec<IocEntry> =
-                indices.iter().map(|&i| db.entries[i].clone()).collect();
-            matches.push(IocMatch {
-                event: event.clone(),
-                matched_iocs,
-                match_field: f.to_string(),
-            });
-        }
-    }
+    // Hashes: plain substring match (hashes are long enough to be unique).
+    scan_index(
+        &db.hash_index,
+        &db.entries,
+        event,
+        &fields,
+        |haystack, needle| haystack.contains(needle),
+        &mut matches,
+    );
 
-    // Check domains (word-boundary match)
-    for (domain, indices) in &db.domain_index {
-        let mut field = None;
-        if contains_word_bounded(&summary_lower, domain) {
-            field = Some("summary");
-        } else if contains_word_bounded(&process_lower, domain) {
-            field = Some("process");
-        } else if contains_word_bounded(&raw_str, domain) {
-            field = Some("raw");
-        }
-        if let Some(f) = field {
-            let matched_iocs: Vec<IocEntry> =
-                indices.iter().map(|&i| db.entries[i].clone()).collect();
-            matches.push(IocMatch {
-                event: event.clone(),
-                matched_iocs,
-                match_field: f.to_string(),
-            });
-        }
-    }
+    // Domains: word-boundary match.
+    scan_index(
+        &db.domain_index,
+        &db.entries,
+        event,
+        &fields,
+        contains_word_bounded,
+        &mut matches,
+    );
 
-    // Check IPs (word-boundary match)
-    for (ip, indices) in &db.ip_index {
-        let mut field = None;
-        if contains_word_bounded(&summary_lower, ip) {
-            field = Some("summary");
-        } else if contains_word_bounded(&process_lower, ip) {
-            field = Some("process");
-        } else if contains_word_bounded(&raw_str, ip) {
-            field = Some("raw");
-        }
-        if let Some(f) = field {
-            let matched_iocs: Vec<IocEntry> =
-                indices.iter().map(|&i| db.entries[i].clone()).collect();
-            matches.push(IocMatch {
-                event: event.clone(),
-                matched_iocs,
-                match_field: f.to_string(),
-            });
-        }
-    }
+    // IPs: word-boundary match.
+    scan_index(
+        &db.ip_index,
+        &db.entries,
+        event,
+        &fields,
+        contains_word_bounded,
+        &mut matches,
+    );
 
-    // Check URLs (word-boundary match)
-    for (url, indices) in &db.url_index {
-        let mut field = None;
-        if contains_word_bounded(&summary_lower, url) {
-            field = Some("summary");
-        } else if contains_word_bounded(&process_lower, url) {
-            field = Some("process");
-        } else if contains_word_bounded(&raw_str, url) {
-            field = Some("raw");
-        }
-        if let Some(f) = field {
-            let matched_iocs: Vec<IocEntry> =
-                indices.iter().map(|&i| db.entries[i].clone()).collect();
-            matches.push(IocMatch {
-                event: event.clone(),
-                matched_iocs,
-                match_field: f.to_string(),
-            });
-        }
-    }
+    // URLs: word-boundary match.
+    scan_index(
+        &db.url_index,
+        &db.entries,
+        event,
+        &fields,
+        contains_word_bounded,
+        &mut matches,
+    );
 
     matches
 }
@@ -741,6 +748,57 @@ mod tests {
             Some("Known C2, very bad")
         );
         assert_eq!(db.entries[0].source.as_deref(), Some("Intel, Inc"));
+    }
+
+    #[test]
+    fn load_csv_file_no_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("iocs_no_header.csv");
+        {
+            let mut f = std::fs::File::create(&path).unwrap();
+            writeln!(f, "{},sha256,Malware hash,Feed1", "a".repeat(64)).unwrap();
+            writeln!(f, "evil.com,domain,C2 domain,Feed2").unwrap();
+        }
+
+        let db = IocDatabase::load_csv_file(&path).unwrap();
+        assert_eq!(db.len(), 2);
+    }
+
+    #[test]
+    fn load_csv_file_does_not_drop_indicator_data_row() {
+        // A legitimate data row where the indicator value starts with
+        // "indicator" (e.g. "indicators.example.com") must not be skipped.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("iocs_indicator_domain.csv");
+        {
+            let mut f = std::fs::File::create(&path).unwrap();
+            writeln!(f, "indicators.example.com,domain,Legit IOC,Feed").unwrap();
+            writeln!(f, "evil.com,domain,C2 domain,Feed").unwrap();
+        }
+
+        let db = IocDatabase::load_csv_file(&path).unwrap();
+        assert_eq!(
+            db.len(),
+            2,
+            "both rows should be loaded, including the one starting with 'indicator'"
+        );
+        assert_eq!(db.entries[0].indicator, "indicators.example.com");
+    }
+
+    #[test]
+    fn load_csv_file_skips_real_header() {
+        // A proper header row like "indicator,type,description,source" must be skipped.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("iocs_with_header.csv");
+        {
+            let mut f = std::fs::File::create(&path).unwrap();
+            writeln!(f, "indicator,type,description,source").unwrap();
+            writeln!(f, "evil.com,domain,C2,Feed").unwrap();
+        }
+
+        let db = IocDatabase::load_csv_file(&path).unwrap();
+        assert_eq!(db.len(), 1);
+        assert_eq!(db.entries[0].indicator, "evil.com");
     }
 
     // -- load_stix_bundle --------------------------------------------------
@@ -1094,6 +1152,54 @@ mod tests {
         assert_eq!(db.hash_index.len(), 0);
         assert_eq!(db.domain_index.len(), 0);
         assert_eq!(db.ip_index.len(), 0);
+    }
+
+    #[test]
+    fn scan_index_matches_all_four_index_types() {
+        // Verify that the unified scan_index helper produces results for all
+        // four index types (hash, domain, IP, URL) just as the old inlined
+        // loops did.
+        let sha = "b".repeat(64);
+        let mut db = IocDatabase::new();
+        db.add_entry(IocEntry {
+            indicator: sha.clone(),
+            ioc_type: IocType::Sha256,
+            description: None,
+            source: None,
+        });
+        db.add_entry(IocEntry {
+            indicator: "evil.com".into(),
+            ioc_type: IocType::Domain,
+            description: None,
+            source: None,
+        });
+        db.add_entry(IocEntry {
+            indicator: "10.0.0.99".into(),
+            ioc_type: IocType::IPv4,
+            description: None,
+            source: None,
+        });
+        db.add_entry(IocEntry {
+            indicator: "https://malware.example.org/dl".into(),
+            ioc_type: IocType::Url,
+            description: None,
+            source: None,
+        });
+
+        // Build an event whose summary contains all four indicators
+        let summary = format!(
+            "hash={} dns=evil.com ip=10.0.0.99 url=https://malware.example.org/dl",
+            sha
+        );
+        let event = make_event(&summary, None, None);
+
+        let results = match_event(&db, &event);
+        assert_eq!(
+            results.len(),
+            4,
+            "should match all four IOC types; got {}",
+            results.len()
+        );
     }
 
     #[test]

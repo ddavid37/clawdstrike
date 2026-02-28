@@ -134,9 +134,9 @@ pub async fn run_watch(
                     }
                 }
 
-                // Periodically evict expired windows
+                // Periodically evict expired windows, capped by max_window
                 if stats.events_processed.is_multiple_of(100) {
-                    engine.evict_expired();
+                    engine.evict_expired_capped(config.max_window);
                 }
             }
             _ = &mut shutdown => {

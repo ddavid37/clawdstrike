@@ -54,6 +54,36 @@ static ACTION_RE: LazyLock<Regex> = LazyLock::new(|| {
 static PROCESS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\b(?:process|binary)\s+(\S+)").expect("valid regex"));
 
+/// Words that commonly follow "process" or "binary" in NL queries but are
+/// not actual process/binary names. Used to avoid false matches.
+const PROCESS_STOPWORDS: &[&str] = &[
+    "events",
+    "event",
+    "logs",
+    "log",
+    "data",
+    "info",
+    "information",
+    "list",
+    "activity",
+    "actions",
+    "action",
+    "results",
+    "result",
+    "output",
+    "details",
+    "history",
+    "metrics",
+    "stats",
+    "statistics",
+    "traces",
+    "trace",
+    "records",
+    "record",
+    "entries",
+    "entry",
+];
+
 #[allow(clippy::expect_used)]
 static NAMESPACE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\b(?:namespace|ns)\s+(\S+)").expect("valid regex"));
@@ -128,10 +158,16 @@ pub fn apply_nl_query(query: &mut HuntQuery, nl: &str) {
         }
     }
 
-    // Process
+    // Process — skip stopwords that look like process names but aren't.
     if query.process.is_none() {
         if let Some(caps) = PROCESS_RE.captures(nl) {
-            query.process = Some(caps[1].to_string());
+            let candidate = &caps[1];
+            let is_stopword = PROCESS_STOPWORDS
+                .iter()
+                .any(|sw| sw.eq_ignore_ascii_case(candidate));
+            if !is_stopword {
+                query.process = Some(candidate.to_string());
+            }
         }
     }
 
@@ -510,5 +546,59 @@ mod tests {
         let mut q = empty_query();
         apply_nl_query(&mut q, "show process events last 1 hour");
         assert!(q.sources.contains(&EventSource::Tetragon));
+    }
+
+    #[test]
+    fn nl_process_events_does_not_set_process_to_events() {
+        let mut q = empty_query();
+        apply_nl_query(&mut q, "show process events last 1 hour");
+        // "events" is a stopword, not a process name
+        assert_eq!(
+            q.process, None,
+            "should not capture 'events' as process name"
+        );
+    }
+
+    #[test]
+    fn nl_process_logs_does_not_set_process_to_logs() {
+        let mut q = empty_query();
+        apply_nl_query(&mut q, "process logs today");
+        assert_eq!(q.process, None, "should not capture 'logs' as process name");
+    }
+
+    #[test]
+    fn nl_process_data_does_not_set_process_to_data() {
+        let mut q = empty_query();
+        apply_nl_query(&mut q, "show process data last 2 hours");
+        assert_eq!(q.process, None, "should not capture 'data' as process name");
+    }
+
+    #[test]
+    fn nl_process_activity_does_not_set_process_to_activity() {
+        let mut q = empty_query();
+        apply_nl_query(&mut q, "process activity today");
+        assert_eq!(
+            q.process, None,
+            "should not capture 'activity' as process name"
+        );
+    }
+
+    #[test]
+    fn nl_process_stopwords_case_insensitive() {
+        let mut q = empty_query();
+        apply_nl_query(&mut q, "show process EVENTS last 1 hour");
+        assert_eq!(q.process, None, "stopword check should be case-insensitive");
+    }
+
+    #[test]
+    fn nl_process_real_name_still_works() {
+        // Ensure actual process names are still captured after the fix
+        let mut q = empty_query();
+        apply_nl_query(&mut q, "process nginx denied");
+        assert_eq!(q.process, Some("nginx".to_string()));
+
+        let mut q2 = empty_query();
+        apply_nl_query(&mut q2, "binary python3 allowed");
+        assert_eq!(q2.process, Some("python3".to_string()));
     }
 }

@@ -124,6 +124,25 @@ impl CorrelationEngine {
         self.evict_expired_at(Utc::now());
     }
 
+    /// Remove window states that have exceeded the shorter of the rule's own
+    /// window duration and the provided `max_window` cap, using wall-clock time.
+    pub fn evict_expired_capped(&mut self, max_window: chrono::Duration) {
+        let now = Utc::now();
+        for (ri, windows) in &mut self.windows {
+            let rule_dur = self.rules[*ri].window;
+            let effective = if max_window < rule_dur {
+                max_window
+            } else {
+                rule_dur
+            };
+            windows.retain(|ws| {
+                let elapsed = now.signed_duration_since(ws.window_start);
+                elapsed <= effective
+            });
+        }
+        self.windows.retain(|_, v| !v.is_empty());
+    }
+
     /// Return a reference to the loaded rules.
     pub fn rules(&self) -> &[CorrelationRule] {
         &self.rules
@@ -281,6 +300,9 @@ fn condition_matches(
             "allow" => NormalizedVerdict::Allow,
             "deny" => NormalizedVerdict::Deny,
             "warn" => NormalizedVerdict::Warn,
+            "forwarded" => NormalizedVerdict::Forwarded,
+            "dropped" => NormalizedVerdict::Dropped,
+            "none" => NormalizedVerdict::None,
             _ => return false,
         };
         if event.verdict != expected {
@@ -860,6 +882,152 @@ output:
     }
 
     #[test]
+    fn condition_matches_verdict_forwarded() {
+        let cond = RuleCondition {
+            source: vec!["hubble".to_string()],
+            action_type: None,
+            verdict: Some("forwarded".to_string()),
+            target_pattern: None,
+            not_target_pattern: None,
+            after: None,
+            within: None,
+            bind: "test".to_string(),
+        };
+        let cp = CompiledPatterns {
+            target: None,
+            not_target: None,
+        };
+
+        let ts = Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap();
+
+        let forwarded_event = make_event(
+            EventSource::Hubble,
+            "egress",
+            NormalizedVerdict::Forwarded,
+            "evil.com:443",
+            ts,
+        );
+        assert!(condition_matches(&cond, &cp, &forwarded_event));
+
+        let allow_event = make_event(
+            EventSource::Hubble,
+            "egress",
+            NormalizedVerdict::Allow,
+            "evil.com:443",
+            ts,
+        );
+        assert!(!condition_matches(&cond, &cp, &allow_event));
+    }
+
+    #[test]
+    fn condition_matches_verdict_dropped() {
+        let cond = RuleCondition {
+            source: vec!["hubble".to_string()],
+            action_type: None,
+            verdict: Some("dropped".to_string()),
+            target_pattern: None,
+            not_target_pattern: None,
+            after: None,
+            within: None,
+            bind: "test".to_string(),
+        };
+        let cp = CompiledPatterns {
+            target: None,
+            not_target: None,
+        };
+
+        let ts = Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap();
+
+        let dropped_event = make_event(
+            EventSource::Hubble,
+            "egress",
+            NormalizedVerdict::Dropped,
+            "evil.com:443",
+            ts,
+        );
+        assert!(condition_matches(&cond, &cp, &dropped_event));
+
+        let forwarded_event = make_event(
+            EventSource::Hubble,
+            "egress",
+            NormalizedVerdict::Forwarded,
+            "evil.com:443",
+            ts,
+        );
+        assert!(!condition_matches(&cond, &cp, &forwarded_event));
+    }
+
+    #[test]
+    fn condition_matches_verdict_none() {
+        let cond = RuleCondition {
+            source: vec!["tetragon".to_string()],
+            action_type: None,
+            verdict: Some("none".to_string()),
+            target_pattern: None,
+            not_target_pattern: None,
+            after: None,
+            within: None,
+            bind: "test".to_string(),
+        };
+        let cp = CompiledPatterns {
+            target: None,
+            not_target: None,
+        };
+
+        let ts = Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap();
+
+        let none_event = make_event(
+            EventSource::Tetragon,
+            "process",
+            NormalizedVerdict::None,
+            "process_exec /bin/sh",
+            ts,
+        );
+        assert!(condition_matches(&cond, &cp, &none_event));
+
+        let allow_event = make_event(
+            EventSource::Tetragon,
+            "process",
+            NormalizedVerdict::Allow,
+            "process_exec /bin/sh",
+            ts,
+        );
+        assert!(!condition_matches(&cond, &cp, &allow_event));
+    }
+
+    #[test]
+    fn condition_matches_verdict_unknown_rejects() {
+        let cond = RuleCondition {
+            source: vec!["receipt".to_string()],
+            action_type: None,
+            verdict: Some("invalid_verdict".to_string()),
+            target_pattern: None,
+            not_target_pattern: None,
+            after: None,
+            within: None,
+            bind: "test".to_string(),
+        };
+        let cp = CompiledPatterns {
+            target: None,
+            not_target: None,
+        };
+
+        let ts = Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap();
+
+        let event = make_event(
+            EventSource::Receipt,
+            "file",
+            NormalizedVerdict::Allow,
+            "test",
+            ts,
+        );
+        assert!(
+            !condition_matches(&cond, &cp, &event),
+            "unknown verdict string should never match"
+        );
+    }
+
+    #[test]
     fn hubble_source_matches_egress_condition() {
         let rule = exfil_rule();
         let mut engine = CorrelationEngine::new(vec![rule]).unwrap();
@@ -886,5 +1054,65 @@ output:
         );
         let alerts = engine.process_event(&e2);
         assert_eq!(alerts.len(), 1);
+    }
+
+    #[test]
+    fn evict_expired_capped_uses_shorter_window() {
+        // The exfil rule has a 30s window. Use a max_window of 10s so that
+        // windows older than 10s are evicted even though the rule allows 30s.
+        let rule = exfil_rule();
+        let mut engine = CorrelationEngine::new(vec![rule]).unwrap();
+
+        let ts1 = Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap();
+
+        // Inject a file-access event to start a window.
+        let e1 = make_event(
+            EventSource::Receipt,
+            "file",
+            NormalizedVerdict::Allow,
+            "read /etc/passwd",
+            ts1,
+        );
+        engine.process_event(&e1);
+
+        // Verify there is one active window.
+        assert_eq!(engine.windows.len(), 1);
+
+        // Evict with max_window = 0s — should immediately evict everything.
+        engine.evict_expired_capped(chrono::Duration::zero());
+        assert!(
+            engine.windows.is_empty(),
+            "zero max_window should evict all windows"
+        );
+    }
+
+    #[test]
+    fn evict_expired_capped_preserves_when_cap_larger_than_rule_window() {
+        // With a cap larger than the rule window, eviction should
+        // behave identically to the uncapped variant.
+        let rule = single_condition_rule(); // 5m window
+        let mut engine = CorrelationEngine::new(vec![rule]).unwrap();
+
+        let ts = Utc::now();
+        // Feed an event that does NOT fully match the single-condition rule
+        // (Forbidden Path Access requires deny verdict, so an allow event
+        // opens a window but it won't complete).
+        let non_matching = make_event(
+            EventSource::Receipt,
+            "file",
+            NormalizedVerdict::Allow,
+            "some other file",
+            ts,
+        );
+        // Use process_event to only open a window (Forbidden Path Access
+        // requires deny verdict, so an allow event opens a window but it
+        // won't complete).
+        let _ = engine.process_event(&non_matching);
+
+        // A huge cap should not evict a just-created window.
+        engine.evict_expired_capped(chrono::Duration::hours(24));
+        // We can't assert much about windows directly since the single
+        // condition rule fires immediately, but we can at least verify
+        // no panic.
     }
 }

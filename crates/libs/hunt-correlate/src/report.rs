@@ -134,15 +134,25 @@ pub fn verify_report(report: &HuntReport) -> Result<bool> {
     let root =
         Hash::from_hex(&report.merkle_root).map_err(|e| Error::ReportError(e.to_string()))?;
 
-    // Verify signature if present.
-    if let (Some(sig_hex), Some(pub_hex)) = (&report.signature, &report.signer) {
-        let pubkey = PublicKey::from_hex(pub_hex).map_err(|e| Error::ReportError(e.to_string()))?;
-        let sig = Signature::from_hex(sig_hex).map_err(|e| Error::ReportError(e.to_string()))?;
-        let root_bytes =
-            hex::decode(&report.merkle_root).map_err(|e| Error::ReportError(e.to_string()))?;
-        if !pubkey.verify(&root_bytes, &sig) {
+    // Verify signature if present.  Reject when one of signature/signer is
+    // present but the other is missing — that indicates a tampered report.
+    match (&report.signature, &report.signer) {
+        (Some(sig_hex), Some(pub_hex)) => {
+            let pubkey =
+                PublicKey::from_hex(pub_hex).map_err(|e| Error::ReportError(e.to_string()))?;
+            let sig =
+                Signature::from_hex(sig_hex).map_err(|e| Error::ReportError(e.to_string()))?;
+            let root_bytes =
+                hex::decode(&report.merkle_root).map_err(|e| Error::ReportError(e.to_string()))?;
+            if !pubkey.verify(&root_bytes, &sig) {
+                return Ok(false);
+            }
+        }
+        (Some(_), None) | (None, Some(_)) => {
+            // Mismatched: one field present without the other.
             return Ok(false);
         }
+        (None, None) => { /* unsigned report — nothing to verify */ }
     }
 
     // Verify each evidence item's Merkle proof.
@@ -427,6 +437,39 @@ mod tests {
             assert!(!valid);
         }
         // Err is also acceptable — invalid hex parse.
+    }
+
+    #[test]
+    fn verify_report_fails_signature_without_signer() {
+        let items = sample_items();
+        let mut report = build_report("Missing Signer", items).unwrap();
+
+        // Add a signature but leave signer as None.
+        let keypair = Keypair::generate();
+        sign_report(&mut report, &keypair.to_hex()).unwrap();
+        report.signer = None;
+
+        let valid = verify_report(&report).unwrap();
+        assert!(
+            !valid,
+            "signature present without signer should fail verification"
+        );
+    }
+
+    #[test]
+    fn verify_report_fails_signer_without_signature() {
+        let items = sample_items();
+        let mut report = build_report("Missing Signature", items).unwrap();
+
+        // Add a signer but leave signature as None.
+        let keypair = Keypair::generate();
+        report.signer = Some(keypair.public_key().to_hex());
+
+        let valid = verify_report(&report).unwrap();
+        assert!(
+            !valid,
+            "signer present without signature should fail verification"
+        );
     }
 
     #[test]
