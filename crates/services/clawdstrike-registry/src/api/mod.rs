@@ -115,3 +115,252 @@ pub fn create_router(state: AppState) -> Router {
         .layer(RequestBodyLimitLayer::new(max_upload))
         .with_state(state)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::extract::{Path, Query, State};
+    use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+    use axum::Json;
+    use base64::Engine as _;
+    use hush_core::Keypair;
+
+    fn test_state() -> (AppState, tempfile::TempDir) {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = crate::config::Config {
+            host: "127.0.0.1".to_string(),
+            port: 0,
+            data_dir: tmp.path().to_path_buf(),
+            api_key: String::new(),
+            max_upload_bytes: 5 * 1024 * 1024,
+        };
+        let state = crate::state::AppState::new(cfg).unwrap();
+        (state, tmp)
+    }
+
+    fn signed_headers(kp: &Keypair, payload: &str) -> HeaderMap {
+        let ts = chrono::Utc::now().to_rfc3339();
+        let msg = crate::auth::caller_signature_message(payload, &ts);
+        let sig = kp.sign(msg.as_bytes()).to_hex();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Clawdstrike-Caller-Key",
+            kp.public_key().to_hex().parse().unwrap(),
+        );
+        headers.insert("X-Clawdstrike-Caller-Sig", sig.parse().unwrap());
+        headers.insert("X-Clawdstrike-Caller-Ts", ts.parse().unwrap());
+        headers
+    }
+
+    fn publish_request(
+        name: &str,
+        version: &str,
+        kp: &Keypair,
+    ) -> (publish::PublishRequest, Vec<u8>) {
+        let archive_bytes = b"fake-cpkg-bytes".to_vec();
+        let hash = hush_core::sha256(&archive_bytes);
+        let sig = kp.sign(hash.as_bytes()).to_hex();
+        let req = publish::PublishRequest {
+            archive_base64: base64::engine::general_purpose::STANDARD.encode(&archive_bytes),
+            publisher_key: kp.public_key().to_hex(),
+            publisher_sig: sig,
+            manifest_toml: format!(
+                "[package]\nname = \"{name}\"\nversion = \"{version}\"\npkg_type = \"guard\"\n"
+            ),
+        };
+        (req, archive_bytes)
+    }
+
+    #[tokio::test]
+    async fn api_end_to_end_handlers_cover_core_paths() {
+        let (state, _tmp) = test_state();
+        let _router = create_router(state.clone());
+
+        let health = health::health().await;
+        assert_eq!(health.0.status, "ok");
+
+        let owner = Keypair::from_seed(&[11u8; 32]);
+        let owner_key = owner.public_key().to_hex();
+        let scoped_pkg = "@acme/demo-guard";
+        let version = "1.2.3";
+
+        let _ = org::create_org(
+            State(state.clone()),
+            Json(org::CreateOrgRequest {
+                name: "acme".to_string(),
+                display_name: Some("ACME".to_string()),
+                publisher_key: owner_key.clone(),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let member = Keypair::from_seed(&[12u8; 32]);
+        let member_key = member.public_key().to_hex();
+        let invite_payload = format!("org:invite:acme:{member_key}:member");
+        let _ = org::invite_member(
+            State(state.clone()),
+            Path("acme".to_string()),
+            signed_headers(&owner, &invite_payload),
+            Json(org::InviteMemberRequest {
+                publisher_key: member_key.clone(),
+                role: "member".to_string(),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let remove_payload = format!("org:remove:acme:{member_key}");
+        let remove_status = org::remove_member(
+            State(state.clone()),
+            Path(("acme".to_string(), member_key.clone())),
+            signed_headers(&owner, &remove_payload),
+        )
+        .await
+        .unwrap();
+        assert_eq!(remove_status, StatusCode::NO_CONTENT);
+
+        let (publish_req, archive_bytes) = publish_request(scoped_pkg, version, &owner);
+        let publish_resp =
+            publish::publish(State(state.clone()), HeaderMap::new(), Json(publish_req))
+                .await
+                .unwrap();
+        assert_eq!(publish_resp.0.name, scoped_pkg);
+
+        let pkg_info = info::package_info(State(state.clone()), Path(scoped_pkg.to_string()))
+            .await
+            .unwrap();
+        assert_eq!(pkg_info.0.name, scoped_pkg);
+        assert_eq!(pkg_info.0.versions.len(), 1);
+
+        let version_info = info::version_info(
+            State(state.clone()),
+            Path((scoped_pkg.to_string(), version.to_string())),
+        )
+        .await
+        .unwrap();
+        assert_eq!(version_info.0.version, version);
+
+        let search = search::search(
+            State(state.clone()),
+            Query(search::SearchQuery {
+                q: "demo".to_string(),
+                limit: 20,
+                offset: 0,
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(search.0.total >= 1);
+
+        let att = attestation::get_attestation(
+            State(state.clone()),
+            Path((scoped_pkg.to_string(), version.to_string())),
+        )
+        .await
+        .unwrap();
+        assert!(att.0.registry_key.is_some());
+
+        let proof = proof::get_proof(
+            State(state.clone()),
+            Path((scoped_pkg.to_string(), version.to_string())),
+        )
+        .await
+        .unwrap();
+        assert_eq!(proof.0.tree_size, 1);
+
+        let download_resp = download::download(
+            State(state.clone()),
+            Path((scoped_pkg.to_string(), version.to_string())),
+        )
+        .await
+        .unwrap();
+        assert_eq!(download_resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(download_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(&body[..], &archive_bytes);
+
+        let stats = stats::get_package_stats(State(state.clone()), Path(scoped_pkg.to_string()))
+            .await
+            .unwrap();
+        assert_eq!(stats.0.name, scoped_pkg);
+        assert!(stats.0.total_downloads >= 1);
+
+        let popular = stats::get_popular(
+            State(state.clone()),
+            Query(stats::PopularQuery { limit: Some(10) }),
+        )
+        .await
+        .unwrap();
+        assert!(!popular.0.is_empty());
+
+        let index_resp = index::sparse_index(
+            State(state.clone()),
+            Path(scoped_pkg.to_string()),
+            HeaderMap::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(index_resp.status(), StatusCode::OK);
+        let etag = index_resp
+            .headers()
+            .get(header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .unwrap()
+            .to_string();
+
+        let mut cond_headers = HeaderMap::new();
+        cond_headers.insert(header::IF_NONE_MATCH, HeaderValue::from_str(&etag).unwrap());
+        let not_modified = index::sparse_index(
+            State(state.clone()),
+            Path(scoped_pkg.to_string()),
+            cond_headers,
+        )
+        .await
+        .unwrap();
+        assert_eq!(not_modified.status(), StatusCode::NOT_MODIFIED);
+
+        let add_tp_payload = format!("trusted-publisher:add:{scoped_pkg}:github:acme/repo::");
+        let (created, tp) = trusted_publishers::add_trusted_publisher(
+            State(state.clone()),
+            Path(scoped_pkg.to_string()),
+            signed_headers(&owner, &add_tp_payload),
+            Json(trusted_publishers::AddTrustedPublisherRequest {
+                provider: "github".to_string(),
+                repository: "acme/repo".to_string(),
+                workflow: None,
+                environment: None,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(created, StatusCode::CREATED);
+
+        let listed = trusted_publishers::list_trusted_publishers(
+            State(state.clone()),
+            Path(scoped_pkg.to_string()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(listed.0.trusted_publishers.len(), 1);
+
+        let del_tp_payload = format!("trusted-publisher:remove:{scoped_pkg}:{}", tp.0.id);
+        let deleted = trusted_publishers::remove_trusted_publisher(
+            State(state.clone()),
+            Path((scoped_pkg.to_string(), tp.0.id)),
+            signed_headers(&owner, &del_tp_payload),
+        )
+        .await
+        .unwrap();
+        assert_eq!(deleted, StatusCode::NO_CONTENT);
+
+        let yanked = yank::yank(
+            State(state.clone()),
+            Path((scoped_pkg.to_string(), version.to_string())),
+        )
+        .await
+        .unwrap();
+        assert!(yanked.0.yanked);
+    }
+}

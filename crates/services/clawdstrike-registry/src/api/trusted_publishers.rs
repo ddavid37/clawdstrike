@@ -1,7 +1,7 @@
 //! Trusted publisher management API endpoints for OIDC-based CI/CD publishing.
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
@@ -22,8 +22,6 @@ pub struct AddTrustedPublisherRequest {
     pub workflow: Option<String>,
     /// Optional environment filter (e.g., "production").
     pub environment: Option<String>,
-    /// Ed25519 public key hex of the caller (used as `created_by`).
-    pub publisher_key: String,
 }
 
 #[derive(Serialize)]
@@ -51,13 +49,13 @@ pub struct TrustedPublishersListResponse {
 pub async fn add_trusted_publisher(
     State(state): State<AppState>,
     Path(name): Path<String>,
+    headers: HeaderMap,
     Json(req): Json<AddTrustedPublisherRequest>,
 ) -> Result<(StatusCode, Json<TrustedPublisherResponse>), RegistryError> {
+    let provider = req.provider.to_ascii_lowercase();
+
     // Validate provider.
-    if !matches!(
-        req.provider.to_ascii_lowercase().as_str(),
-        "github" | "gitlab"
-    ) {
+    if !matches!(provider.as_str(), "github" | "gitlab") {
         return Err(RegistryError::BadRequest(format!(
             "unsupported OIDC provider '{}'. Must be 'github' or 'gitlab'",
             req.provider
@@ -76,18 +74,26 @@ pub async fn add_trusted_publisher(
         .lock()
         .map_err(|e| RegistryError::Internal(format!("db lock poisoned: {e}")))?;
 
+    let payload = format!(
+        "trusted-publisher:add:{name}:{provider}:{}:{}:{}",
+        req.repository,
+        req.workflow.as_deref().unwrap_or(""),
+        req.environment.as_deref().unwrap_or("")
+    );
+    let caller_key = crate::auth::verify_signed_caller(&headers, &payload)?;
+
     // For scoped packages, verify the caller has owner/maintainer role.
     if let Some((scope, _basename)) = crate::auth::parse_package_scope(&name) {
-        crate::auth::authorize_scoped_publish(&db, &scope, &req.publisher_key)?;
+        crate::auth::authorize_scoped_publish(&db, &scope, &caller_key)?;
     }
 
     let id = db.add_trusted_publisher(
         &name,
-        &req.provider.to_ascii_lowercase(),
+        &provider,
         &req.repository,
         req.workflow.as_deref(),
         req.environment.as_deref(),
-        &req.publisher_key,
+        &caller_key,
     )?;
 
     let publishers = db.get_trusted_publishers(&name)?;
@@ -142,14 +148,22 @@ pub async fn list_trusted_publishers(
 /// DELETE /api/v1/packages/{name}/trusted-publishers/{id} — remove a trusted publisher (auth required).
 pub async fn remove_trusted_publisher(
     State(state): State<AppState>,
-    Path((_name, id)): Path<(String, i64)>,
+    Path((name, id)): Path<(String, i64)>,
+    headers: HeaderMap,
 ) -> Result<StatusCode, RegistryError> {
     let db = state
         .db
         .lock()
         .map_err(|e| RegistryError::Internal(format!("db lock poisoned: {e}")))?;
 
-    let deleted = db.remove_trusted_publisher(id)?;
+    let payload = format!("trusted-publisher:remove:{name}:{id}");
+    let caller_key = crate::auth::verify_signed_caller(&headers, &payload)?;
+
+    if let Some((scope, _basename)) = crate::auth::parse_package_scope(&name) {
+        crate::auth::authorize_scoped_publish(&db, &scope, &caller_key)?;
+    }
+
+    let deleted = db.remove_trusted_publisher_for_package(&name, id)?;
 
     if deleted {
         Ok(StatusCode::NO_CONTENT)

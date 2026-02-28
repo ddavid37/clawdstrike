@@ -109,12 +109,64 @@ impl CustomGuardRegistry {
 
         for guard_entry in &plugin_manifest.guards {
             let entrypoint = guard_entry.entrypoint.as_deref().unwrap_or("guard.wasm");
-            let wasm_path = install_path.join(entrypoint);
-            let wasm_bytes = std::fs::read(&wasm_path).map_err(|e| {
+            let entry_rel = std::path::Path::new(entrypoint);
+            if entry_rel.is_absolute() {
+                return Err(Error::ConfigError(format!(
+                    "guard entrypoint must be relative: {}",
+                    entrypoint
+                )));
+            }
+
+            // Lexically normalize to reject traversal attempts up-front.
+            let mut normalized_rel = std::path::PathBuf::new();
+            for component in entry_rel.components() {
+                match component {
+                    std::path::Component::CurDir => {}
+                    std::path::Component::ParentDir => {
+                        if !normalized_rel.pop() {
+                            return Err(Error::ConfigError(format!(
+                                "guard entrypoint escapes package root: {}",
+                                entrypoint
+                            )));
+                        }
+                    }
+                    std::path::Component::Normal(seg) => normalized_rel.push(seg),
+                    _ => {
+                        return Err(Error::ConfigError(format!(
+                            "invalid guard entrypoint path: {}",
+                            entrypoint
+                        )));
+                    }
+                }
+            }
+
+            let wasm_path = install_path.join(&normalized_rel);
+            let canonical_install = install_path.canonicalize().map_err(|e| {
+                Error::ConfigError(format!(
+                    "failed to canonicalize guard install path {}: {}",
+                    install_path.display(),
+                    e
+                ))
+            })?;
+            let canonical_wasm = wasm_path.canonicalize().map_err(|e| {
+                Error::ConfigError(format!(
+                    "failed to resolve WASM entrypoint for guard {}: {} ({})",
+                    guard_entry.name,
+                    wasm_path.display(),
+                    e
+                ))
+            })?;
+            if !canonical_wasm.starts_with(&canonical_install) {
+                return Err(Error::ConfigError(format!(
+                    "guard entrypoint escapes package root: {}",
+                    entrypoint
+                )));
+            }
+            let wasm_bytes = std::fs::read(&canonical_wasm).map_err(|e| {
                 Error::ConfigError(format!(
                     "failed to read WASM entrypoint for guard {}: {} ({})",
                     guard_entry.name,
-                    wasm_path.display(),
+                    canonical_wasm.display(),
                     e
                 ))
             })?;

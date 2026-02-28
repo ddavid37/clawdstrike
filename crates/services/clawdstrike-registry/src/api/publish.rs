@@ -149,26 +149,26 @@ pub async fn publish(
 
     let now = chrono::Utc::now().to_rfc3339();
 
-    // 8a. Append to Merkle tree.
-    let leaf_index = {
-        let leaf_data = LeafData {
-            package_name: name.clone(),
-            version: version.clone(),
-            content_hash: checksum.clone(),
-            publisher_key: req.publisher_key.clone(),
-            timestamp: now.clone(),
-        };
-        let leaf_hash = leaf_data
-            .leaf_hash()
-            .map_err(|e| RegistryError::Internal(format!("failed to compute leaf hash: {e}")))?;
-        let mut tree = state
-            .merkle_tree
-            .lock()
-            .map_err(|e| RegistryError::Internal(format!("merkle_tree lock poisoned: {e}")))?;
-        tree.append_hash(leaf_hash)
+    let leaf_data = LeafData {
+        package_name: name.clone(),
+        version: version.clone(),
+        content_hash: checksum.clone(),
+        publisher_key: req.publisher_key.clone(),
+        timestamp: now.clone(),
     };
+    let leaf_hash = leaf_data
+        .leaf_hash()
+        .map_err(|e| RegistryError::Internal(format!("failed to compute leaf hash: {e}")))?;
 
-    // 8b. Create publish attestation with real leaf_index.
+    // Lock the tree first to reserve the next leaf index. We only append after
+    // the DB write succeeds to avoid phantom leaves on failed inserts.
+    let mut tree = state
+        .merkle_tree
+        .lock()
+        .map_err(|e| RegistryError::Internal(format!("merkle_tree lock poisoned: {e}")))?;
+    let leaf_index = tree.tree_size();
+
+    // 8a. Create publish attestation with reserved leaf_index.
     let (attestation_hash, key_id) = {
         let key_mgr = state
             .key_manager
@@ -186,7 +186,7 @@ pub async fn publish(
             publisher_signature: &req.publisher_sig,
             content_hash: &checksum,
             registry_signature: &registry_sig_hex,
-            leaf_index: Some(leaf_index),
+            leaf_index: Some(leaf_index as u64),
             timestamp: &now,
         });
 
@@ -195,7 +195,8 @@ pub async fn publish(
         (att_hash, kid)
     };
 
-    // 9. Upsert package + insert version (under lock).
+    // 9. Upsert package + insert version (under lock). If this fails, no tree
+    // append occurs, preserving DB/log consistency.
     {
         let db = state
             .db
@@ -218,12 +219,20 @@ pub async fn publish(
             published_at: now,
             attestation_hash: Some(attestation_hash.clone()),
             key_id: Some(key_id.clone()),
-            leaf_index: Some(leaf_index),
+            leaf_index: Some(leaf_index as u64),
             download_count: 0,
         })?;
 
         // 10. Update sparse index.
         index::update_index(&db, &state.config.index_dir(), &name)?;
+    }
+
+    // 11. Append to Merkle tree only after DB + index commit succeeds.
+    let appended_index = tree.append_hash(leaf_hash);
+    if appended_index != leaf_index {
+        return Err(RegistryError::Internal(format!(
+            "reserved leaf index mismatch: expected {leaf_index}, got {appended_index}"
+        )));
     }
 
     tracing::info!(name = %name, version = %version, checksum = %checksum, leaf_index = leaf_index, "Package published");

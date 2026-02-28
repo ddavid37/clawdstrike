@@ -25,6 +25,10 @@ pub struct AttestationResponse {
     pub publisher_sig: String,
     /// Hex-encoded registry counter-signature (if available).
     pub registry_sig: Option<String>,
+    /// Key ID of the registry key used to counter-sign.
+    pub key_id: Option<String>,
+    /// Hex-encoded registry public key used for `registry_sig` verification.
+    pub registry_key: Option<String>,
     /// ISO-8601 publish timestamp.
     pub published_at: String,
 }
@@ -43,6 +47,24 @@ pub async fn get_attestation(
         .get_version(&name, &version)?
         .ok_or_else(|| RegistryError::NotFound(format!("version {version} of {name} not found")))?;
 
+    let registry_key = if v.registry_sig.is_some() {
+        if let Some(ref key_id) = v.key_id {
+            let key_mgr = state
+                .key_manager
+                .lock()
+                .map_err(|e| RegistryError::Internal(format!("key_manager lock poisoned: {e}")))?;
+            key_mgr
+                .all_keys()
+                .into_iter()
+                .find(|k| k.key_id == *key_id)
+                .map(|k| k.public_key.clone())
+        } else {
+            Some(state.registry_keypair.public_key().to_hex())
+        }
+    } else {
+        None
+    };
+
     Ok(Json(AttestationResponse {
         name: v.name,
         version: v.version,
@@ -50,6 +72,8 @@ pub async fn get_attestation(
         publisher_key: v.publisher_key,
         publisher_sig: v.publisher_sig,
         registry_sig: v.registry_sig,
+        key_id: v.key_id,
+        registry_key,
         published_at: v.published_at,
     }))
 }
@@ -67,6 +91,8 @@ mod tests {
             publisher_key: "pub_hex".into(),
             publisher_sig: "sig_hex".into(),
             registry_sig: Some("reg_sig_hex".into()),
+            key_id: Some("kid1".into()),
+            registry_key: Some("pk1".into()),
             published_at: "2026-02-25T10:30:00Z".into(),
         };
         let json = serde_json::to_value(&resp).unwrap();
@@ -83,6 +109,8 @@ mod tests {
             publisher_key: "pk".into(),
             publisher_sig: "sig".into(),
             registry_sig: None,
+            key_id: None,
+            registry_key: None,
             published_at: "2026-01-01T00:00:00Z".into(),
         };
         let json = serde_json::to_value(&resp).unwrap();

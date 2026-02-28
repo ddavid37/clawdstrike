@@ -5,6 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
+use hush_core::{PublicKey, Signature};
 
 use clawdstrike::pkg::archive;
 use clawdstrike::pkg::integrity::sign_package;
@@ -1070,11 +1071,11 @@ fn cmd_pkg_install_registry(
                     return ExitCode::RuntimeError;
                 }
             };
-            // The package info response has a `versions` array sorted by
-            // published_at ascending, so the last entry is the latest.
+            // The stats endpoint returns versions newest-first (DESC), so
+            // index 0 is the latest.
             let latest = info["versions"]
                 .as_array()
-                .and_then(|arr| arr.last())
+                .and_then(|arr| arr.first())
                 .and_then(|entry| entry["version"].as_str())
                 .or_else(|| info["latest_version"].as_str());
             match latest {
@@ -1169,6 +1170,7 @@ fn cmd_pkg_install_registry(
         let trust_ok = verify_install_trust(
             &installed.name,
             version_segment,
+            &installed.content_hash,
             &cfg,
             &client,
             trust_level,
@@ -1199,9 +1201,64 @@ fn cmd_pkg_install_registry(
 
 /// Verify trust level of a registry-installed package.
 /// Returns `true` if trust verification passes at the requested level.
+#[derive(Debug, serde::Deserialize)]
+struct RegistryAttestation {
+    checksum: String,
+    publisher_key: String,
+    publisher_sig: String,
+    registry_sig: Option<String>,
+    registry_key: Option<String>,
+}
+
+#[derive(Debug)]
+struct AttestationVerification {
+    publisher_verified: bool,
+    registry_verified: bool,
+}
+
+fn verify_attestation_against_hash(
+    attestation: &RegistryAttestation,
+    content_hash: &hush_core::Hash,
+) -> Result<AttestationVerification, String> {
+    if attestation.checksum != content_hash.to_hex() {
+        return Err("attestation checksum does not match installed package hash".to_string());
+    }
+
+    let publisher_key = PublicKey::from_hex(&attestation.publisher_key)
+        .map_err(|e| format!("invalid publisher key in attestation: {e}"))?;
+    let publisher_sig = Signature::from_hex(&attestation.publisher_sig)
+        .map_err(|e| format!("invalid publisher signature in attestation: {e}"))?;
+    if !publisher_key.verify(content_hash.as_bytes(), &publisher_sig) {
+        return Err("publisher signature verification failed".to_string());
+    }
+
+    let registry_verified = if let Some(registry_sig_hex) = &attestation.registry_sig {
+        let registry_key_hex = attestation
+            .registry_key
+            .as_deref()
+            .ok_or_else(|| "registry signature present but registry key missing".to_string())?;
+        let registry_key = PublicKey::from_hex(registry_key_hex)
+            .map_err(|e| format!("invalid registry key in attestation: {e}"))?;
+        let registry_sig = Signature::from_hex(registry_sig_hex)
+            .map_err(|e| format!("invalid registry signature in attestation: {e}"))?;
+        if !registry_key.verify(content_hash.as_bytes(), &registry_sig) {
+            return Err("registry counter-signature verification failed".to_string());
+        }
+        true
+    } else {
+        false
+    };
+
+    Ok(AttestationVerification {
+        publisher_verified: true,
+        registry_verified,
+    })
+}
+
 fn verify_install_trust(
     name: &str,
     version: &str,
+    content_hash: &hush_core::Hash,
     cfg: &RegistryConfig,
     client: &reqwest::blocking::Client,
     trust_level: &str,
@@ -1235,7 +1292,7 @@ fn verify_install_trust(
         return false;
     }
 
-    let attestation: serde_json::Value = match resp.json() {
+    let attestation: RegistryAttestation = match resp.json() {
         Ok(v) => v,
         Err(e) => {
             let _ = writeln!(stderr, "Warning: invalid attestation response: {e}");
@@ -1243,29 +1300,23 @@ fn verify_install_trust(
         }
     };
 
-    // At "signed" level, we need a publisher signature.
-    let has_publisher_sig = attestation
-        .get("publisher_sig")
-        .and_then(|v| v.as_str())
-        .is_some_and(|s| !s.is_empty());
-
-    if !has_publisher_sig {
-        let _ = writeln!(stderr, "Error: package has no publisher signature");
-        return false;
-    }
+    let verified = match verify_attestation_against_hash(&attestation, content_hash) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: {e}");
+            return false;
+        }
+    };
 
     if trust_level == "signed" {
-        return true;
+        return verified.publisher_verified;
     }
 
-    // At "verified" level, we also need a registry counter-signature.
-    let has_registry_sig = attestation
-        .get("registry_sig")
-        .and_then(|v| v.as_str())
-        .is_some_and(|s| !s.is_empty());
-
-    if !has_registry_sig {
-        let _ = writeln!(stderr, "Error: package has no registry counter-signature");
+    if !verified.registry_verified {
+        let _ = writeln!(
+            stderr,
+            "Error: package has no valid registry counter-signature"
+        );
         return false;
     }
 
@@ -1307,6 +1358,31 @@ fn tempdir_for_download() -> std::io::Result<PathBuf> {
     let dir = std::env::temp_dir().join(format!("clawdstrike_dl_{nonce:x}"));
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
+}
+
+struct CallerAuthHeaders {
+    key_hex: String,
+    sig_hex: String,
+    ts: String,
+}
+
+fn build_caller_auth_headers(
+    cfg: &RegistryConfig,
+    payload: &str,
+    stderr: &mut dyn Write,
+) -> Result<CallerAuthHeaders, ExitCode> {
+    let keypair = load_or_generate_publisher_keypair(cfg, stderr).map_err(|e| {
+        let _ = writeln!(stderr, "Error: {e}");
+        ExitCode::RuntimeError
+    })?;
+    let ts = chrono::Utc::now().to_rfc3339();
+    let msg = format!("clawdstrike-registry-auth:v1:{payload}:{ts}");
+    let sig = keypair.sign(msg.as_bytes()).to_hex();
+    Ok(CallerAuthHeaders {
+        key_hex: keypair.public_key().to_hex(),
+        sig_hex: sig,
+        ts,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1435,6 +1511,7 @@ fn cmd_pkg_verify(
     let mut content_ok = true;
     let mut publisher_ok = false;
     let mut registry_ok = false;
+    let mut attestation_error: Option<String> = None;
 
     // Read store metadata for installed_at timestamp.
     let installed_at = match std::fs::read_to_string(&meta_path) {
@@ -1492,7 +1569,7 @@ fn cmd_pkg_verify(
         urlencoding_simple(version)
     );
 
-    let attestation: Option<serde_json::Value> = client
+    let attestation: Option<RegistryAttestation> = client
         .get(&attestation_url)
         .send()
         .ok()
@@ -1500,24 +1577,17 @@ fn cmd_pkg_verify(
         .and_then(|r| r.json().ok());
 
     if let Some(ref att) = attestation {
-        // Check publisher signature.
-        let pub_sig = att
-            .get("publisher_sig")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let pub_key = att
-            .get("publisher_key")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        publisher_ok = !pub_sig.is_empty() && !pub_key.is_empty();
-
-        // Check registry counter-signature.
-        let reg_sig = att
-            .get("registry_sig")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        registry_ok = !reg_sig.is_empty();
+        match verify_attestation_against_hash(att, &pkg.content_hash) {
+            Ok(v) => {
+                publisher_ok = v.publisher_verified;
+                registry_ok = v.registry_verified;
+            }
+            Err(e) => {
+                attestation_error = Some(e);
+            }
+        }
+    } else {
+        attestation_error = Some("attestation not available from registry".to_string());
     }
 
     // Fetch Merkle proof (for certified level).
@@ -1574,10 +1644,7 @@ fn cmd_pkg_verify(
     );
 
     if let Some(ref att) = attestation {
-        let pub_key = att
-            .get("publisher_key")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
+        let pub_key = att.publisher_key.as_str();
         let pub_key_display = if pub_key.len() > 16 {
             &pub_key[..16]
         } else {
@@ -1590,10 +1657,7 @@ fn cmd_pkg_verify(
             pub_key_display
         );
 
-        let reg_sig = att
-            .get("registry_sig")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let reg_sig = att.registry_sig.as_deref().unwrap_or("");
         if registry_ok {
             let reg_display = if reg_sig.len() > 16 {
                 &reg_sig[..16]
@@ -1613,6 +1677,10 @@ fn cmd_pkg_verify(
                 mark(registry_ok)
             );
         }
+
+        if let Some(ref err) = attestation_error {
+            let _ = writeln!(stdout, "  x Attestation validity  {}", err);
+        }
     } else {
         let _ = writeln!(
             stdout,
@@ -1624,6 +1692,9 @@ fn cmd_pkg_verify(
             "  {} Registry attestation  Not available",
             mark(registry_ok)
         );
+        if let Some(ref err) = attestation_error {
+            let _ = writeln!(stdout, "  x Attestation validity  {}", err);
+        }
     }
 
     if transparency_ok {
@@ -1887,21 +1958,13 @@ fn cmd_pkg_publish(
         }
     };
 
-    let pkg_part = match reqwest::blocking::multipart::Part::bytes(cpkg_bytes)
-        .file_name(archive_name.clone())
-        .mime_str("application/octet-stream")
-    {
-        Ok(p) => p,
-        Err(e) => {
-            let _ = writeln!(stderr, "Error: failed to build multipart form: {e}");
-            return ExitCode::RuntimeError;
-        }
-    };
-
-    let form = reqwest::blocking::multipart::Form::new()
-        .part("package", pkg_part)
-        .text("signature", signature.signature.to_hex())
-        .text("public_key", keypair.public_key().to_hex());
+    use base64::Engine as _;
+    let publish_body = serde_json::json!({
+        "archive_base64": base64::engine::general_purpose::STANDARD.encode(&cpkg_bytes),
+        "publisher_key": keypair.public_key().to_hex(),
+        "publisher_sig": signature.signature.to_hex(),
+        "manifest_toml": manifest_str,
+    });
 
     let mut request_builder = client.post(&url).bearer_auth(&auth_token);
 
@@ -1918,7 +1981,7 @@ fn cmd_pkg_publish(
         request_builder = request_builder.header("X-Clawdstrike-Oidc-Provider", provider);
     }
 
-    let resp = match request_builder.multipart(form).send() {
+    let resp = match request_builder.json(&publish_body).send() {
         Ok(r) => r,
         Err(e) => {
             let _ = writeln!(stderr, "Error: publish request failed: {e}");
@@ -2071,14 +2134,6 @@ fn cmd_trusted_publisher_add(
         }
     };
 
-    let keypair = match load_or_generate_publisher_keypair(&cfg, stderr) {
-        Ok(kp) => kp,
-        Err(e) => {
-            let _ = writeln!(stderr, "Error: {e}");
-            return ExitCode::RuntimeError;
-        }
-    };
-
     let client = match reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
@@ -2096,10 +2151,10 @@ fn cmd_trusted_publisher_add(
         urlencoding_simple(package)
     );
 
+    let provider_norm = provider.to_ascii_lowercase();
     let mut body = serde_json::json!({
-        "provider": provider,
+        "provider": provider_norm,
         "repository": repo,
-        "publisher_key": keypair.public_key().to_hex(),
     });
     if let Some(wf) = workflow {
         body["workflow"] = serde_json::Value::String(wf.to_string());
@@ -2108,9 +2163,22 @@ fn cmd_trusted_publisher_add(
         body["environment"] = serde_json::Value::String(env.to_string());
     }
 
+    let payload = format!(
+        "trusted-publisher:add:{package}:{provider_norm}:{repo}:{}:{}",
+        workflow.unwrap_or(""),
+        environment.unwrap_or("")
+    );
+    let caller = match build_caller_auth_headers(&cfg, &payload, stderr) {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+
     let resp = match client
         .post(&url)
         .bearer_auth(&auth_token)
+        .header("X-Clawdstrike-Caller-Key", &caller.key_hex)
+        .header("X-Clawdstrike-Caller-Sig", &caller.sig_hex)
+        .header("X-Clawdstrike-Caller-Ts", &caller.ts)
         .json(&body)
         .send()
     {
@@ -2256,7 +2324,20 @@ fn cmd_trusted_publisher_remove(
         id
     );
 
-    let resp = match client.delete(&url).bearer_auth(&auth_token).send() {
+    let payload = format!("trusted-publisher:remove:{package}:{id}");
+    let caller = match build_caller_auth_headers(&cfg, &payload, stderr) {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+
+    let resp = match client
+        .delete(&url)
+        .bearer_auth(&auth_token)
+        .header("X-Clawdstrike-Caller-Key", &caller.key_hex)
+        .header("X-Clawdstrike-Caller-Sig", &caller.sig_hex)
+        .header("X-Clawdstrike-Caller-Ts", &caller.ts)
+        .send()
+    {
         Ok(r) => r,
         Err(e) => {
             let _ = writeln!(stderr, "Error: request failed: {e}");
@@ -2331,7 +2412,7 @@ fn cmd_pkg_search(
         }
     };
 
-    let results = match resp_json.get("results").and_then(|r| r.as_array()) {
+    let results = match resp_json.get("packages").and_then(|r| r.as_array()) {
         Some(r) => r,
         None => {
             let _ = writeln!(stdout, "No packages found.");
@@ -2350,7 +2431,7 @@ fn cmd_pkg_search(
     for result in results {
         let name = result.get("name").and_then(|n| n.as_str()).unwrap_or("?");
         let version = result
-            .get("version")
+            .get("latest_version")
             .and_then(|v| v.as_str())
             .unwrap_or("?");
         let description = result
@@ -3202,9 +3283,18 @@ fn cmd_org_invite(
         "role": role,
     });
 
+    let payload = format!("org:invite:{org}:{publisher_key}:{role}");
+    let caller = match build_caller_auth_headers(&cfg, &payload, stderr) {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+
     let resp = match client
         .post(&url)
         .bearer_auth(&auth_token)
+        .header("X-Clawdstrike-Caller-Key", &caller.key_hex)
+        .header("X-Clawdstrike-Caller-Sig", &caller.sig_hex)
+        .header("X-Clawdstrike-Caller-Ts", &caller.ts)
         .json(&body)
         .send()
     {
@@ -3267,7 +3357,20 @@ fn cmd_org_remove(
         urlencoding_simple(publisher_key)
     );
 
-    let resp = match client.delete(&url).bearer_auth(&auth_token).send() {
+    let payload = format!("org:remove:{org}:{publisher_key}");
+    let caller = match build_caller_auth_headers(&cfg, &payload, stderr) {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+
+    let resp = match client
+        .delete(&url)
+        .bearer_auth(&auth_token)
+        .header("X-Clawdstrike-Caller-Key", &caller.key_hex)
+        .header("X-Clawdstrike-Caller-Sig", &caller.sig_hex)
+        .header("X-Clawdstrike-Caller-Ts", &caller.ts)
+        .send()
+    {
         Ok(r) => r,
         Err(e) => {
             let _ = writeln!(stderr, "Error: request failed: {e}");

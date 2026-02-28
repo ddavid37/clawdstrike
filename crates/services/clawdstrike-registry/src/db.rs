@@ -707,11 +707,17 @@ impl RegistryDb {
         Ok(rows)
     }
 
-    /// Remove a trusted publisher by ID. Returns `true` if a row was deleted.
-    pub fn remove_trusted_publisher(&self, id: i64) -> Result<bool, RegistryError> {
-        let count = self
-            .conn
-            .execute("DELETE FROM trusted_publishers WHERE id = ?1", params![id])?;
+    /// Remove a trusted publisher by package + ID.
+    /// Returns `true` if a row was deleted.
+    pub fn remove_trusted_publisher_for_package(
+        &self,
+        package_name: &str,
+        id: i64,
+    ) -> Result<bool, RegistryError> {
+        let count = self.conn.execute(
+            "DELETE FROM trusted_publishers WHERE package_name = ?1 AND id = ?2",
+            params![package_name, id],
+        )?;
         Ok(count > 0)
     }
 
@@ -1461,7 +1467,9 @@ mod tests {
         assert_eq!(publishers[0].workflow.as_deref(), Some("release.yml"));
         assert!(publishers[0].environment.is_none());
 
-        let deleted = db.remove_trusted_publisher(id).unwrap();
+        let deleted = db
+            .remove_trusted_publisher_for_package("my-guard", id)
+            .unwrap();
         assert!(deleted);
 
         let publishers = db.get_trusted_publishers("my-guard").unwrap();
@@ -1471,8 +1479,30 @@ mod tests {
     #[test]
     fn trusted_publisher_remove_nonexistent() {
         let db = test_db();
-        let deleted = db.remove_trusted_publisher(9999).unwrap();
+        let deleted = db
+            .remove_trusted_publisher_for_package("my-guard", 9999)
+            .unwrap();
         assert!(!deleted);
+    }
+
+    #[test]
+    fn trusted_publisher_remove_scoped_to_package() {
+        let db = test_db();
+        let id = db
+            .add_trusted_publisher("pkg-a", "github", "acme/pkg-a", None, None, "key1")
+            .unwrap();
+        db.add_trusted_publisher("pkg-b", "github", "acme/pkg-b", None, None, "key1")
+            .unwrap();
+
+        let deleted_wrong_package = db
+            .remove_trusted_publisher_for_package("pkg-b", id)
+            .unwrap();
+        assert!(!deleted_wrong_package);
+
+        let deleted_correct = db
+            .remove_trusted_publisher_for_package("pkg-a", id)
+            .unwrap();
+        assert!(deleted_correct);
     }
 
     #[test]

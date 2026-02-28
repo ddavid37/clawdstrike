@@ -19,6 +19,10 @@ mod storage;
 use config::Config;
 use state::AppState;
 
+fn bind_addr(host: &str, port: u16) -> anyhow::Result<SocketAddr> {
+    Ok(format!("{host}:{port}").parse()?)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
@@ -37,11 +41,28 @@ async fn main() -> anyhow::Result<()> {
 
     let app = api::create_router(state);
 
-    let addr: SocketAddr = format!("{host}:{port}").parse()?;
+    let addr = bind_addr(&host, port)?;
     tracing::info!(%addr, "Starting clawdstrike-registry");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app.into_make_service()).await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bind_addr_parses_valid_input() {
+        let addr = bind_addr("127.0.0.1", 3100).unwrap();
+        assert_eq!(addr.to_string(), "127.0.0.1:3100");
+    }
+
+    #[test]
+    fn bind_addr_rejects_invalid_host() {
+        let err = bind_addr("bad host", 3100).unwrap_err();
+        assert!(err.to_string().contains("invalid"));
+    }
 }

@@ -48,5 +48,5 @@ jobs:
 
       - name: Publish
         env:
-          CLAWDSTRIKE_REGISTRY_TOKEN: ${{ secrets.CLAWDSTRIKE_TOKEN }}
+          CLAWDSTRIKE_AUTH_TOKEN: ${{ secrets.CLAWDSTRIKE_TOKEN }}
         run: clawdstrike pkg publish --registry "${CLAWDSTRIKE_REGISTRY_URL:-https://registry.clawdstrike.com}"

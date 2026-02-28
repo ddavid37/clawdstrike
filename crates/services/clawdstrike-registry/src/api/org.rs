@@ -1,7 +1,7 @@
 //! Organization management API endpoints.
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
@@ -49,8 +49,6 @@ pub struct MemberEntry {
 
 #[derive(Deserialize)]
 pub struct InviteMemberRequest {
-    /// Ed25519 public key hex of the caller (must be owner or maintainer).
-    pub caller_key: String,
     pub publisher_key: String,
     #[serde(default = "default_role")]
     pub role: String,
@@ -175,6 +173,7 @@ pub async fn list_members(
 pub async fn invite_member(
     State(state): State<AppState>,
     Path(name): Path<String>,
+    headers: HeaderMap,
     Json(req): Json<InviteMemberRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), RegistryError> {
     if !matches!(req.role.as_str(), "owner" | "maintainer" | "member") {
@@ -193,8 +192,11 @@ pub async fn invite_member(
         .get_organization(&name)?
         .ok_or_else(|| RegistryError::NotFound(format!("organization '{}' not found", name)))?;
 
+    let payload = format!("org:invite:{name}:{}:{}", req.publisher_key, req.role);
+    let caller_key = crate::auth::verify_signed_caller(&headers, &payload)?;
+
     // Verify the caller is an owner or maintainer of the organization.
-    let caller_role = db.get_member_role(org.id, &req.caller_key)?;
+    let caller_role = db.get_member_role(org.id, &caller_key)?;
     match caller_role.as_deref() {
         Some("owner" | "maintainer") => {}
         Some(_) => {
@@ -211,7 +213,7 @@ pub async fn invite_member(
         }
     }
 
-    db.add_org_member(org.id, &req.publisher_key, &req.role, Some(&req.caller_key))?;
+    db.add_org_member(org.id, &req.publisher_key, &req.role, Some(&caller_key))?;
 
     Ok((
         StatusCode::CREATED,
@@ -227,6 +229,7 @@ pub async fn invite_member(
 pub async fn remove_member(
     State(state): State<AppState>,
     Path((name, key)): Path<(String, String)>,
+    headers: HeaderMap,
 ) -> Result<StatusCode, RegistryError> {
     let db = state
         .db
@@ -236,6 +239,34 @@ pub async fn remove_member(
     let org = db
         .get_organization(&name)?
         .ok_or_else(|| RegistryError::NotFound(format!("organization '{}' not found", name)))?;
+
+    let payload = format!("org:remove:{name}:{key}");
+    let caller_key = crate::auth::verify_signed_caller(&headers, &payload)?;
+    let caller_role = db.get_member_role(org.id, &caller_key)?;
+    match caller_role.as_deref() {
+        Some("owner" | "maintainer") => {}
+        Some(_) => {
+            return Err(RegistryError::Unauthorized(format!(
+                "caller does not have permission to remove members from @{}",
+                name
+            )));
+        }
+        None => {
+            return Err(RegistryError::Unauthorized(format!(
+                "caller is not a member of @{}",
+                name
+            )));
+        }
+    }
+
+    // Maintainers cannot remove organization owners.
+    if caller_role.as_deref() == Some("maintainer")
+        && db.get_member_role(org.id, &key)?.as_deref() == Some("owner")
+    {
+        return Err(RegistryError::Unauthorized(
+            "maintainers cannot remove organization owners".into(),
+        ));
+    }
 
     db.remove_org_member(org.id, &key)?;
 

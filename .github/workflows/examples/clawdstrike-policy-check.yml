@@ -6,7 +6,7 @@
 # Features:
 #   - Lints all policy YAML files for errors, warnings, and best practices
 #   - Outputs SARIF for GitHub Security tab annotations
-#   - Verifies package integrity for installed packages
+#   - Verifies package archive integrity when a package manifest exists
 #   - Runs policy test suites with coverage checks
 
 name: Clawdstrike Policy Check
@@ -62,9 +62,13 @@ jobs:
           sarif_file: sarif-results/
         continue-on-error: true
 
-      - name: Verify package integrity
+      - name: Verify package archive integrity
         if: hashFiles('clawdstrike-pkg.toml') != ''
-        run: clawdstrike pkg verify . --trust-level signed || true
+        run: |
+          clawdstrike pkg pack
+          for f in *.cpkg; do
+            clawdstrike guard validate "$f"
+          done
 
   test:
     name: Policy Tests

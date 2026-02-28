@@ -3,14 +3,21 @@
 use axum::{
     body::Body,
     extract::State,
-    http::{Request, StatusCode},
+    http::{HeaderMap, Request, StatusCode},
     middleware::Next,
     response::Response,
 };
+use chrono::Utc;
+use hush_core::{PublicKey, Signature};
 
 use crate::db::RegistryDb;
 use crate::error::RegistryError;
 use crate::state::AppState;
+
+const CALLER_KEY_HEADER: &str = "X-Clawdstrike-Caller-Key";
+const CALLER_SIG_HEADER: &str = "X-Clawdstrike-Caller-Sig";
+const CALLER_TS_HEADER: &str = "X-Clawdstrike-Caller-Ts";
+const MAX_CALLER_CLOCK_SKEW_SECS: i64 = 300;
 
 /// Extract bearer token from the Authorization header.
 fn extract_bearer_token(req: &Request<Body>) -> Option<String> {
@@ -36,6 +43,57 @@ pub fn is_oidc_auth(req: &Request<Body>) -> bool {
         .and_then(|v| v.to_str().ok())
         .map(|v| v.eq_ignore_ascii_case("oidc"))
         .unwrap_or(false)
+}
+
+/// Build canonical bytes for caller-auth signatures.
+pub fn caller_signature_message(payload: &str, timestamp_rfc3339: &str) -> String {
+    format!("clawdstrike-registry-auth:v1:{payload}:{timestamp_rfc3339}")
+}
+
+/// Verify signed caller headers and return the caller public key hex.
+///
+/// Callers must send:
+/// - `X-Clawdstrike-Caller-Key`: Ed25519 public key hex
+/// - `X-Clawdstrike-Caller-Sig`: Ed25519 signature hex over canonical message
+/// - `X-Clawdstrike-Caller-Ts`: RFC-3339 timestamp used in canonical message
+pub fn verify_signed_caller(headers: &HeaderMap, payload: &str) -> Result<String, RegistryError> {
+    let caller_key_hex = headers
+        .get(CALLER_KEY_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| RegistryError::Unauthorized("missing caller key header".into()))?;
+    let caller_sig_hex = headers
+        .get(CALLER_SIG_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| RegistryError::Unauthorized("missing caller signature header".into()))?;
+    let caller_ts = headers
+        .get(CALLER_TS_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| RegistryError::Unauthorized("missing caller timestamp header".into()))?;
+
+    let ts = chrono::DateTime::parse_from_rfc3339(caller_ts).map_err(|e| {
+        RegistryError::Unauthorized(format!("invalid caller timestamp (RFC-3339 required): {e}"))
+    })?;
+    let now = Utc::now();
+    let skew = (now - ts.with_timezone(&Utc)).num_seconds().abs();
+    if skew > MAX_CALLER_CLOCK_SKEW_SECS {
+        return Err(RegistryError::Unauthorized(
+            "caller signature timestamp outside allowed clock skew".into(),
+        ));
+    }
+
+    let caller_key = PublicKey::from_hex(caller_key_hex)
+        .map_err(|e| RegistryError::Unauthorized(format!("invalid caller key hex: {e}")))?;
+    let caller_sig = Signature::from_hex(caller_sig_hex)
+        .map_err(|e| RegistryError::Unauthorized(format!("invalid caller signature hex: {e}")))?;
+
+    let msg = caller_signature_message(payload, caller_ts);
+    if !caller_key.verify(msg.as_bytes(), &caller_sig) {
+        return Err(RegistryError::Unauthorized(
+            "caller signature verification failed".into(),
+        ));
+    }
+
+    Ok(caller_key_hex.to_string())
 }
 
 /// Middleware that validates a bearer token against the configured API key.
@@ -116,6 +174,7 @@ pub fn authorize_scoped_publish(
 mod tests {
     use super::*;
     use axum::http::header;
+    use hush_core::Keypair;
 
     fn make_request(auth: Option<&str>) -> Request<Body> {
         let mut builder = Request::builder();
@@ -147,6 +206,36 @@ mod tests {
     fn extract_wrong_scheme() {
         let req = make_request(Some("Basic abc123"));
         assert!(extract_bearer_token(&req).is_none());
+    }
+
+    #[test]
+    fn verify_signed_caller_accepts_valid_signature() {
+        let kp = Keypair::from_seed(&[9u8; 32]);
+        let ts = Utc::now().to_rfc3339();
+        let payload = "org:invite:acme:member-key:member";
+        let msg = caller_signature_message(payload, &ts);
+        let sig = kp.sign(msg.as_bytes()).to_hex();
+
+        let mut headers = HeaderMap::new();
+        headers.insert(CALLER_KEY_HEADER, kp.public_key().to_hex().parse().unwrap());
+        headers.insert(CALLER_SIG_HEADER, sig.parse().unwrap());
+        headers.insert(CALLER_TS_HEADER, ts.parse().unwrap());
+
+        let caller = verify_signed_caller(&headers, payload).unwrap();
+        assert_eq!(caller, kp.public_key().to_hex());
+    }
+
+    #[test]
+    fn verify_signed_caller_rejects_bad_signature() {
+        let kp = Keypair::from_seed(&[9u8; 32]);
+        let ts = Utc::now().to_rfc3339();
+        let payload = "org:invite:acme:member-key:member";
+        let mut headers = HeaderMap::new();
+        headers.insert(CALLER_KEY_HEADER, kp.public_key().to_hex().parse().unwrap());
+        headers.insert(CALLER_SIG_HEADER, "00".parse().unwrap());
+        headers.insert(CALLER_TS_HEADER, ts.parse().unwrap());
+        let err = verify_signed_caller(&headers, payload).unwrap_err();
+        assert!(err.to_string().contains("invalid caller signature hex"));
     }
 
     // Scope parsing tests.

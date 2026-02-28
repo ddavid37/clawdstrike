@@ -4,6 +4,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
+use clawdstrike::pkg::{archive, integrity::sign_package, manifest::parse_pkg_manifest_toml};
+use hush_core::{PublicKey, Signature};
 
 use crate::registry_config::RegistryConfig;
 use crate::ExitCode;
@@ -95,6 +97,144 @@ pub fn cmd_mirror(
     }
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct MirrorAttestation {
+    checksum: String,
+    publisher_key: String,
+    publisher_sig: String,
+    registry_sig: Option<String>,
+    registry_key: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct MirrorSearchResponse {
+    packages: Vec<MirrorSearchEntry>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct MirrorSearchEntry {
+    name: String,
+    latest_version: Option<String>,
+}
+
+fn urlencoding_simple(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => {
+                out.push('%');
+                out.push(char::from(HEX_UPPER[(b >> 4) as usize]));
+                out.push(char::from(HEX_UPPER[(b & 0x0f) as usize]));
+            }
+        }
+    }
+    out
+}
+
+const HEX_UPPER: [u8; 16] = *b"0123456789ABCDEF";
+
+fn verify_attestation(
+    attestation: &MirrorAttestation,
+    expected_hash: Option<&hush_core::Hash>,
+) -> Result<(bool, bool), String> {
+    let content_hash = hush_core::Hash::from_hex(&attestation.checksum)
+        .map_err(|e| format!("invalid checksum in attestation: {e}"))?;
+    if let Some(hash) = expected_hash {
+        if *hash != content_hash {
+            return Err("attestation checksum mismatch".to_string());
+        }
+    }
+
+    let publisher_key = PublicKey::from_hex(&attestation.publisher_key)
+        .map_err(|e| format!("invalid publisher key in attestation: {e}"))?;
+    let publisher_sig = Signature::from_hex(&attestation.publisher_sig)
+        .map_err(|e| format!("invalid publisher signature in attestation: {e}"))?;
+    if !publisher_key.verify(content_hash.as_bytes(), &publisher_sig) {
+        return Err("publisher signature verification failed".to_string());
+    }
+
+    let registry_verified = if let Some(registry_sig_hex) = &attestation.registry_sig {
+        let registry_key_hex = attestation
+            .registry_key
+            .as_deref()
+            .ok_or_else(|| "registry signature present without registry key".to_string())?;
+        let registry_key = PublicKey::from_hex(registry_key_hex)
+            .map_err(|e| format!("invalid registry key in attestation: {e}"))?;
+        let registry_sig = Signature::from_hex(registry_sig_hex)
+            .map_err(|e| format!("invalid registry signature in attestation: {e}"))?;
+        if !registry_key.verify(content_hash.as_bytes(), &registry_sig) {
+            return Err("registry counter-signature verification failed".to_string());
+        }
+        true
+    } else {
+        false
+    };
+
+    Ok((true, registry_verified))
+}
+
+fn fetch_attestation(
+    client: &reqwest::blocking::Client,
+    base_url: &str,
+    name: &str,
+    version: &str,
+) -> Result<MirrorAttestation, String> {
+    let url = format!(
+        "{}/api/v1/packages/{}/{}/attestation",
+        base_url.trim_end_matches('/'),
+        urlencoding_simple(name),
+        urlencoding_simple(version)
+    );
+    let resp = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("failed to fetch attestation: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!(
+            "attestation endpoint returned HTTP {}",
+            resp.status()
+        ));
+    }
+    resp.json::<MirrorAttestation>()
+        .map_err(|e| format!("invalid attestation response: {e}"))
+}
+
+fn resolve_latest_version(
+    client: &reqwest::blocking::Client,
+    from: &str,
+    name: &str,
+) -> Result<String, String> {
+    let stats_url = format!(
+        "{}/api/v1/packages/{}/stats",
+        from.trim_end_matches('/'),
+        urlencoding_simple(name)
+    );
+    let stats_resp = client
+        .get(&stats_url)
+        .send()
+        .map_err(|e| format!("failed to fetch package stats: {e}"))?;
+    if !stats_resp.status().is_success() {
+        return Err(format!(
+            "failed to resolve latest version (HTTP {})",
+            stats_resp.status()
+        ));
+    }
+    let stats: serde_json::Value = stats_resp
+        .json()
+        .map_err(|e| format!("invalid stats response: {e}"))?;
+    stats
+        .get("versions")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|entry| entry.get("version"))
+        .and_then(|v| v.as_str())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| "latest version missing from stats response".to_string())
+}
+
 // ---------------------------------------------------------------------------
 // mirror sync
 // ---------------------------------------------------------------------------
@@ -108,14 +248,6 @@ fn cmd_mirror_sync(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
-    let version_segment = version.unwrap_or("latest");
-    let url = format!(
-        "{}/api/v1/packages/{}/{}/download",
-        from.trim_end_matches('/'),
-        name,
-        version_segment
-    );
-
     let client = match build_client() {
         Ok(c) => c,
         Err(e) => {
@@ -123,6 +255,24 @@ fn cmd_mirror_sync(
             return ExitCode::RuntimeError;
         }
     };
+
+    let resolved_version = match version {
+        Some(v) => v.to_string(),
+        None => match resolve_latest_version(&client, from, name) {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = writeln!(stderr, "Error: {e}");
+                return ExitCode::RuntimeError;
+            }
+        },
+    };
+    let version_segment = resolved_version.as_str();
+    let url = format!(
+        "{}/api/v1/packages/{}/{}/download",
+        from.trim_end_matches('/'),
+        urlencoding_simple(name),
+        urlencoding_simple(version_segment)
+    );
 
     let _ = writeln!(
         stdout,
@@ -165,65 +315,45 @@ fn cmd_mirror_sync(
         hash.to_hex()
     );
 
-    // Fetch and verify signature from upstream if available
-    let sig_url = format!(
-        "{}/api/v1/packages/{}/{}/signature",
-        from.trim_end_matches('/'),
-        name,
-        version_segment
-    );
-
-    let verified = match client.get(&sig_url).send() {
-        Ok(sig_resp) if sig_resp.status().is_success() => {
-            match sig_resp.json::<clawdstrike::pkg::integrity::PackageSignature>() {
-                Ok(sig) => {
-                    if sig.hash != hash {
-                        let _ = writeln!(
-                            stderr,
-                            "Error: package hash mismatch (expected {}, got {})",
-                            sig.hash.to_hex(),
-                            hash.to_hex()
-                        );
-                        return ExitCode::Fail;
-                    }
-                    if let Some(ref pk) = sig.public_key {
-                        if pk.verify(hash.as_bytes(), &sig.signature) {
-                            let _ =
-                                writeln!(stdout, "Signature verified (publisher: {})", pk.to_hex());
-                            true
-                        } else {
-                            let _ = writeln!(stderr, "Error: signature verification failed");
-                            return ExitCode::Fail;
-                        }
-                    } else {
-                        let _ = writeln!(
-                            stdout,
-                            "Warning: no public key in signature, hash-only verification"
-                        );
-                        true
-                    }
-                }
-                Err(e) => {
-                    let _ = writeln!(
-                        stdout,
-                        "Warning: could not parse signature: {e} (hash-only verification)"
-                    );
-                    true
-                }
-            }
-        }
-        _ => {
-            let _ = writeln!(
-                stdout,
-                "Warning: no signature available from upstream (hash-only verification)"
-            );
-            true
+    let attestation = match fetch_attestation(&client, from, name, version_segment) {
+        Ok(a) => a,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: {e}");
+            return ExitCode::Fail;
         }
     };
-
-    if !verified {
+    let (publisher_verified, registry_verified) =
+        match verify_attestation(&attestation, Some(&hash)) {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = writeln!(stderr, "Error: trust verification failed: {e}");
+                return ExitCode::Fail;
+            }
+        };
+    if !publisher_verified {
+        let _ = writeln!(stderr, "Error: package is not publisher-signed");
         return ExitCode::Fail;
     }
+
+    let proof_url = format!(
+        "{}/api/v1/packages/{}/{}/proof",
+        from.trim_end_matches('/'),
+        urlencoding_simple(name),
+        urlencoding_simple(version_segment)
+    );
+    let certified = client
+        .get(&proof_url)
+        .send()
+        .ok()
+        .is_some_and(|r| r.status().is_success() && registry_verified);
+    let trust = if certified {
+        "certified"
+    } else if registry_verified {
+        "verified"
+    } else {
+        "signed"
+    };
+    let _ = writeln!(stdout, "Trust verified: {}", trust);
 
     let filename = format!(
         "{}-{}.cpkg",
@@ -237,7 +367,7 @@ fn cmd_mirror_sync(
     }
 
     if let Some(to_url) = to {
-        return republish_to_registry(to_url, name, &bytes, stdout, stderr);
+        return republish_to_registry(to_url, &bytes, stdout, stderr);
     }
 
     // Default: save to current directory
@@ -284,17 +414,23 @@ fn save_to_dir(
 
 fn republish_to_registry(
     to_url: &str,
-    name: &str,
     bytes: &[u8],
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
     let cfg = RegistryConfig::load(Some(to_url));
-    let upload_url = format!(
-        "{}/api/v1/packages/{}/upload",
-        cfg.registry_url.trim_end_matches('/'),
-        name
-    );
+    let upload_url = format!("{}/api/v1/packages", cfg.registry_url.trim_end_matches('/'));
+
+    let auth_token = match &cfg.auth_token {
+        Some(t) => t.clone(),
+        None => {
+            let _ = writeln!(
+                stderr,
+                "Error: target registry auth token missing (set CLAWDSTRIKE_AUTH_TOKEN)"
+            );
+            return ExitCode::ConfigError;
+        }
+    };
 
     let client = match build_client() {
         Ok(c) => c,
@@ -304,12 +440,44 @@ fn republish_to_registry(
         }
     };
 
-    let mut req = client.post(&upload_url).body(bytes.to_vec());
-    if let Some(ref token) = cfg.auth_token {
-        req = req.header("Authorization", format!("Bearer {token}"));
-    }
+    let keypair = match crate::registry_config::load_or_generate_publisher_keypair(&cfg, stderr) {
+        Ok(kp) => kp,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
 
-    match req.send() {
+    let (archive_path, manifest_toml, _tmp_dir) = match write_archive_and_extract_manifest(bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: cannot parse mirrored package manifest: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    let signature = match sign_package(&archive_path, &keypair) {
+        Ok(sig) => sig,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: failed to sign package for republish: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    use base64::Engine as _;
+    let body = serde_json::json!({
+        "archive_base64": base64::engine::general_purpose::STANDARD.encode(bytes),
+        "publisher_key": keypair.public_key().to_hex(),
+        "publisher_sig": signature.signature.to_hex(),
+        "manifest_toml": manifest_toml,
+    });
+
+    match client
+        .post(&upload_url)
+        .bearer_auth(auth_token)
+        .json(&body)
+        .send()
+    {
         Ok(resp) if resp.status().is_success() => {
             let _ = writeln!(stdout, "Published to {}", to_url);
             ExitCode::Ok
@@ -328,6 +496,35 @@ fn republish_to_registry(
             ExitCode::RuntimeError
         }
     }
+}
+
+fn write_archive_and_extract_manifest(bytes: &[u8]) -> Result<(PathBuf, String, PathBuf), String> {
+    let nonce: u64 = rand::Rng::random(&mut rand::rng());
+    let tmp_dir = std::env::temp_dir().join(format!("clawdstrike_mirror_republish_{nonce:x}"));
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| format!("failed to create temp dir {}: {e}", tmp_dir.display()))?;
+    let archive_path = tmp_dir.join("mirror.cpkg");
+    std::fs::write(&archive_path, bytes).map_err(|e| {
+        format!(
+            "failed to write temp archive {}: {e}",
+            archive_path.display()
+        )
+    })?;
+
+    let unpack_dir = tmp_dir.join("unpacked");
+    archive::unpack(&archive_path, &unpack_dir)
+        .map_err(|e| format!("failed to unpack mirrored archive: {e}"))?;
+    let manifest_path = unpack_dir.join("clawdstrike-pkg.toml");
+    let manifest_toml = std::fs::read_to_string(&manifest_path).map_err(|e| {
+        format!(
+            "missing clawdstrike-pkg.toml in mirrored archive ({}): {e}",
+            manifest_path.display()
+        )
+    })?;
+    parse_pkg_manifest_toml(&manifest_toml)
+        .map_err(|e| format!("invalid mirrored package manifest: {e}"))?;
+
+    Ok((archive_path, manifest_toml, tmp_dir))
 }
 
 // ---------------------------------------------------------------------------
@@ -350,12 +547,12 @@ fn cmd_mirror_bulk_sync(
         }
     };
 
-    // Search upstream registry for packages
-    let query = scope.unwrap_or("*");
+    // Search upstream registry for packages.
+    let query = scope.unwrap_or("");
     let search_url = format!(
-        "{}/api/v1/packages?q={}&limit=1000",
+        "{}/api/v1/search?q={}&limit=1000&offset=0",
         from.trim_end_matches('/'),
-        query
+        urlencoding_simple(query)
     );
 
     let _ = writeln!(
@@ -382,15 +579,7 @@ fn cmd_mirror_bulk_sync(
         return ExitCode::RuntimeError;
     }
 
-    let body = match resp.text() {
-        Ok(b) => b,
-        Err(e) => {
-            let _ = writeln!(stderr, "Error: failed to read response: {e}");
-            return ExitCode::RuntimeError;
-        }
-    };
-
-    let packages: Vec<BulkPackageEntry> = match serde_json::from_str(&body) {
+    let search: MirrorSearchResponse = match resp.json() {
         Ok(p) => p,
         Err(e) => {
             let _ = writeln!(stderr, "Error: invalid search response: {e}");
@@ -400,23 +589,74 @@ fn cmd_mirror_bulk_sync(
 
     let _ = writeln!(
         stdout,
-        "Found {} packages, filtering by trust level >= {} ...",
-        packages.len(),
+        "Found {} packages, verifying trust level >= {} ...",
+        search.packages.len(),
         min_trust
     );
 
     let trust_order = trust_level_order(min_trust);
-    let filtered: Vec<&BulkPackageEntry> = packages
-        .iter()
-        .filter(|p| trust_level_order(&p.trust_level) >= trust_order)
-        .filter(|p| {
-            if let Some(s) = scope {
-                p.name.starts_with(s)
-            } else {
-                true
+    let mut filtered: Vec<BulkPackageEntry> = Vec::new();
+    for pkg in &search.packages {
+        let Some(version) = pkg.latest_version.as_deref() else {
+            continue;
+        };
+        if let Some(s) = scope {
+            if !pkg.name.starts_with(s) {
+                continue;
             }
-        })
-        .collect();
+        }
+
+        let attestation = match fetch_attestation(&client, from, &pkg.name, version) {
+            Ok(a) => a,
+            Err(e) => {
+                let _ = writeln!(
+                    stderr,
+                    "Warning: skipping {}@{} (attestation unavailable: {})",
+                    pkg.name, version, e
+                );
+                continue;
+            }
+        };
+        let trust_level = match verify_attestation(&attestation, None) {
+            Ok((_publisher_ok, registry_ok)) => {
+                let proof_url = format!(
+                    "{}/api/v1/packages/{}/{}/proof",
+                    from.trim_end_matches('/'),
+                    urlencoding_simple(&pkg.name),
+                    urlencoding_simple(version)
+                );
+                let certified = client
+                    .get(&proof_url)
+                    .send()
+                    .ok()
+                    .is_some_and(|r| r.status().is_success() && registry_ok);
+                if certified {
+                    "certified"
+                } else if registry_ok {
+                    "verified"
+                } else {
+                    "signed"
+                }
+            }
+            Err(e) => {
+                let _ = writeln!(
+                    stderr,
+                    "Warning: skipping {}@{} (signature verification failed: {})",
+                    pkg.name, version, e
+                );
+                continue;
+            }
+        };
+
+        if trust_level_order(trust_level) < trust_order {
+            continue;
+        }
+
+        filtered.push(BulkPackageEntry {
+            name: pkg.name.clone(),
+            version: version.to_string(),
+        });
+    }
 
     let _ = writeln!(
         stdout,
@@ -433,7 +673,7 @@ fn cmd_mirror_bulk_sync(
     let mut success = 0u32;
     let mut failed = 0u32;
 
-    for pkg in &filtered {
+    for pkg in filtered {
         let result = cmd_mirror_sync(
             &pkg.name,
             Some(&pkg.version),
@@ -463,16 +703,9 @@ fn cmd_mirror_bulk_sync(
     }
 }
 
-#[derive(serde::Deserialize)]
 struct BulkPackageEntry {
     name: String,
     version: String,
-    #[serde(default = "default_trust_level")]
-    trust_level: String,
-}
-
-fn default_trust_level() -> String {
-    "unverified".to_string()
 }
 
 fn trust_level_order(level: &str) -> u8 {

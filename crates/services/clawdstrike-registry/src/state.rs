@@ -107,3 +107,41 @@ fn load_or_generate_keypair(config: &Config) -> anyhow::Result<Keypair> {
         Ok(keypair)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_config(dir: &std::path::Path) -> Config {
+        Config {
+            host: "127.0.0.1".to_string(),
+            port: 0,
+            data_dir: dir.to_path_buf(),
+            api_key: String::new(),
+            max_upload_bytes: 1024 * 1024,
+        }
+    }
+
+    #[test]
+    fn app_state_new_creates_dirs_and_keypair() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = test_config(tmp.path());
+        let state = AppState::new(cfg).unwrap();
+        assert!(state.config.db_path().exists());
+        assert!(state.config.blob_dir().exists());
+        assert!(state.config.index_dir().exists());
+        assert!(state.config.keys_dir().join("registry.key").exists());
+        assert!(state.config.keys_dir().join("registry.pub").exists());
+        assert_eq!(state.merkle_tree.lock().unwrap().tree_size(), 0);
+    }
+
+    #[test]
+    fn load_or_generate_keypair_is_stable_across_reloads() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = test_config(tmp.path());
+        std::fs::create_dir_all(cfg.keys_dir()).unwrap();
+        let first = load_or_generate_keypair(&cfg).unwrap();
+        let second = load_or_generate_keypair(&cfg).unwrap();
+        assert_eq!(first.public_key().to_hex(), second.public_key().to_hex());
+    }
+}

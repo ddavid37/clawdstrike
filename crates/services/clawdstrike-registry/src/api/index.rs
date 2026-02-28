@@ -1,7 +1,7 @@
 //! GET /api/v1/index/{name} — serve sparse index entries.
 
 use axum::extract::{Path, State};
-use axum::http::{header, HeaderMap, HeaderValue};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 
 use crate::error::RegistryError;
@@ -14,6 +14,7 @@ use crate::state::AppState;
 pub async fn sparse_index(
     State(state): State<AppState>,
     Path(name): Path<String>,
+    headers: HeaderMap,
 ) -> Result<Response, RegistryError> {
     let db = state
         .db
@@ -28,6 +29,28 @@ pub async fn sparse_index(
 
     // ETag based on SHA-256 of the response body.
     let etag = format!("\"{}\"", hush_core::sha256_hex(body.as_bytes()));
+
+    // Conditional request support.
+    if let Some(if_none_match) = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+    {
+        let matches = if_none_match
+            .split(',')
+            .map(|v| v.trim())
+            .any(|candidate| candidate == etag || candidate == "*");
+        if matches {
+            let mut not_modified_headers = HeaderMap::new();
+            if let Ok(val) = HeaderValue::from_str(&etag) {
+                not_modified_headers.insert(header::ETAG, val);
+            }
+            not_modified_headers.insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("public, max-age=60"),
+            );
+            return Ok((StatusCode::NOT_MODIFIED, not_modified_headers).into_response());
+        }
+    }
 
     let mut headers = HeaderMap::new();
     headers.insert(

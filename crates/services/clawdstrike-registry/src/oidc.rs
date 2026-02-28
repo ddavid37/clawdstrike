@@ -15,6 +15,7 @@ const GITHUB_JWKS_URL: &str = "https://token.actions.githubusercontent.com/.well
 const GITLAB_ISSUER: &str = "https://gitlab.com";
 const GITLAB_JWKS_URL: &str = "https://gitlab.com/-/jwks";
 const JWKS_CACHE_DURATION_SECS: u64 = 3600;
+const DEFAULT_OIDC_AUDIENCE: &str = "clawdstrike-registry";
 
 // ---------------------------------------------------------------------------
 // Claims
@@ -192,8 +193,9 @@ pub fn validate_oidc_token(
     let algorithm = header.alg;
     let mut validation = Validation::new(algorithm);
     validation.set_issuer(&[issuer]);
-    // Accept any audience for now; the trusted publisher matching handles authorization.
-    validation.validate_aud = false;
+    let allowed_audiences = configured_allowed_audiences(provider);
+    let allowed_refs: Vec<&str> = allowed_audiences.iter().map(String::as_str).collect();
+    validation.set_audience(&allowed_refs);
 
     match provider.to_ascii_lowercase().as_str() {
         "github" => {
@@ -210,6 +212,27 @@ pub fn validate_oidc_token(
             "unsupported OIDC provider: {provider}"
         ))),
     }
+}
+
+fn configured_allowed_audiences(provider: &str) -> Vec<String> {
+    let provider_env = format!(
+        "CLAWDSTRIKE_OIDC_{}_AUDIENCES",
+        provider.to_ascii_uppercase()
+    );
+    let raw = std::env::var(&provider_env)
+        .ok()
+        .or_else(|| std::env::var("CLAWDSTRIKE_OIDC_ALLOWED_AUDIENCES").ok())
+        .unwrap_or_else(|| DEFAULT_OIDC_AUDIENCE.to_string());
+
+    parse_allowed_audiences(&raw)
+}
+
+fn parse_allowed_audiences(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 /// Fetch JWKS from a remote URL.
@@ -482,5 +505,18 @@ mod tests {
         )];
         let matched = match_trusted_publisher(&claims, &publishers).unwrap();
         assert_eq!(matched.repository, "acme/my-guard");
+    }
+
+    #[test]
+    fn parse_allowed_audiences_splits_and_trims() {
+        let parsed = super::parse_allowed_audiences("  clawdstrike-registry, ci-release , ,prod ");
+        assert_eq!(
+            parsed,
+            vec![
+                "clawdstrike-registry".to_string(),
+                "ci-release".to_string(),
+                "prod".to_string()
+            ]
+        );
     }
 }

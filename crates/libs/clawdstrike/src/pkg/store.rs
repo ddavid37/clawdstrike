@@ -123,16 +123,35 @@ impl PackageStore {
         let dir_name = normalize_name(name);
         let target = self.root.join(&dir_name).join(version);
 
-        // If already installed at this version, remove old copy.
-        if target.exists() {
-            fs::remove_dir_all(&target)?;
-        }
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        // Atomic rename (same filesystem).
-        fs::rename(&tmp_dir, &target)?;
+        // Preserve existing install until the replacement is safely in place.
+        let mut backup: Option<PathBuf> = None;
+        if target.exists() {
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let backup_path = target.with_extension(format!("bak.{nonce:x}"));
+            fs::rename(&target, &backup_path)?;
+            backup = Some(backup_path);
+        }
+
+        // Atomic rename (same filesystem). If this fails, restore backup.
+        if let Err(e) = fs::rename(&tmp_dir, &target) {
+            if let Some(ref backup_path) = backup {
+                let _ = fs::rename(backup_path, &target);
+            }
+            return Err(e.into());
+        }
+
+        // Remove old backup only after successful replacement.
+        if let Some(backup_path) = backup {
+            let _ = fs::remove_dir_all(backup_path);
+        }
+
         // Disarm the guard — the temp dir no longer exists (it was renamed).
         guard.disarmed = true;
 
