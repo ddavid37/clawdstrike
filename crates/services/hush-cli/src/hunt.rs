@@ -3,6 +3,9 @@
 use std::io::Write;
 use std::path::PathBuf;
 
+use hunt_query::query::{EventSource, HuntQuery, QueryVerdict};
+use hunt_query::render::RenderConfig;
+use hunt_query::timeline::TimelineEvent;
 use hunt_scan::analysis::{self, AnalysisClient};
 use hunt_scan::models::{
     ScanError, ScanPathResult, ScanUserInfo, ServerConfig, ServerScanResult, Tool,
@@ -46,6 +49,99 @@ pub async fn cmd_hunt(
                 json,
                 analysis_url,
                 skip_ssl_verify,
+            },
+            stdout,
+            stderr,
+        )
+        .await
+        .as_i32(),
+        HuntCommands::Query {
+            source,
+            verdict,
+            start,
+            end,
+            action_type,
+            process,
+            namespace,
+            pod,
+            limit,
+            nl,
+            nats_url,
+            nats_creds,
+            offline,
+            local_dir,
+            verify,
+            json,
+            jsonl,
+            no_color,
+        } => cmd_hunt_query(
+            HuntQueryArgs {
+                source,
+                verdict,
+                start,
+                end,
+                action_type,
+                process,
+                namespace,
+                pod,
+                limit,
+                nl,
+                nats_url,
+                nats_creds,
+                offline,
+                local_dir,
+                verify,
+                json,
+                jsonl,
+                no_color,
+                entity: None,
+            },
+            stdout,
+            stderr,
+        )
+        .await
+        .as_i32(),
+        HuntCommands::Timeline {
+            source,
+            verdict,
+            start,
+            end,
+            action_type,
+            process,
+            namespace,
+            pod,
+            limit,
+            nl,
+            nats_url,
+            nats_creds,
+            offline,
+            local_dir,
+            verify,
+            json,
+            jsonl,
+            no_color,
+            entity,
+        } => cmd_hunt_timeline(
+            HuntQueryArgs {
+                source,
+                verdict,
+                start,
+                end,
+                action_type,
+                process,
+                namespace,
+                pod,
+                limit,
+                nl,
+                nats_url,
+                nats_creds,
+                offline,
+                local_dir,
+                verify,
+                json,
+                jsonl,
+                no_color,
+                entity,
             },
             stdout,
             stderr,
@@ -520,6 +616,333 @@ fn determine_exit_code(results: &[ScanPathResult], summary: &HuntScanSummary) ->
     } else {
         ExitCode::Warn
     }
+}
+
+// ---------------------------------------------------------------------------
+// Hunt Query / Timeline args
+// ---------------------------------------------------------------------------
+
+struct HuntQueryArgs {
+    source: Option<Vec<String>>,
+    verdict: Option<String>,
+    start: Option<String>,
+    end: Option<String>,
+    action_type: Option<String>,
+    process: Option<String>,
+    namespace: Option<String>,
+    pod: Option<String>,
+    limit: usize,
+    nl: Option<String>,
+    nats_url: String,
+    nats_creds: Option<String>,
+    offline: bool,
+    local_dir: Option<Vec<String>>,
+    verify: bool,
+    json: bool,
+    jsonl: bool,
+    no_color: bool,
+    entity: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Hunt Query / Timeline JSON output structs
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Serialize)]
+struct HuntQueryJsonOutput {
+    version: u8,
+    command: &'static str,
+    exit_code: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<HuntJsonError>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<HuntQueryData>,
+}
+
+#[derive(serde::Serialize)]
+struct HuntQueryData {
+    events: Vec<TimelineEvent>,
+    summary: HuntQuerySummary,
+}
+
+#[derive(serde::Serialize)]
+struct HuntQuerySummary {
+    total_events: usize,
+    sources_queried: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Query/Timeline helpers
+// ---------------------------------------------------------------------------
+
+fn build_hunt_query(args: &HuntQueryArgs) -> Result<HuntQuery, (ExitCode, String)> {
+    let mut query = HuntQuery::default();
+
+    // Sources
+    if let Some(ref source_strs) = args.source {
+        for s in source_strs {
+            query.sources.extend(EventSource::parse_list(s));
+        }
+    }
+
+    // Verdict
+    if let Some(ref v) = args.verdict {
+        match QueryVerdict::parse(v) {
+            Some(verdict) => query.verdict = Some(verdict),
+            None => {
+                return Err((
+                    ExitCode::InvalidArgs,
+                    format!("Unknown verdict filter: '{v}'. Use allow, deny, or warn."),
+                ));
+            }
+        }
+    }
+
+    // Time range
+    if let Some(ref s) = args.start {
+        match chrono::DateTime::parse_from_rfc3339(s) {
+            Ok(dt) => query.start = Some(dt.with_timezone(&chrono::Utc)),
+            Err(e) => {
+                return Err((
+                    ExitCode::InvalidArgs,
+                    format!("Invalid --start timestamp '{s}': {e}"),
+                ));
+            }
+        }
+    }
+    if let Some(ref e) = args.end {
+        match chrono::DateTime::parse_from_rfc3339(e) {
+            Ok(dt) => query.end = Some(dt.with_timezone(&chrono::Utc)),
+            Err(e) => {
+                return Err((
+                    ExitCode::InvalidArgs,
+                    format!("Invalid --end timestamp: {e}"),
+                ));
+            }
+        }
+    }
+
+    query.action_type = args.action_type.clone();
+    query.process = args.process.clone();
+    query.namespace = args.namespace.clone();
+    query.pod = args.pod.clone();
+    query.limit = args.limit;
+    query.entity = args.entity.clone();
+
+    // Apply NL query if provided (supplements but does not override explicit flags)
+    if let Some(ref nl_text) = args.nl {
+        hunt_query::nl::apply_nl_query(&mut query, nl_text);
+    }
+
+    Ok(query)
+}
+
+fn render_config(args: &HuntQueryArgs) -> RenderConfig {
+    RenderConfig {
+        color: !args.no_color,
+        json: args.json,
+        jsonl: args.jsonl,
+    }
+}
+
+async fn fetch_events(
+    args: &HuntQueryArgs,
+    query: &HuntQuery,
+    stderr: &mut dyn Write,
+) -> Vec<TimelineEvent> {
+    if args.offline {
+        // Offline mode: local files only
+        let dirs = if let Some(ref local_dirs) = args.local_dir {
+            local_dirs.iter().map(PathBuf::from).collect()
+        } else {
+            hunt_query::local::default_local_dirs()
+        };
+        match hunt_query::local::query_local_files(query, &dirs, args.verify) {
+            Ok(events) => events,
+            Err(e) => {
+                let _ = writeln!(stderr, "Warning: local file query error: {e}");
+                Vec::new()
+            }
+        }
+    } else {
+        // Try NATS first, fallback to local
+        match hunt_query::replay::replay_all(
+            query,
+            &args.nats_url,
+            args.nats_creds.as_deref(),
+            args.verify,
+        )
+        .await
+        {
+            Ok(events) => events,
+            Err(e) => {
+                let _ = writeln!(
+                    stderr,
+                    "Warning: NATS connection failed ({e}), falling back to local files"
+                );
+                let dirs = if let Some(ref local_dirs) = args.local_dir {
+                    local_dirs.iter().map(PathBuf::from).collect()
+                } else {
+                    hunt_query::local::default_local_dirs()
+                };
+                match hunt_query::local::query_local_files(query, &dirs, args.verify) {
+                    Ok(events) => events,
+                    Err(e2) => {
+                        let _ = writeln!(stderr, "Warning: local file query error: {e2}");
+                        Vec::new()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Hunt Query command
+// ---------------------------------------------------------------------------
+
+async fn cmd_hunt_query(
+    args: HuntQueryArgs,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> ExitCode {
+    let is_json = args.json;
+
+    let query = match build_hunt_query(&args) {
+        Ok(q) => q,
+        Err((code, msg)) => {
+            return emit_hunt_query_error(is_json, "hunt query", stdout, stderr, &msg, code);
+        }
+    };
+
+    let config = render_config(&args);
+    let sources_queried: Vec<String> = query
+        .effective_sources()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let events = fetch_events(&args, &query, stderr).await;
+
+    if is_json {
+        let output = HuntQueryJsonOutput {
+            version: CLI_JSON_VERSION,
+            command: "hunt query",
+            exit_code: ExitCode::Ok.as_i32(),
+            error: None,
+            data: Some(HuntQueryData {
+                summary: HuntQuerySummary {
+                    total_events: events.len(),
+                    sources_queried,
+                },
+                events,
+            }),
+        };
+        if let Ok(json_str) = serde_json::to_string_pretty(&output) {
+            let _ = writeln!(stdout, "{json_str}");
+        }
+    } else {
+        if let Err(e) = hunt_query::render::render_events(&events, &config, stdout) {
+            let _ = writeln!(stderr, "Render error: {e}");
+            return ExitCode::RuntimeError;
+        }
+        let _ = writeln!(stdout);
+        let _ = writeln!(stdout, "{} events returned", events.len());
+    }
+
+    ExitCode::Ok
+}
+
+// ---------------------------------------------------------------------------
+// Hunt Timeline command
+// ---------------------------------------------------------------------------
+
+async fn cmd_hunt_timeline(
+    args: HuntQueryArgs,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> ExitCode {
+    let is_json = args.json;
+
+    let query = match build_hunt_query(&args) {
+        Ok(q) => q,
+        Err((code, msg)) => {
+            return emit_hunt_query_error(is_json, "hunt timeline", stdout, stderr, &msg, code);
+        }
+    };
+
+    let config = render_config(&args);
+    let entity = query.entity.clone();
+    let sources_queried: Vec<String> = query
+        .effective_sources()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let events = fetch_events(&args, &query, stderr).await;
+    let timeline = hunt_query::timeline::merge_timeline(events);
+
+    if is_json {
+        let output = HuntQueryJsonOutput {
+            version: CLI_JSON_VERSION,
+            command: "hunt timeline",
+            exit_code: ExitCode::Ok.as_i32(),
+            error: None,
+            data: Some(HuntQueryData {
+                summary: HuntQuerySummary {
+                    total_events: timeline.len(),
+                    sources_queried,
+                },
+                events: timeline,
+            }),
+        };
+        if let Ok(json_str) = serde_json::to_string_pretty(&output) {
+            let _ = writeln!(stdout, "{json_str}");
+        }
+    } else {
+        let effective = query.effective_sources();
+        if let Err(e) = hunt_query::render::render_timeline_header(
+            entity.as_deref(),
+            timeline.len(),
+            &effective,
+            stdout,
+        ) {
+            let _ = writeln!(stderr, "Render error: {e}");
+            return ExitCode::RuntimeError;
+        }
+        if let Err(e) = hunt_query::render::render_events(&timeline, &config, stdout) {
+            let _ = writeln!(stderr, "Render error: {e}");
+            return ExitCode::RuntimeError;
+        }
+    }
+
+    ExitCode::Ok
+}
+
+fn emit_hunt_query_error(
+    json: bool,
+    command: &'static str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    message: &str,
+    code: ExitCode,
+) -> ExitCode {
+    if json {
+        let output = HuntQueryJsonOutput {
+            version: CLI_JSON_VERSION,
+            command,
+            exit_code: code.as_i32(),
+            error: Some(HuntJsonError {
+                kind: "invalid_args",
+                message: message.to_string(),
+            }),
+            data: None,
+        };
+        if let Ok(json_str) = serde_json::to_string_pretty(&output) {
+            let _ = writeln!(stdout, "{json_str}");
+        }
+    } else {
+        let _ = writeln!(stderr, "Error: {message}");
+    }
+    code
 }
 
 fn emit_hunt_error(

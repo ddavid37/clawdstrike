@@ -1,0 +1,32 @@
+[package]
+name = "hunt-query"
+description = "Structured querying and timeline reconstruction for clawdstrike hunt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hunt-scan.workspace = true
+spine.workspace = true
+hush-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+async-nats = "0.39"
+crossterm = "0.28"
+regex.workspace = true
+dirs.workspace = true
+time = "0.3"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
+
+[lints]
+workspace = true

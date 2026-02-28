@@ -40,6 +40,7 @@ base64.workspace = true
 uuid.workspace = true
 regorus = { version = "0.9.1", optional = true }
 hunt-scan.workspace = true
+hunt-query.workspace = true
 
 [features]
 default = ["rego-runtime", "wasm-plugin-runtime"]
