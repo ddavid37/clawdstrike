@@ -132,11 +132,13 @@ def main() -> int:
 
     # Test files are compiled with --test but not instrumented for coverage,
     # so missing LCOV records are expected.  Only fail on non-test sources.
+    # Note: only match by basename to avoid false positives on non-test
+    # source files that live under directories named "tests/"
+    # (e.g. crates/tests/sdr-integration-tests/src/lib.rs).
     real_missing = [
         p for p in missing
         if not (os.path.basename(p).endswith("_tests.rs")
-                or "/tests/" in p
-                or "/tests.rs" in p)
+                or os.path.basename(p) == "tests.rs")
     ]
 
     if missing:
