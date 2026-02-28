@@ -322,7 +322,7 @@ conditions:
     bind: file_access
   - source: [receipt, hubble]
     action_type: egress
-    not_target_pattern: "^(localhost|127\\.|10\\.|172\\.(1[6-9]|2|3[01])\\.|192\\.168\\.)"
+    not_target_pattern: "^(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.)"
     after: file_access
     within: 30s
     bind: egress_event

@@ -381,7 +381,7 @@ conditions:
     bind: file_access
   - source: [receipt, hubble]
     action_type: egress
-    not_target_pattern: "^(localhost|127\\.|10\\.|172\\.(1[6-9]|2|3[01])\\.|192\\.168\\.)"
+    not_target_pattern: "^(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.)"
     after: file_access
     within: 30s
     bind: egress_event
@@ -520,6 +520,73 @@ output:
         assert!(
             alerts.is_empty(),
             "internal egress should not trigger alert"
+        );
+    }
+
+    #[test]
+    fn egress_to_172_20_range_excluded_as_private() {
+        // 172.20.x.x is RFC 1918 private (172.16.0.0/12) and must be excluded.
+        let rule = exfil_rule();
+        let mut engine = CorrelationEngine::new(vec![rule]).unwrap();
+
+        let ts1 = Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap();
+        let ts2 = Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 10).unwrap();
+
+        let e1 = make_event(
+            EventSource::Receipt,
+            "file",
+            NormalizedVerdict::Allow,
+            "read /etc/passwd",
+            ts1,
+        );
+        engine.process_event(&e1);
+
+        // 172.25.0.1 is private — should NOT trigger alert
+        let e2 = make_event(
+            EventSource::Receipt,
+            "egress",
+            NormalizedVerdict::Allow,
+            "172.25.0.1:8080",
+            ts2,
+        );
+        let alerts = engine.process_event(&e2);
+        assert!(
+            alerts.is_empty(),
+            "172.25.x.x is RFC 1918 private and should be excluded"
+        );
+    }
+
+    #[test]
+    fn egress_to_172_2_not_excluded_as_public() {
+        // 172.2.x.x is NOT RFC 1918 private — it should trigger an alert.
+        let rule = exfil_rule();
+        let mut engine = CorrelationEngine::new(vec![rule]).unwrap();
+
+        let ts1 = Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap();
+        let ts2 = Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 10).unwrap();
+
+        let e1 = make_event(
+            EventSource::Receipt,
+            "file",
+            NormalizedVerdict::Allow,
+            "read /etc/passwd",
+            ts1,
+        );
+        engine.process_event(&e1);
+
+        // 172.2.0.1 is public — SHOULD trigger alert
+        let e2 = make_event(
+            EventSource::Receipt,
+            "egress",
+            NormalizedVerdict::Allow,
+            "172.2.0.1:8080",
+            ts2,
+        );
+        let alerts = engine.process_event(&e2);
+        assert_eq!(
+            alerts.len(),
+            1,
+            "172.2.x.x is a public IP and should trigger exfiltration alert"
         );
     }
 
