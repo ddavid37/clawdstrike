@@ -39,6 +39,7 @@ use hush_core::{keccak256, sha256, Hash, Keypair, MerkleProof, MerkleTree, Signe
 mod canonical_commandline;
 mod guard_cli;
 mod guard_report_json;
+mod hunt;
 mod hush_run;
 mod policy_bundle;
 mod policy_diff;
@@ -242,6 +243,12 @@ enum Commands {
     Daemon {
         #[command(subcommand)]
         command: DaemonCommands,
+    },
+
+    /// Threat hunting for AI agent ecosystems
+    Hunt {
+        #[command(subcommand)]
+        command: HuntCommands,
     },
 
     /// Generate shell completions
@@ -818,6 +825,60 @@ enum DaemonCommands {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum HuntCommands {
+    /// Scan local AI agent MCP configurations for vulnerabilities
+    Scan {
+        /// Specific client name or config path to scan (default: auto-discover)
+        #[arg(long)]
+        target: Option<Vec<String>>,
+
+        /// Scan a package directly (npm:pkg, pypi:pkg, oci:image)
+        #[arg(long)]
+        package: Option<Vec<String>>,
+
+        /// Scan agent skills directories
+        #[arg(long)]
+        skills: Option<Vec<String>>,
+
+        /// Natural language or keyword query to filter results
+        #[arg(long)]
+        query: Option<String>,
+
+        /// Policy file to evaluate discovered tools against
+        #[arg(long)]
+        policy: Option<String>,
+
+        /// Built-in ruleset to evaluate against
+        #[arg(long)]
+        ruleset: Option<String>,
+
+        /// MCP server connection timeout in seconds
+        #[arg(long, default_value_t = 10)]
+        timeout: u64,
+
+        /// Include built-in IDE tools in results
+        #[arg(long)]
+        include_builtin: bool,
+
+        /// Signing key path (hex Ed25519 seed)
+        #[arg(long, default_value = "hush.key")]
+        signing_key: String,
+
+        /// Emit machine-readable JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Analysis API URL for remote vulnerability detection
+        #[arg(long)]
+        analysis_url: Option<String>,
+
+        /// Skip SSL certificate verification for analysis API
+        #[arg(long)]
+        skip_ssl_verify: bool,
+    },
+}
+
 #[tokio::main]
 async fn main() {
     let cli = match Cli::try_parse() {
@@ -1071,6 +1132,10 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
                 ExitCode::RuntimeError.as_i32()
             }
         },
+
+        Commands::Hunt { command } => {
+            hunt::cmd_hunt(command, &remote_extends, stdout, stderr).await
+        }
     }
 }
 
