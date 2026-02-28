@@ -218,7 +218,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Clawdstrike CLI
-        run: cargo install clawdstrike-cli
+        run: cargo install hush-cli --locked
       - name: Run security checks
         run: clawdstrike check --mode headless --action-type file --ruleset strict .
 ```

@@ -430,6 +430,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_org_rejects_malformed_publisher_key_without_possession() {
+        let (state, _tmp) = test_state();
+        let caller = Keypair::from_seed(&[36u8; 32]);
+        let malformed_key = "not-a-valid-ed25519-key";
+        let payload = format!("org:create:acme:{malformed_key}:ACME");
+
+        let err = org::create_org(
+            State(state),
+            signed_headers(&caller, &payload),
+            Json(org::CreateOrgRequest {
+                name: "acme".to_string(),
+                display_name: Some("ACME".to_string()),
+                publisher_key: malformed_key.to_string(),
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("must match create_org.publisher_key"));
+    }
+
+    #[tokio::test]
     async fn unscoped_trusted_publisher_requires_package_publisher() {
         let (state, _tmp) = test_state();
         let owner = Keypair::from_seed(&[34u8; 32]);
@@ -453,6 +476,46 @@ mod tests {
                 workflow: None,
                 environment: None,
             }),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("not authorized"));
+    }
+
+    #[tokio::test]
+    async fn unscoped_trusted_publisher_remove_requires_package_publisher() {
+        let (state, _tmp) = test_state();
+        let owner = Keypair::from_seed(&[37u8; 32]);
+        let stranger = Keypair::from_seed(&[38u8; 32]);
+        let package = "unscoped-guard";
+        let version = "1.0.0";
+
+        let (req, _bytes) = publish_request(package, version, &owner);
+        let _published = publish::publish(State(state.clone()), HeaderMap::new(), Json(req))
+            .await
+            .unwrap();
+
+        let add_payload = format!("trusted-publisher:add:{package}:github:acme/repo::");
+        let (created_status, created) = trusted_publishers::add_trusted_publisher(
+            State(state.clone()),
+            Path(package.to_string()),
+            signed_headers(&owner, &add_payload),
+            Json(trusted_publishers::AddTrustedPublisherRequest {
+                provider: "github".to_string(),
+                repository: "acme/repo".to_string(),
+                workflow: None,
+                environment: None,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(created_status, StatusCode::CREATED);
+
+        let remove_payload = format!("trusted-publisher:remove:{package}:{}", created.0.id);
+        let err = trusted_publishers::remove_trusted_publisher(
+            State(state),
+            Path((package.to_string(), created.0.id)),
+            signed_headers(&stranger, &remove_payload),
         )
         .await
         .unwrap_err();
