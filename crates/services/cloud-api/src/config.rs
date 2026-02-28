@@ -359,9 +359,27 @@ fn token_glob_overlap(
 mod tests {
     use super::{
         default_adaptive_ingress_stream_name, default_approval_subject_filter,
-        default_heartbeat_subject_filter, subject_filters_overlap,
-        validate_consumer_stream_configuration,
+        default_heartbeat_subject_filter, subject_filters_overlap, token_patterns_overlap,
+        validate_consumer_stream_configuration, Config,
     };
+
+    /// Serialize env-var tests so parallel threads don't clobber each other.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Helper: set env vars, run closure, then remove them.
+    fn with_env_vars<F: FnOnce()>(vars: &[(&str, &str)], removed: &[&str], f: F) {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        for key in removed {
+            unsafe { std::env::remove_var(key) };
+        }
+        for (key, val) in vars {
+            unsafe { std::env::set_var(key, val) };
+        }
+        f();
+        for (key, _) in vars {
+            unsafe { std::env::remove_var(key) };
+        }
+    }
 
     #[test]
     fn default_approval_subject_filter_is_valid() {
@@ -415,5 +433,198 @@ mod tests {
         ));
         assert!(subject_filters_overlap("a.b", "a.>"));
         assert!(subject_filters_overlap("a.>", "a.b"));
+    }
+
+    #[test]
+    fn non_overlapping_filters_are_detected() {
+        assert!(!subject_filters_overlap("a.b", "c.d"));
+        assert!(!subject_filters_overlap("x.y.z", "a.b.c"));
+    }
+
+    #[test]
+    fn empty_filters_do_not_overlap() {
+        assert!(!subject_filters_overlap("", "a.b"));
+        assert!(!subject_filters_overlap("a.b", ""));
+    }
+
+    #[test]
+    fn token_patterns_overlap_literals() {
+        assert!(token_patterns_overlap("foo", "foo"));
+        assert!(!token_patterns_overlap("foo", "bar"));
+    }
+
+    #[test]
+    fn token_patterns_overlap_wildcards() {
+        assert!(token_patterns_overlap("*", "anything"));
+        assert!(token_patterns_overlap("anything", "*"));
+        assert!(token_patterns_overlap("tenant-*", "tenant-abc"));
+        assert!(token_patterns_overlap("*-suffix", "prefix-suffix"));
+    }
+
+    #[test]
+    fn disabled_consumers_skip_validation() {
+        let result =
+            validate_consumer_stream_configuration(false, true, ">", ">", "stream-a", "stream-b");
+        assert!(result.is_ok());
+
+        let result =
+            validate_consumer_stream_configuration(true, false, ">", ">", "stream-a", "stream-b");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn non_overlapping_filters_with_different_streams_ok() {
+        let result = validate_consumer_stream_configuration(
+            true, true, "a.b", "c.d", "stream-a", "stream-b",
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn from_env_with_required_vars_uses_defaults() {
+        let all_env_keys = [
+            "LISTEN_ADDR",
+            "DATABASE_URL",
+            "NATS_URL",
+            "NATS_PROVISIONING_MODE",
+            "NATS_PROVISIONER_BASE_URL",
+            "NATS_PROVISIONER_API_TOKEN",
+            "NATS_ALLOW_INSECURE_MOCK_PROVISIONER",
+            "JWT_SECRET",
+            "STRIPE_SECRET_KEY",
+            "STRIPE_WEBHOOK_SECRET",
+            "APPROVAL_SIGNING_ENABLED",
+            "APPROVAL_SIGNING_KEYPAIR_PATH",
+            "APPROVAL_RESOLUTION_OUTBOX_ENABLED",
+            "APPROVAL_RESOLUTION_OUTBOX_POLL_INTERVAL_SECS",
+            "AUDIT_CONSUMER_ENABLED",
+            "AUDIT_SUBJECT_FILTER",
+            "AUDIT_STREAM_NAME",
+            "AUDIT_CONSUMER_NAME",
+            "APPROVAL_CONSUMER_ENABLED",
+            "APPROVAL_SUBJECT_FILTER",
+            "APPROVAL_STREAM_NAME",
+            "APPROVAL_CONSUMER_NAME",
+            "HEARTBEAT_CONSUMER_ENABLED",
+            "HEARTBEAT_SUBJECT_FILTER",
+            "HEARTBEAT_STREAM_NAME",
+            "HEARTBEAT_CONSUMER_NAME",
+            "STALE_DETECTOR_ENABLED",
+            "STALE_CHECK_INTERVAL_SECS",
+            "STALE_THRESHOLD_SECS",
+            "DEAD_THRESHOLD_SECS",
+        ];
+        with_env_vars(
+            &[
+                ("DATABASE_URL", "postgres://test:test@localhost/test"),
+                ("JWT_SECRET", "test-jwt-secret"),
+                ("STRIPE_SECRET_KEY", "sk_test_123"),
+                ("STRIPE_WEBHOOK_SECRET", "whsec_test_123"),
+            ],
+            &all_env_keys,
+            || {
+                let config = Config::from_env().expect("should parse with defaults");
+                assert_eq!(config.listen_addr.to_string(), "0.0.0.0:8080");
+                assert_eq!(config.database_url, "postgres://test:test@localhost/test");
+                assert_eq!(config.nats_url, "nats://localhost:4222");
+                assert_eq!(config.nats_provisioning_mode, "external");
+                assert!(!config.nats_allow_insecure_mock_provisioner);
+                assert!(config.approval_signing_enabled);
+                assert!(config.approval_resolution_outbox_enabled);
+                assert!(!config.audit_consumer_enabled);
+                assert!(config.approval_consumer_enabled);
+                assert!(config.heartbeat_consumer_enabled);
+                assert!(config.stale_detector_enabled);
+                assert_eq!(config.stale_check_interval_secs, 60);
+                assert_eq!(config.stale_threshold_secs, 120);
+                assert_eq!(config.dead_threshold_secs, 300);
+            },
+        );
+    }
+
+    #[test]
+    fn from_env_missing_database_url() {
+        with_env_vars(&[], &["DATABASE_URL"], || {
+            let err = Config::from_env().unwrap_err();
+            assert!(err.to_string().contains("DATABASE_URL"));
+        });
+    }
+
+    #[test]
+    fn from_env_mock_provisioning_requires_insecure_flag() {
+        with_env_vars(
+            &[
+                ("DATABASE_URL", "postgres://localhost/test"),
+                ("JWT_SECRET", "s"),
+                ("STRIPE_SECRET_KEY", "sk"),
+                ("STRIPE_WEBHOOK_SECRET", "wh"),
+                ("NATS_PROVISIONING_MODE", "mock"),
+            ],
+            &["NATS_ALLOW_INSECURE_MOCK_PROVISIONER"],
+            || {
+                let err = Config::from_env().unwrap_err();
+                assert!(err
+                    .to_string()
+                    .contains("NATS_ALLOW_INSECURE_MOCK_PROVISIONER"));
+            },
+        );
+    }
+
+    #[test]
+    fn from_env_invalid_provisioning_mode() {
+        with_env_vars(
+            &[
+                ("DATABASE_URL", "postgres://localhost/test"),
+                ("JWT_SECRET", "s"),
+                ("STRIPE_SECRET_KEY", "sk"),
+                ("STRIPE_WEBHOOK_SECRET", "wh"),
+                ("NATS_PROVISIONING_MODE", "bogus"),
+            ],
+            &[],
+            || {
+                let err = Config::from_env().unwrap_err();
+                assert!(err.to_string().contains("bogus"));
+            },
+        );
+    }
+
+    #[test]
+    fn from_env_custom_listen_addr() {
+        with_env_vars(
+            &[
+                ("LISTEN_ADDR", "127.0.0.1:9090"),
+                ("DATABASE_URL", "postgres://localhost/test"),
+                ("JWT_SECRET", "s"),
+                ("STRIPE_SECRET_KEY", "sk"),
+                ("STRIPE_WEBHOOK_SECRET", "wh"),
+            ],
+            &[
+                "NATS_PROVISIONING_MODE",
+                "NATS_ALLOW_INSECURE_MOCK_PROVISIONER",
+            ],
+            || {
+                let config = Config::from_env().expect("should parse");
+                assert_eq!(config.listen_addr.to_string(), "127.0.0.1:9090");
+            },
+        );
+    }
+
+    #[test]
+    fn from_env_mock_provisioning_with_insecure_flag() {
+        with_env_vars(
+            &[
+                ("DATABASE_URL", "postgres://localhost/test"),
+                ("JWT_SECRET", "s"),
+                ("STRIPE_SECRET_KEY", "sk"),
+                ("STRIPE_WEBHOOK_SECRET", "wh"),
+                ("NATS_PROVISIONING_MODE", "mock"),
+                ("NATS_ALLOW_INSECURE_MOCK_PROVISIONER", "true"),
+            ],
+            &[],
+            || {
+                let config = Config::from_env().expect("should parse");
+                assert!(config.nats_allow_insecure_mock_provisioner);
+            },
+        );
     }
 }

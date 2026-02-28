@@ -381,7 +381,10 @@ jobs:
           # `cargo llvm-cov` in this job targets the root Rust workspace.
           # Exclude standalone Rust crates outside that workspace from this
           # specific gate to avoid false negatives from missing LCOV records.
-          grep -v '^apps/agent/src-tauri/' changed_rust_files.txt > changed_rust_files.coverage.txt || true
+          # Also exclude hush-native (Python cdylib tested via pytest, not Rust).
+          grep -v '^apps/agent/src-tauri/' changed_rust_files.txt \
+            | grep -v '^packages/sdk/hush-py/hush-native/' \
+            > changed_rust_files.coverage.txt || true
 
           if [ ! -s changed_rust_files.coverage.txt ]; then
             echo "No workspace Rust files changed; skipping changed-file Rust coverage gate."
