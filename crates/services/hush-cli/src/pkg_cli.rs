@@ -114,6 +114,14 @@ pub enum PkgCommands {
         #[arg(long)]
         version: String,
     },
+    /// Run guard test fixtures against a WASM guard plugin
+    Test {
+        /// Path to the guard package directory (defaults to current dir)
+        path: Option<PathBuf>,
+        /// Filter: only run fixtures whose name contains this string
+        #[arg(long)]
+        filter: Option<String>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -128,6 +136,9 @@ pub fn cmd_pkg(command: PkgCommands, stdout: &mut dyn Write, stderr: &mut dyn Wr
         PkgCommands::List => cmd_pkg_list(stdout, stderr),
         PkgCommands::Verify { name, version } => cmd_pkg_verify(&name, &version, stdout, stderr),
         PkgCommands::Info { name, version } => cmd_pkg_info(&name, &version, stdout, stderr),
+        PkgCommands::Test { path, filter } => {
+            cmd_pkg_test(path.as_deref(), filter.as_deref(), stdout, stderr)
+        }
     }
 }
 
@@ -171,6 +182,8 @@ fn scaffold_package(dir: &Path, pkg_type: &PkgType, name: &str) -> std::io::Resu
     match pkg_type {
         PkgType::Guard => {
             std::fs::create_dir_all(dir.join("src"))?;
+            std::fs::create_dir_all(dir.join("tests"))?;
+            std::fs::create_dir_all(dir.join(".cargo"))?;
         }
         PkgType::PolicyPack => {
             std::fs::create_dir_all(dir.join("policies"))?;
@@ -190,11 +203,172 @@ fn scaffold_package(dir: &Path, pkg_type: &PkgType, name: &str) -> std::io::Resu
         }
     }
 
-    // Write the manifest
+    // Write the package manifest
     let manifest_toml = generate_manifest_toml(name, pkg_type);
     std::fs::write(dir.join("clawdstrike-pkg.toml"), manifest_toml)?;
 
+    // Guard-specific template files
+    if *pkg_type == PkgType::Guard {
+        scaffold_guard_templates(dir, name)?;
+    }
+
     Ok(())
+}
+
+fn scaffold_guard_templates(dir: &Path, name: &str) -> std::io::Result<()> {
+    // Derive a safe Rust identifier from the guard name for struct names
+    let struct_name = name
+        .replace('@', "")
+        .replace(['/', '-'], "_")
+        .split('_')
+        .map(|s| {
+            let mut c = s.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect::<String>()
+        + "Guard";
+
+    // src/lib.rs
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        generate_guard_lib_rs(name, &struct_name),
+    )?;
+
+    // Cargo.toml for the guard project
+    std::fs::write(dir.join("Cargo.toml"), generate_guard_cargo_toml(name))?;
+
+    // plugin-manifest.toml
+    std::fs::write(
+        dir.join("plugin-manifest.toml"),
+        generate_guard_plugin_manifest(name),
+    )?;
+
+    // tests/basic.yaml
+    std::fs::write(
+        dir.join("tests/basic.yaml"),
+        generate_guard_test_fixture(name),
+    )?;
+
+    // .cargo/config.toml
+    std::fs::write(
+        dir.join(".cargo/config.toml"),
+        "[build]\ntarget = \"wasm32-unknown-unknown\"\n",
+    )?;
+
+    Ok(())
+}
+
+fn generate_guard_lib_rs(name: &str, struct_name: &str) -> String {
+    format!(
+        r#"//! {name} -- a Clawdstrike WASM guard plugin.
+//!
+//! This guard is compiled to `wasm32-unknown-unknown` and loaded by
+//! the Clawdstrike runtime at evaluation time.
+
+use clawdstrike_guard_sdk::prelude::*;
+
+/// {struct_name} implements a custom security guard.
+#[clawdstrike_guard]
+#[derive(Default)]
+pub struct {struct_name};
+
+impl Guard for {struct_name} {{
+    fn name(&self) -> &str {{
+        "{name}"
+    }}
+
+    fn handles(&self, action_type: &str) -> bool {{
+        // Return true for the action types this guard should evaluate.
+        // Examples: "file_access", "tool_call", "shell_command", "network"
+        matches!(action_type, "file_access" | "tool_call")
+    }}
+
+    fn check(&self, input: GuardInput) -> GuardOutput {{
+        // Implement your security logic here.
+        //
+        // `input.payload` contains the action details as a JSON value.
+        // `input.config` contains per-invocation configuration.
+        //
+        // Return `GuardOutput::allow()` or `GuardOutput::deny(severity, message)`.
+
+        GuardOutput::allow()
+    }}
+}}
+"#
+    )
+}
+
+fn generate_guard_cargo_toml(name: &str) -> String {
+    format!(
+        r#"[package]
+name = "{name}"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clawdstrike-guard-sdk = {{ version = "0.1" }}
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+"#
+    )
+}
+
+fn generate_guard_plugin_manifest(name: &str) -> String {
+    format!(
+        r#"[plugin]
+name = "{name}"
+version = "0.1.0"
+description = "A custom Clawdstrike guard plugin"
+
+[[guards]]
+name = "{name}"
+handles = ["file_access", "tool_call"]
+
+[capabilities]
+
+[resources]
+max_memory_mb = 16
+max_cpu_ms = 50
+max_timeout_ms = 5000
+
+[trust]
+level = "untrusted"
+sandbox = "wasm"
+"#
+    )
+}
+
+fn generate_guard_test_fixture(name: &str) -> String {
+    format!(
+        r#"suite: "{name} Tests"
+guard: "{name}"
+fixtures:
+  - name: "allows safe action"
+    action:
+      type: "file_access"
+      path: "/tmp/safe-file.txt"
+    expect:
+      allowed: true
+
+  - name: "evaluates tool call"
+    action:
+      type: "tool_call"
+      tool: "read_file"
+      parameters:
+        path: "/tmp/test.txt"
+    expect:
+      allowed: true
+"#
+    )
 }
 
 fn generate_manifest_toml(name: &str, pkg_type: &PkgType) -> String {
@@ -495,6 +669,265 @@ fn cmd_pkg_info(
 }
 
 // ---------------------------------------------------------------------------
+// pkg test
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "wasm-plugin-runtime")]
+fn cmd_pkg_test(
+    path: Option<&Path>,
+    filter: Option<&str>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> ExitCode {
+    use clawdstrike::pkg::test_runner::{parse_guard_test_file, run_guard_tests};
+
+    let pkg_dir = match path {
+        Some(p) => p.to_path_buf(),
+        None => match std::env::current_dir() {
+            Ok(d) => d,
+            Err(e) => {
+                let _ = writeln!(stderr, "Error: cannot determine current directory: {e}");
+                return ExitCode::RuntimeError;
+            }
+        },
+    };
+
+    // Discover test fixture files
+    let tests_dir = pkg_dir.join("tests");
+    if !tests_dir.is_dir() {
+        let _ = writeln!(
+            stderr,
+            "Error: no tests/ directory found in {}",
+            pkg_dir.display()
+        );
+        return ExitCode::ConfigError;
+    }
+
+    let fixture_files: Vec<PathBuf> = match std::fs::read_dir(&tests_dir) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                p.extension()
+                    .is_some_and(|ext| ext == "yaml" || ext == "yml")
+            })
+            .collect(),
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: cannot read tests/ directory: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    if fixture_files.is_empty() {
+        let _ = writeln!(
+            stderr,
+            "Error: no .yaml/.yml fixture files found in {}",
+            tests_dir.display()
+        );
+        return ExitCode::ConfigError;
+    }
+
+    // Find the WASM file: check plugin-manifest.toml first, then fall back to
+    // looking for a .wasm file in target/wasm32-unknown-unknown/release/ or
+    // target/wasm32-unknown-unknown/debug/
+    let wasm_path = find_wasm_binary(&pkg_dir, stderr);
+    let wasm_path = match wasm_path {
+        Some(p) => p,
+        None => return ExitCode::ConfigError,
+    };
+
+    let wasm_bytes = match std::fs::read(&wasm_path) {
+        Ok(b) => b,
+        Err(e) => {
+            let _ = writeln!(
+                stderr,
+                "Error: cannot read WASM file {}: {e}",
+                wasm_path.display()
+            );
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    // Load runtime options from plugin-manifest.toml if available
+    let options = load_runtime_options(&pkg_dir);
+
+    let _ = writeln!(stdout, "Running guard tests...");
+    let _ = writeln!(stdout, "WASM: {}", wasm_path.display());
+    let _ = writeln!(stdout);
+
+    let mut total_pass = 0usize;
+    let mut total_fail = 0usize;
+    let mut total_error = 0usize;
+
+    for fixture_path in &fixture_files {
+        let suite = match parse_guard_test_file(fixture_path) {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = writeln!(
+                    stderr,
+                    "Error: failed to parse {}: {e}",
+                    fixture_path.display()
+                );
+                total_error += 1;
+                continue;
+            }
+        };
+
+        let file_name = fixture_path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let _ = writeln!(stdout, "--- {} ({})", suite.suite, file_name);
+
+        let results = run_guard_tests(&wasm_bytes, &suite, &options, filter);
+
+        for result in &results {
+            if result.passed {
+                total_pass += 1;
+                let _ = writeln!(
+                    stdout,
+                    "  PASS  {} ({:.1}ms)",
+                    result.name,
+                    result.duration.as_secs_f64() * 1000.0
+                );
+            } else if let Some(ref err) = result.error {
+                total_error += 1;
+                let _ = writeln!(stdout, "  ERROR {} -- {}", result.name, err);
+            } else {
+                total_fail += 1;
+                let _ = writeln!(
+                    stdout,
+                    "  FAIL  {} ({:.1}ms)",
+                    result.name,
+                    result.duration.as_secs_f64() * 1000.0
+                );
+                for mismatch in &result.mismatches {
+                    let _ = writeln!(
+                        stdout,
+                        "         {}: expected '{}', got '{}'",
+                        mismatch.field, mismatch.expected, mismatch.actual
+                    );
+                }
+            }
+        }
+
+        let _ = writeln!(stdout);
+    }
+
+    let _ = writeln!(
+        stdout,
+        "Results: {} passed, {} failed, {} errors",
+        total_pass, total_fail, total_error
+    );
+
+    if total_fail > 0 || total_error > 0 {
+        ExitCode::Fail
+    } else {
+        ExitCode::Ok
+    }
+}
+
+#[cfg(not(feature = "wasm-plugin-runtime"))]
+fn cmd_pkg_test(
+    _path: Option<&Path>,
+    _filter: Option<&str>,
+    _stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> ExitCode {
+    let _ = writeln!(
+        stderr,
+        "Error: `pkg test` requires the `wasm-plugin-runtime` feature.\n\
+         Rebuild with: cargo build --features wasm-plugin-runtime"
+    );
+    ExitCode::ConfigError
+}
+
+#[cfg(feature = "wasm-plugin-runtime")]
+fn find_wasm_binary(pkg_dir: &Path, stderr: &mut dyn Write) -> Option<PathBuf> {
+    use clawdstrike::plugins::parse_plugin_manifest_toml;
+
+    // Try to read plugin-manifest.toml for the plugin name
+    let manifest_path = pkg_dir.join("plugin-manifest.toml");
+    if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+        if let Ok(manifest) = parse_plugin_manifest_toml(&content) {
+            let wasm_name = format!("{}.wasm", manifest.plugin.name.replace('-', "_"));
+
+            // Check release first, then debug
+            for profile in &["release", "debug"] {
+                let candidate = pkg_dir
+                    .join("target/wasm32-unknown-unknown")
+                    .join(profile)
+                    .join(&wasm_name);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    // Fall back: try to read Cargo.toml for [package].name
+    let cargo_path = pkg_dir.join("Cargo.toml");
+    if let Ok(content) = std::fs::read_to_string(&cargo_path) {
+        if let Ok(table) = content.parse::<toml::Table>() {
+            if let Some(pkg_name) = table
+                .get("package")
+                .and_then(|p| p.get("name"))
+                .and_then(|n| n.as_str())
+            {
+                let wasm_name = format!("{}.wasm", pkg_name.replace('-', "_"));
+                for profile in &["release", "debug"] {
+                    let candidate = pkg_dir
+                        .join("target/wasm32-unknown-unknown")
+                        .join(profile)
+                        .join(&wasm_name);
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+    }
+
+    // Last resort: find any .wasm file in the target dirs
+    for profile in &["release", "debug"] {
+        let dir = pkg_dir.join("target/wasm32-unknown-unknown").join(profile);
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|ext| ext == "wasm") {
+                    return Some(p);
+                }
+            }
+        }
+    }
+
+    let _ = writeln!(
+        stderr,
+        "Error: no .wasm file found. Build your guard first:\n  \
+         cargo build --target wasm32-unknown-unknown --release"
+    );
+    None
+}
+
+#[cfg(feature = "wasm-plugin-runtime")]
+fn load_runtime_options(pkg_dir: &Path) -> clawdstrike::plugins::WasmGuardRuntimeOptions {
+    use clawdstrike::plugins::{parse_plugin_manifest_toml, WasmGuardRuntimeOptions};
+
+    let manifest_path = pkg_dir.join("plugin-manifest.toml");
+    if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+        if let Ok(manifest) = parse_plugin_manifest_toml(&content) {
+            return WasmGuardRuntimeOptions {
+                capabilities: manifest.capabilities,
+                resources: manifest.resources,
+            };
+        }
+    }
+
+    WasmGuardRuntimeOptions::default()
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -524,6 +957,61 @@ mod tests {
         let content = std::fs::read_to_string(tmp.path().join("clawdstrike-pkg.toml")).unwrap();
         assert!(content.contains("my-test-guard"));
         assert!(content.contains("guard"));
+    }
+
+    #[test]
+    fn test_scaffold_guard_creates_all_template_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        scaffold_package(tmp.path(), &PkgType::Guard, "my-guard").unwrap();
+
+        // Guard-specific files
+        assert!(tmp.path().join("src/lib.rs").exists());
+        assert!(tmp.path().join("Cargo.toml").exists());
+        assert!(tmp.path().join("plugin-manifest.toml").exists());
+        assert!(tmp.path().join("tests/basic.yaml").exists());
+        assert!(tmp.path().join(".cargo/config.toml").exists());
+
+        // Verify content of key files
+        let lib_rs = std::fs::read_to_string(tmp.path().join("src/lib.rs")).unwrap();
+        assert!(lib_rs.contains("clawdstrike_guard_sdk"));
+        assert!(lib_rs.contains("#[clawdstrike_guard]"));
+        assert!(lib_rs.contains("impl Guard for"));
+
+        let cargo_toml = std::fs::read_to_string(tmp.path().join("Cargo.toml")).unwrap();
+        assert!(cargo_toml.contains("cdylib"));
+        assert!(cargo_toml.contains("clawdstrike-guard-sdk"));
+
+        let plugin_manifest =
+            std::fs::read_to_string(tmp.path().join("plugin-manifest.toml")).unwrap();
+        assert!(plugin_manifest.contains("my-guard"));
+
+        let test_yaml = std::fs::read_to_string(tmp.path().join("tests/basic.yaml")).unwrap();
+        assert!(test_yaml.contains("my-guard"));
+        assert!(test_yaml.contains("fixtures:"));
+
+        let cargo_config = std::fs::read_to_string(tmp.path().join(".cargo/config.toml")).unwrap();
+        assert!(cargo_config.contains("wasm32-unknown-unknown"));
+    }
+
+    #[test]
+    fn test_scaffold_guard_struct_name_derivation() {
+        let tmp = tempfile::tempdir().unwrap();
+        scaffold_package(tmp.path(), &PkgType::Guard, "@acme/my-cool-guard").unwrap();
+
+        let lib_rs = std::fs::read_to_string(tmp.path().join("src/lib.rs")).unwrap();
+        // @acme/my-cool-guard -> AcmeMyCoolGuardGuard
+        assert!(lib_rs.contains("AcmeMyCoolGuardGuard"));
+    }
+
+    #[test]
+    fn test_scaffold_non_guard_skips_guard_templates() {
+        let tmp = tempfile::tempdir().unwrap();
+        scaffold_package(tmp.path(), &PkgType::PolicyPack, "my-policies").unwrap();
+
+        assert!(tmp.path().join("clawdstrike-pkg.toml").exists());
+        assert!(!tmp.path().join("src/lib.rs").exists());
+        assert!(!tmp.path().join("plugin-manifest.toml").exists());
+        assert!(!tmp.path().join("tests/basic.yaml").exists());
     }
 
     #[test]

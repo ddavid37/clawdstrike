@@ -18,6 +18,8 @@ members = [
     "crates/services/cloud-api",
     "packages/sdk/hush-py/hush-native",
     "crates/libs/hush-ffi",
+    "crates/libs/clawdstrike-guard-sdk",
+    "crates/libs/clawdstrike-guard-sdk-macros",
 ]
 exclude = [
     "fuzz",
