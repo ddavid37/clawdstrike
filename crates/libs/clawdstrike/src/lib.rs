@@ -57,6 +57,7 @@ pub mod jailbreak;
 pub mod marketplace_feed;
 pub mod output_sanitizer;
 pub mod pipeline;
+pub mod pkg;
 mod placeholders;
 pub mod plugins;
 pub mod policy;
@@ -112,6 +113,7 @@ pub use output_sanitizer::{
     StreamingConfig,
 };
 pub use pipeline::{EvaluationPath, EvaluationStage};
+pub use pkg::PackagePolicyResolver;
 #[cfg(feature = "wasm-plugin-runtime")]
 pub use plugins::{
     execute_wasm_guard_bytes, execute_wasm_guard_module, validate_wasm_guard_module,

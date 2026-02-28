@@ -113,6 +113,8 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 
 # Compression
 flate2 = "1.1"
+tar = "0.4"
+zstd = "0.13"
 
 # URL parsing
 url = "2.5"
