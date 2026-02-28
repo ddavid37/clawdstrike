@@ -207,7 +207,7 @@ mod tests {
             "deny",
             "egress to evil.com",
         );
-        let lines = vec![
+        let lines = [
             serde_json::to_string(&e1).unwrap(),
             String::new(), // blank line should be skipped
             serde_json::to_string(&e2).unwrap(),
@@ -234,7 +234,7 @@ mod tests {
             "allow",
             "echo hello",
         );
-        let lines = vec![
+        let lines = [
             serde_json::to_string(&e1).unwrap(),
             "not valid json {{{".to_string(),
             serde_json::to_string(&e2).unwrap(),
