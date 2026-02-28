@@ -1,11 +1,11 @@
-import type { PolicyEvent } from '@clawdstrike/adapter-core';
+import type { PolicyEvent } from "@clawdstrike/adapter-core";
 
-import { GuardCache } from './cache.js';
-import { CircuitBreaker } from './circuit-breaker.js';
-import { FetchHttpClient } from './http.js';
-import { TokenBucket } from './rate-limit.js';
-import { retry } from './retry.js';
-import type { AsyncGuard, AsyncGuardConfig, GuardResult, HttpClient } from './types.js';
+import { GuardCache } from "./cache.js";
+import { CircuitBreaker } from "./circuit-breaker.js";
+import { FetchHttpClient } from "./http.js";
+import { TokenBucket } from "./rate-limit.js";
+import { retry } from "./retry.js";
+import type { AsyncGuard, AsyncGuardConfig, GuardResult, HttpClient } from "./types.js";
 
 export class AsyncGuardRuntime {
   private readonly http: HttpClient;
@@ -29,8 +29,8 @@ export class AsyncGuardRuntime {
 
     for (const g of guards) {
       if (!g.guard.handles(event)) continue;
-      if (g.guard.config.executionMode === 'sequential') sequential.push(g);
-      else if (g.guard.config.executionMode === 'parallel') parallel.push(g);
+      if (g.guard.config.executionMode === "sequential") sequential.push(g);
+      else if (g.guard.config.executionMode === "parallel") parallel.push(g);
       else background.push(g);
     }
 
@@ -76,8 +76,8 @@ export class AsyncGuardRuntime {
           out.push({
             allowed: true,
             guard: g.guard.name,
-            severity: 'medium',
-            message: 'Canceled due to earlier deny in parallel group',
+            severity: "medium",
+            message: "Canceled due to earlier deny in parallel group",
             details: { canceled: true },
           });
         }
@@ -103,9 +103,9 @@ export class AsyncGuardRuntime {
         out.push({
           allowed: true,
           guard: g.guard.name,
-          severity: 'low',
-          message: 'Allowed',
-          details: { background: true, note: 'scheduled' },
+          severity: "low",
+          message: "Allowed",
+          details: { background: true, note: "scheduled" },
         });
       }
     }
@@ -113,14 +113,18 @@ export class AsyncGuardRuntime {
     return out;
   }
 
-  private async evaluateOne(guard: AsyncGuard, event: PolicyEvent, signal?: AbortSignal): Promise<GuardResult> {
+  private async evaluateOne(
+    guard: AsyncGuard,
+    event: PolicyEvent,
+    signal?: AbortSignal,
+  ): Promise<GuardResult> {
     const cfg = guard.config;
 
     const cacheKey = guard.cacheKey(event);
     if (cacheKey && cfg.cacheEnabled) {
       const cached = this.cacheFor(guard.name, cfg).get(cacheKey);
       if (cached) {
-        return withMergedDetails(cached, { cache: 'hit' });
+        return withMergedDetails(cached, { cache: "hit" });
       }
     }
 
@@ -128,7 +132,7 @@ export class AsyncGuardRuntime {
       const breaker = this.breakerFor(guard.name, cfg);
       const ok = breaker.beforeRequest();
       if (!ok.ok) {
-        return this.fallback(guard, cfg, 'circuit_open', 'circuit breaker open', cacheKey);
+        return this.fallback(guard, cfg, "circuit_open", "circuit breaker open", cacheKey);
       }
     }
 
@@ -171,7 +175,7 @@ export class AsyncGuardRuntime {
       }
 
       const message = err instanceof Error ? err.message : String(err);
-      const kind = combined.signal.aborted ? 'timeout' : 'other';
+      const kind = combined.signal.aborted ? "timeout" : "other";
       return this.fallback(guard, cfg, kind, message, cacheKey);
     } finally {
       clearTimeout(timeoutId);
@@ -198,7 +202,11 @@ export class AsyncGuardRuntime {
   private breakerFor(guardName: string, cfg: AsyncGuardConfig): CircuitBreaker {
     const existing = this.breakers.get(guardName);
     if (existing) return existing;
-    const cb = cfg.circuitBreaker ?? { failureThreshold: 5, resetTimeoutMs: 30_000, successThreshold: 2 };
+    const cb = cfg.circuitBreaker ?? {
+      failureThreshold: 5,
+      resetTimeoutMs: 30_000,
+      successThreshold: 2,
+    };
     const breaker = new CircuitBreaker(cb.failureThreshold, cb.resetTimeoutMs, cb.successThreshold);
     this.breakers.set(guardName, breaker);
     return breaker;
@@ -213,30 +221,42 @@ export class AsyncGuardRuntime {
   ): GuardResult {
     const details = { async_error: { kind, message } };
 
-    if (cfg.onTimeout === 'allow') {
-      return { allowed: true, guard: guard.name, severity: 'low', message: 'Allowed', details };
+    if (cfg.onTimeout === "allow") {
+      return { allowed: true, guard: guard.name, severity: "low", message: "Allowed", details };
     }
 
-    if (cfg.onTimeout === 'deny') {
-      return { allowed: false, guard: guard.name, severity: 'high', message: `Async guard error: ${message}`, details };
+    if (cfg.onTimeout === "deny") {
+      return {
+        allowed: false,
+        guard: guard.name,
+        severity: "high",
+        message: `Async guard error: ${message}`,
+        details,
+      };
     }
 
-    if (cfg.onTimeout === 'defer') {
+    if (cfg.onTimeout === "defer") {
       if (cacheKey) {
         const cached = this.cacheFor(guard.name, cfg).get(cacheKey);
-        if (cached) return withMergedDetails(cached, { cache: 'defer_hit' });
+        if (cached) return withMergedDetails(cached, { cache: "defer_hit" });
       }
       return {
         allowed: true,
         guard: guard.name,
-        severity: 'medium',
-        message: 'Deferred async guard had no cached result',
+        severity: "medium",
+        message: "Deferred async guard had no cached result",
         details,
       };
     }
 
     // warn (default)
-    return { allowed: true, guard: guard.name, severity: 'medium', message: `Async guard error: ${message}`, details };
+    return {
+      allowed: true,
+      guard: guard.name,
+      severity: "medium",
+      message: `Async guard error: ${message}`,
+      details,
+    };
   }
 }
 
@@ -253,7 +273,7 @@ function anySignal(signals: AbortSignal[]): AbortController {
       controller.abort();
       return controller;
     }
-    s.addEventListener('abort', onAbort, { once: true });
+    s.addEventListener("abort", onAbort, { once: true });
   }
   return controller;
 }

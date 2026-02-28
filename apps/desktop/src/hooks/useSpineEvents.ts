@@ -5,14 +5,6 @@
  * events, connection status, and derived data (threats, chains, topology).
  */
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { SpineEventSource } from "@/services/spineEventSource";
-import type {
-  SDREvent,
-  SpineConnectionStatus,
-  LiveAttackChain,
-  LiveTechnique,
-} from "@/types/spine";
 import type {
   AttackChain,
   AttackTactic,
@@ -23,6 +15,14 @@ import type {
   Threat,
   ThreatType,
 } from "@backbay/glia-three/three";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SpineEventSource } from "@/services/spineEventSource";
+import type {
+  LiveAttackChain,
+  LiveTechnique,
+  SDREvent,
+  SpineConnectionStatus,
+} from "@/types/spine";
 
 // ---------------------------------------------------------------------------
 // Hook options
@@ -165,14 +165,25 @@ function mapEventsToThreats(events: SDREvent[]): Threat[] {
 const CATEGORY_TO_MITRE: Record<string, { id: string; name: string; tactic: AttackTactic }> = {
   process_exec: { id: "T1059", name: "Command and Scripting Interpreter", tactic: "execution" },
   file_write: { id: "T1565", name: "Data Manipulation", tactic: "impact" },
-  network_connect: { id: "T1071", name: "Application Layer Protocol", tactic: "command-and-control" },
-  privilege_escalation: { id: "T1548", name: "Abuse Elevation Control Mechanism", tactic: "privilege-escalation" },
+  network_connect: {
+    id: "T1071",
+    name: "Application Layer Protocol",
+    tactic: "command-and-control",
+  },
+  privilege_escalation: {
+    id: "T1548",
+    name: "Abuse Elevation Control Mechanism",
+    tactic: "privilege-escalation",
+  },
   secret_leak: { id: "T1552", name: "Unsecured Credentials", tactic: "credential-access" },
   policy_violation: { id: "T1562", name: "Impair Defenses", tactic: "defense-evasion" },
   dns_query: { id: "T1071.004", name: "DNS", tactic: "command-and-control" },
 };
 
-function buildAttackChains(events: SDREvent[]): { chains: AttackChain[]; liveChains: LiveAttackChain[] } {
+function buildAttackChains(events: SDREvent[]): {
+  chains: AttackChain[];
+  liveChains: LiveAttackChain[];
+} {
   // Group by root exec_id or by origin pod (fallback)
   const groups = new Map<string, SDREvent[]>();
 
@@ -192,7 +203,8 @@ function buildAttackChains(events: SDREvent[]): { chains: AttackChain[]; liveCha
 
     const sorted = [...groupEvents].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     const maxSeverity = Math.max(...sorted.map((e) => e.severity));
-    const chainStatus = maxSeverity >= 0.8 ? "active" : maxSeverity >= 0.5 ? "contained" : "remediated";
+    const chainStatus =
+      maxSeverity >= 0.8 ? "active" : maxSeverity >= 0.5 ? "contained" : "remediated";
 
     const techniques: LiveTechnique[] = [];
     const seenTechniques = new Set<string>();
@@ -262,7 +274,10 @@ function buildAttackChains(events: SDREvent[]): { chains: AttackChain[]; liveCha
 // Network topology: build nodes and edges from network events
 // ---------------------------------------------------------------------------
 
-function buildNetworkTopology(events: SDREvent[]): { networkNodes: NetworkNode[]; networkEdges: NetworkEdge[] } {
+function buildNetworkTopology(events: SDREvent[]): {
+  networkNodes: NetworkNode[];
+  networkEdges: NetworkEdge[];
+} {
   const nodeMap = new Map<string, NetworkNode>();
   const edgeMap = new Map<string, NetworkEdge>();
 
@@ -292,7 +307,8 @@ function buildNetworkTopology(events: SDREvent[]): { networkNodes: NetworkNode[]
     if (dstIp) {
       const existing = nodeMap.get(dstIp);
       if (!existing) {
-        const isExternal = !dstIp.startsWith("10.") && !dstIp.startsWith("172.") && !dstIp.startsWith("192.168.");
+        const isExternal =
+          !dstIp.startsWith("10.") && !dstIp.startsWith("172.") && !dstIp.startsWith("192.168.");
         nodeMap.set(dstIp, {
           id: dstIp,
           type: isExternal ? "cloud" : "server",
@@ -320,7 +336,8 @@ function buildNetworkTopology(events: SDREvent[]): { networkNodes: NetworkNode[]
           port: dstPort,
           bandwidth: bytes ?? 100,
           encrypted: dstPort === 443 || dstPort === 8443,
-          status: verdict === "dropped" ? "suspicious" : verdict === "error" ? "suspicious" : "active",
+          status:
+            verdict === "dropped" ? "suspicious" : verdict === "error" ? "suspicious" : "active",
         });
       } else {
         existing.bandwidth = (existing.bandwidth ?? 0) + (bytes ?? 100);
@@ -337,7 +354,16 @@ function buildNetworkTopology(events: SDREvent[]): { networkNodes: NetworkNode[]
   };
 }
 
-const VALID_EDGE_PROTOCOLS = new Set<NetworkEdgeProtocol>(["tcp", "udp", "icmp", "http", "https", "ssh", "rdp", "smb"]);
+const VALID_EDGE_PROTOCOLS = new Set<NetworkEdgeProtocol>([
+  "tcp",
+  "udp",
+  "icmp",
+  "http",
+  "https",
+  "ssh",
+  "rdp",
+  "smb",
+]);
 
 function toEdgeProtocol(raw?: string, port?: number): NetworkEdgeProtocol {
   if (raw && VALID_EDGE_PROTOCOLS.has(raw as NetworkEdgeProtocol)) {
@@ -363,9 +389,18 @@ function guessNodeType(ip: string, pod?: string): NetworkNode["type"] {
 
 function portToService(port: number): string {
   const map: Record<number, string> = {
-    22: "ssh", 53: "dns", 80: "http", 443: "https", 3306: "mysql",
-    5432: "postgres", 6379: "redis", 8080: "http-alt", 8443: "https-alt",
-    9090: "prometheus", 9200: "elasticsearch", 4444: "unknown",
+    22: "ssh",
+    53: "dns",
+    80: "http",
+    443: "https",
+    3306: "mysql",
+    5432: "postgres",
+    6379: "redis",
+    8080: "http-alt",
+    8443: "https-alt",
+    9090: "prometheus",
+    9200: "elasticsearch",
+    4444: "unknown",
   };
   return map[port] ?? `port-${port}`;
 }

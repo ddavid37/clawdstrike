@@ -32,7 +32,7 @@ export function NexusActivityFeed({ open, detailOpen, items, onClose }: NexusAct
       className={clsx(
         "origin-chrome-panel absolute inset-y-0 z-40 w-[370px] border-l border-sdr-border-subtle transition-transform duration-200",
         detailOpen ? "right-[330px]" : "right-0",
-        open ? "translate-x-0" : "translate-x-full"
+        open ? "translate-x-0" : "translate-x-full",
       )}
       aria-hidden={!open}
     >

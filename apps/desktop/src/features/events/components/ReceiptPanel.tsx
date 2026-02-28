@@ -1,11 +1,11 @@
 /**
  * ReceiptPanel - Detailed view of an audit event with receipt
  */
-import { useState } from "react";
-import type { ReactNode } from "react";
+
+import { GlassHeader, GlassPanel, GlowButton } from "@backbay/glia/primitives";
 import { clsx } from "clsx";
-import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
-import { GlowButton } from "@backbay/glia/primitives";
+import type { ReactNode } from "react";
+import { useState } from "react";
 import type { AuditEvent } from "@/types/events";
 
 interface ReceiptPanelProps {
@@ -45,11 +45,7 @@ export function ReceiptPanel({ event, onClose }: ReceiptPanelProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        {activeTab === "details" ? (
-          <DetailsTab event={event} />
-        ) : (
-          <JsonTab event={event} />
-        )}
+        {activeTab === "details" ? <DetailsTab event={event} /> : <JsonTab event={event} />}
       </div>
 
       {/* Footer actions */}
@@ -78,7 +74,7 @@ function DetailsTab({ event }: { event: AuditEvent }) {
               "px-2 py-1 text-sm font-medium rounded",
               event.decision === "allowed"
                 ? "bg-verdict-allowed/20 text-verdict-allowed"
-                : "bg-verdict-blocked/20 text-verdict-blocked"
+                : "bg-verdict-blocked/20 text-verdict-blocked",
             )}
           >
             {event.decision.toUpperCase()}
@@ -91,7 +87,7 @@ function DetailsTab({ event }: { event: AuditEvent }) {
                   ? "bg-severity-critical/20 text-severity-critical"
                   : event.severity === "error"
                     ? "bg-severity-error/20 text-severity-error"
-                    : "bg-severity-warning/20 text-severity-warning"
+                    : "bg-severity-warning/20 text-severity-warning",
               )}
             >
               {event.severity}
@@ -178,12 +174,7 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
   return (
     <div className="flex items-start gap-2">
       <span className="text-xs text-sdr-text-muted w-16 shrink-0">{label}</span>
-      <span
-        className={clsx(
-          "text-sm text-sdr-text-primary break-all",
-          mono && "font-mono"
-        )}
-      >
+      <span className={clsx("text-sm text-sdr-text-primary break-all", mono && "font-mono")}>
         {value}
       </span>
     </div>
@@ -206,7 +197,7 @@ function TabButton({
         "flex-1 px-4 py-2 text-sm font-medium transition-colors",
         active
           ? "text-sdr-accent-blue border-b-2 border-sdr-accent-blue"
-          : "text-sdr-text-muted hover:text-sdr-text-primary"
+          : "text-sdr-text-muted hover:text-sdr-text-primary",
       )}
     >
       {label}
@@ -216,7 +207,14 @@ function TabButton({
 
 function CloseIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   );
@@ -224,7 +222,13 @@ function CloseIcon() {
 
 function VerifiedIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
       <path d="M22 4L12 14.01l-3-3" />
     </svg>

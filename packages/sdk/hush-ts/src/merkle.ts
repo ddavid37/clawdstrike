@@ -58,7 +58,7 @@ export class MerkleProof {
   constructor(
     public readonly treeSize: number,
     public readonly leafIndex: number,
-    public readonly auditPath: Uint8Array[]
+    public readonly auditPath: Uint8Array[],
   ) {}
 
   /**
@@ -126,7 +126,7 @@ export class MerkleProof {
       auditPath: this.auditPath.map((h) =>
         Array.from(h)
           .map((b) => b.toString(16).padStart(2, "0"))
-          .join("")
+          .join(""),
       ),
     };
   }
@@ -134,11 +134,7 @@ export class MerkleProof {
   /**
    * Deserialize from JSON.
    */
-  static fromJSON(json: {
-    treeSize: number;
-    leafIndex: number;
-    auditPath: string[];
-  }): MerkleProof {
+  static fromJSON(json: { treeSize: number; leafIndex: number; auditPath: string[] }): MerkleProof {
     const auditPath = json.auditPath.map((hex) => {
       const bytes = new Uint8Array(hex.length / 2);
       for (let i = 0; i < bytes.length; i++) {

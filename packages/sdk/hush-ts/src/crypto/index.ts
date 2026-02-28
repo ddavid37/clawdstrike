@@ -1,9 +1,9 @@
-export { sha256, keccak256, toHex, fromHex } from "./hash";
-export { generateKeypair, signMessage, verifySignature, type Keypair } from "./sign";
 export {
+  type CryptoBackend,
   getBackend,
-  setBackend,
   initWasm,
   isWasmBackend,
-  type CryptoBackend,
+  setBackend,
 } from "./backend";
+export { fromHex, keccak256, sha256, toHex } from "./hash";
+export { generateKeypair, type Keypair, signMessage, verifySignature } from "./sign";

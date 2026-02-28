@@ -63,7 +63,9 @@ export function NexusAppRail({
   return (
     <aside className="nexus-app-rail absolute right-0 top-[calc(var(--nexus-header-height,72px)+12px)] bottom-4 z-30 pointer-events-auto">
       <div className="nexus-app-rail-panel premium-panel premium-panel--rail h-full overflow-y-auto rounded-l-2xl border-r-0 px-2 py-3">
-        <div className="origin-label mb-2 text-center text-[9px] tracking-[0.16em]">{railTitle}</div>
+        <div className="origin-label mb-2 text-center text-[9px] tracking-[0.16em]">
+          {railTitle}
+        </div>
         <div className="space-y-2">
           {strikecells.map((strikecell) => {
             const active = strikecell.id === openAppId;
@@ -82,7 +84,7 @@ export function NexusAppRail({
                   mode === "station" ? "h-[58px] gap-0.5 py-1" : "h-11",
                   active
                     ? "bg-sdr-accent-amber/10 text-[color:var(--origin-gold)]"
-                    : "text-sdr-text-secondary hover:text-sdr-text-primary hover:bg-[rgba(213,173,87,0.1)]"
+                    : "text-sdr-text-secondary hover:text-sdr-text-primary hover:bg-[rgba(213,173,87,0.1)]",
                 )}
               >
                 {active ? (
@@ -91,9 +93,13 @@ export function NexusAppRail({
                     aria-hidden="true"
                   />
                 ) : null}
-                <span className="nexus-app-rail-btn-glyph text-sm leading-none">{glyphFor(strikecell.id)}</span>
+                <span className="nexus-app-rail-btn-glyph text-sm leading-none">
+                  {glyphFor(strikecell.id)}
+                </span>
                 <span className="nexus-app-rail-btn-label mt-0.5 text-[8px] font-mono uppercase">
-                  {mode === "station" ? stationCodeFor(strikecell.id) : strikecell.name.split(" ")[0]}
+                  {mode === "station"
+                    ? stationCodeFor(strikecell.id)
+                    : strikecell.name.split(" ")[0]}
                 </span>
                 {mode === "station" ? (
                   <span className="nexus-app-rail-btn-status text-[7px] font-mono uppercase tracking-[0.12em]">

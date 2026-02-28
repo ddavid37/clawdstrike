@@ -1,14 +1,20 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Plate } from "../ui";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { SSEEvent } from "../../hooks/useSSE";
+import { Plate } from "../ui";
 
-interface WidgetPos { x: number; y: number }
+interface WidgetPos {
+  x: number;
+  y: number;
+}
 
 const STORAGE_KEY = "cs_widget_positions";
 
 function loadPositions(): Record<string, WidgetPos> {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); }
-  catch { return {}; }
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
 }
 
 function savePositions(pos: Record<string, WidgetPos>) {
@@ -26,11 +32,19 @@ export function DesktopWidgets({ events, connected }: { events: SSEEvent[]; conn
     const saved = loadPositions();
     return { ...DEFAULT_POSITIONS, ...saved };
   });
-  const dragRef = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const dragRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+  } | null>(null);
   const positionsRef = useRef(positions);
   positionsRef.current = positions;
 
-  const violationCount = events.filter((e) => e.allowed === false || e.event_type === "violation").length;
+  const violationCount = events.filter(
+    (e) => e.allowed === false || e.event_type === "violation",
+  ).length;
 
   // Uptime clock — only depend on the oldest event timestamp, not the whole array
   const oldestTimestamp = events.length > 0 ? events[events.length - 1].timestamp : null;
@@ -58,12 +72,19 @@ export function DesktopWidgets({ events, connected }: { events: SSEEvent[]; conn
       const dx = ev.clientX - dragRef.current.startX;
       const dy = ev.clientY - dragRef.current.startY;
       setPositions((p) => {
-        const next = { ...p, [dragRef.current!.id]: { x: dragRef.current!.origX + dx, y: dragRef.current!.origY + dy } };
+        const next = {
+          ...p,
+          [dragRef.current!.id]: { x: dragRef.current!.origX + dx, y: dragRef.current!.origY + dy },
+        };
         savePositions(next);
         return next;
       });
     };
-    const onUp = () => { dragRef.current = null; document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+    const onUp = () => {
+      dragRef.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   }, []);
@@ -76,28 +97,86 @@ export function DesktopWidgets({ events, connected }: { events: SSEEvent[]; conn
 
   return (
     <>
-      <div style={{ ...resolvePos("violations"), cursor: "grab", userSelect: "none", zIndex: 2 }} onMouseDown={(e) => handleMouseDown("violations", e)}>
+      <div
+        style={{ ...resolvePos("violations"), cursor: "grab", userSelect: "none", zIndex: 2 }}
+        onMouseDown={(e) => handleMouseDown("violations", e)}
+      >
         <Plate className="p-3" style={{ width: 120 }}>
-          <div className="font-mono relative z-10" style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Violations</div>
-          <div className="font-display relative z-10" style={{ fontSize: 22, fontWeight: 700, color: violationCount > 0 ? "var(--crimson)" : "var(--teal)" }}>{violationCount}</div>
+          <div
+            className="font-mono relative z-10"
+            style={{
+              fontSize: 9,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "var(--muted)",
+            }}
+          >
+            Violations
+          </div>
+          <div
+            className="font-display relative z-10"
+            style={{
+              fontSize: 22,
+              fontWeight: 700,
+              color: violationCount > 0 ? "var(--crimson)" : "var(--teal)",
+            }}
+          >
+            {violationCount}
+          </div>
         </Plate>
       </div>
 
-      <div style={{ ...resolvePos("status"), cursor: "grab", userSelect: "none", zIndex: 2 }} onMouseDown={(e) => handleMouseDown("status", e)}>
+      <div
+        style={{ ...resolvePos("status"), cursor: "grab", userSelect: "none", zIndex: 2 }}
+        onMouseDown={(e) => handleMouseDown("status", e)}
+      >
         <Plate className="p-3" style={{ width: 120 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: connected ? "var(--teal)" : "var(--crimson)" }} />
-            <span className="font-mono relative z-10" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: connected ? "var(--teal)" : "var(--crimson)" }}>
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: connected ? "var(--teal)" : "var(--crimson)",
+              }}
+            />
+            <span
+              className="font-mono relative z-10"
+              style={{
+                fontSize: 10,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                color: connected ? "var(--teal)" : "var(--crimson)",
+              }}
+            >
               {connected ? "Connected" : "Disconnected"}
             </span>
           </div>
         </Plate>
       </div>
 
-      <div style={{ ...resolvePos("uptime"), cursor: "grab", userSelect: "none", zIndex: 2 }} onMouseDown={(e) => handleMouseDown("uptime", e)}>
+      <div
+        style={{ ...resolvePos("uptime"), cursor: "grab", userSelect: "none", zIndex: 2 }}
+        onMouseDown={(e) => handleMouseDown("uptime", e)}
+      >
         <Plate className="p-3" style={{ width: 120 }}>
-          <div className="font-mono relative z-10" style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Uptime</div>
-          <div className="font-mono relative z-10" style={{ fontSize: 16, color: "var(--text)", letterSpacing: "0.04em" }}>{elapsed}</div>
+          <div
+            className="font-mono relative z-10"
+            style={{
+              fontSize: 9,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "var(--muted)",
+            }}
+          >
+            Uptime
+          </div>
+          <div
+            className="font-mono relative z-10"
+            style={{ fontSize: 16, color: "var(--text)", letterSpacing: "0.04em" }}
+          >
+            {elapsed}
+          </div>
         </Plate>
       </div>
     </>

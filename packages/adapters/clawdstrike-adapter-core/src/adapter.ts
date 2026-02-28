@@ -1,8 +1,8 @@
-import type { AuditEvent, AuditEventType, AuditLogger } from './audit.js';
-import type { SecurityContext } from './context.js';
-import type { PolicyEngineLike } from './engine.js';
-import type { InterceptResult, ProcessedOutput } from './interceptor.js';
-import type { ClawdstrikeConfig, Decision, PolicyEvent } from './types.js';
+import type { AuditEvent, AuditEventType, AuditLogger } from "./audit.js";
+import type { SecurityContext } from "./context.js";
+import type { PolicyEngineLike } from "./engine.js";
+import type { InterceptResult, ProcessedOutput } from "./interceptor.js";
+import type { ClawdstrikeConfig, Decision, PolicyEvent } from "./types.js";
 
 export interface FrameworkAdapter<TContext = unknown> {
   readonly name: string;
@@ -11,10 +11,7 @@ export interface FrameworkAdapter<TContext = unknown> {
   initialize(config: AdapterConfig): Promise<void>;
   createContext(metadata?: Record<string, unknown>): SecurityContext;
 
-  interceptToolCall(
-    context: SecurityContext,
-    toolCall: GenericToolCall,
-  ): Promise<InterceptResult>;
+  interceptToolCall(context: SecurityContext, toolCall: GenericToolCall): Promise<InterceptResult>;
 
   processOutput(
     context: SecurityContext,

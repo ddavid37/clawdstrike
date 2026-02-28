@@ -6,11 +6,7 @@
  * - Uses stable placeholder labels
  */
 
-export type SanitizationFindingId =
-  | 'pii_email'
-  | 'pii_phone'
-  | 'pii_ssn'
-  | 'pii_credit_card';
+export type SanitizationFindingId = "pii_email" | "pii_phone" | "pii_ssn" | "pii_credit_card";
 
 export interface SanitizationResult {
   sanitized: string;
@@ -37,21 +33,21 @@ export function sanitizeOutputText(text: string): SanitizationResult {
   let out = text;
   const findings: SanitizationFindingId[] = [];
 
-  const email = redactAll(EMAIL_RE, out, '[REDACTED:email]');
+  const email = redactAll(EMAIL_RE, out, "[REDACTED:email]");
   out = email.out;
-  if (email.hit) findings.push('pii_email');
+  if (email.hit) findings.push("pii_email");
 
-  const phone = redactAll(PHONE_RE, out, '[REDACTED:phone]');
+  const phone = redactAll(PHONE_RE, out, "[REDACTED:phone]");
   out = phone.out;
-  if (phone.hit) findings.push('pii_phone');
+  if (phone.hit) findings.push("pii_phone");
 
-  const ssn = redactAll(SSN_RE, out, '[REDACTED:ssn]');
+  const ssn = redactAll(SSN_RE, out, "[REDACTED:ssn]");
   out = ssn.out;
-  if (ssn.hit) findings.push('pii_ssn');
+  if (ssn.hit) findings.push("pii_ssn");
 
-  const cc = redactAll(CREDIT_CARD_RE, out, '[REDACTED:credit_card]');
+  const cc = redactAll(CREDIT_CARD_RE, out, "[REDACTED:credit_card]");
   out = cc.out;
-  if (cc.hit) findings.push('pii_credit_card');
+  if (cc.hit) findings.push("pii_credit_card");
 
   return {
     sanitized: out,
@@ -59,4 +55,3 @@ export function sanitizeOutputText(text: string): SanitizationResult {
     findings,
   };
 }
-

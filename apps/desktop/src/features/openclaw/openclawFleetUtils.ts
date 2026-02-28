@@ -16,10 +16,15 @@ export function parseCommand(raw: string): ParsedCommand {
         .map((v) => String(v))
         .map((v) => v.trim())
         .filter(Boolean);
-      if (argv.length === 0) return { argv: [], rawCommand: null, error: "JSON argv contained only empty items" };
+      if (argv.length === 0)
+        return { argv: [], rawCommand: null, error: "JSON argv contained only empty items" };
       return { argv, rawCommand: null, error: null };
     } catch (err) {
-      return { argv: [], rawCommand: null, error: err instanceof Error ? err.message : "invalid JSON argv" };
+      return {
+        argv: [],
+        rawCommand: null,
+        error: err instanceof Error ? err.message : "invalid JSON argv",
+      };
     }
   }
 
@@ -56,7 +61,8 @@ export function originFixHint(lastError: string | null): string | null {
   if (!lastError) return null;
   const msg = lastError.toLowerCase();
   if (!msg.includes("origin") || !msg.includes("allowed")) return null;
-  const currentOrigin = typeof window !== "undefined" ? window.location.origin : "http://localhost:1420";
+  const currentOrigin =
+    typeof window !== "undefined" ? window.location.origin : "http://localhost:1420";
   const origins = [currentOrigin];
   if (!origins.includes("tauri://localhost")) {
     origins.push("tauri://localhost");
@@ -73,21 +79,22 @@ export function normalizeGatewayUrl(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
   const lowered = trimmed.toLowerCase();
-  const withScheme = lowered.startsWith("ws://") || lowered.startsWith("wss://")
-    ? trimmed
-    : lowered.startsWith("http://")
-      ? `ws://${trimmed.slice("http://".length)}`
-      : lowered.startsWith("https://")
-        ? `wss://${trimmed.slice("https://".length)}`
-        : /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
-          ? trimmed
-          : `ws://${trimmed}`;
+  const withScheme =
+    lowered.startsWith("ws://") || lowered.startsWith("wss://")
+      ? trimmed
+      : lowered.startsWith("http://")
+        ? `ws://${trimmed.slice("http://".length)}`
+        : lowered.startsWith("https://")
+          ? `wss://${trimmed.slice("https://".length)}`
+          : /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+            ? trimmed
+            : `ws://${trimmed}`;
   return withScheme.replace(/\/+$/, "");
 }
 
-export function selectSystemRunNodes<TNode extends { nodeId?: string; commands?: unknown; connected?: boolean }>(
-  nodes: TNode[]
-): TNode[] {
+export function selectSystemRunNodes<
+  TNode extends { nodeId?: string; commands?: unknown; connected?: boolean },
+>(nodes: TNode[]): TNode[] {
   return nodes.filter((n) => {
     const cmds = Array.isArray(n.commands) ? n.commands : [];
     return !!n.nodeId && !!n.connected && cmds.some((c) => String(c) === "system.run");

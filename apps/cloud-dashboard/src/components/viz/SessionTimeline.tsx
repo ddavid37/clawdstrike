@@ -27,7 +27,15 @@ export function SessionTimeline({ events, sessionId }: { events: SSEEvent[]; ses
 
   return (
     <div className="glass-panel" style={{ padding: "12px 16px", overflowX: "auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: filtered.length * 20, position: "relative" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+          minWidth: filtered.length * 20,
+          position: "relative",
+        }}
+      >
         {filtered.map((event, i) => (
           <div
             key={event._id}
@@ -35,9 +43,7 @@ export function SessionTimeline({ events, sessionId }: { events: SSEEvent[]; ses
             onMouseEnter={() => setHoveredIdx(i)}
             onMouseLeave={() => setHoveredIdx(null)}
           >
-            {i > 0 && (
-              <div style={{ width: 8, height: 1, background: "var(--slate)" }} />
-            )}
+            {i > 0 && <div style={{ width: 8, height: 1, background: "var(--slate)" }} />}
             <div
               style={{
                 width: 12,
@@ -66,7 +72,9 @@ export function SessionTimeline({ events, sessionId }: { events: SSEEvent[]; ses
                   }}
                 >
                   <div>{new Date(event.timestamp).toLocaleTimeString()}</div>
-                  <div style={{ color: "var(--muted)" }}>{event.action_type ?? event.event_type}</div>
+                  <div style={{ color: "var(--muted)" }}>
+                    {event.action_type ?? event.event_type}
+                  </div>
                   {event.guard && <div style={{ color: "var(--gold)" }}>{event.guard}</div>}
                 </div>
               )}

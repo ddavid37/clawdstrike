@@ -142,9 +142,7 @@ export function useSSE(url: string): UseSSEResult {
                   const lines = buffer.split("\n");
                   buffer = lines.pop() ?? "";
                   for (const rawLine of lines) {
-                    const line = rawLine.endsWith("\r")
-                      ? rawLine.slice(0, -1)
-                      : rawLine;
+                    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
                     if (line.startsWith("event:")) {
                       currentEvent = line.slice(6).trim();
                     } else if (line.startsWith("data:")) {
@@ -181,10 +179,7 @@ export function useSSE(url: string): UseSSEResult {
                 console.warn("[SSE] read error, will reconnect:", err);
                 // read errors (network drop/hushd restart/abort mid-read) should reconnect
                 if (!cancelled && !ctrl.signal.aborted) {
-                  scheduleReconnect(
-                    "network_error",
-                    "SSE stream read failed; reconnecting"
-                  );
+                  scheduleReconnect("network_error", "SSE stream read failed; reconnecting");
                 }
               } finally {
                 try {
@@ -199,10 +194,7 @@ export function useSSE(url: string): UseSSEResult {
           })
           .catch(() => {
             if (!cancelled && !ctrl.signal.aborted) {
-              scheduleReconnect(
-                "network_error",
-                "SSE connection failed; reconnecting"
-              );
+              scheduleReconnect("network_error", "SSE connection failed; reconnecting");
             }
           });
       }
@@ -249,7 +241,10 @@ export function useSSE(url: string): UseSSEResult {
     source.addEventListener("check", handleEvent("check"));
     source.addEventListener("violation", handleEvent("violation"));
     source.addEventListener("policy_updated", handleEvent("policy_updated"));
-    source.addEventListener("session_posture_transition", handleEvent("session_posture_transition"));
+    source.addEventListener(
+      "session_posture_transition",
+      handleEvent("session_posture_transition"),
+    );
 
     // Also handle unnamed messages
     source.onmessage = (e) => {

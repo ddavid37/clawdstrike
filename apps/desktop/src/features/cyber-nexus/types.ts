@@ -1,13 +1,13 @@
 import type {
-  Threat,
   AttackChain,
-  NetworkNode,
-  NetworkEdge,
-  DashboardThreat,
   DashboardAuditEvent,
+  DashboardThreat,
+  NetworkEdge,
+  NetworkNode,
+  Threat,
 } from "@backbay/glia-three/three";
 import type { SecurityKPIs } from "@/services/socDataService";
-import type { Workflow, MarketplacePolicyDto } from "@/services/tauri";
+import type { MarketplacePolicyDto, Workflow } from "@/services/tauri";
 
 export type StrikecellStatus = "healthy" | "warning" | "critical" | "offline";
 
@@ -84,13 +84,11 @@ export interface StrikecellSourceSnapshot {
   threats: Threat[];
   attacks: AttackChain[];
   network: { nodes: NetworkNode[]; edges: NetworkEdge[] };
-  overview:
-    | {
-        threats: DashboardThreat[];
-        auditEvents: DashboardAuditEvent[];
-        kpis: SecurityKPIs;
-      }
-    | null;
+  overview: {
+    threats: DashboardThreat[];
+    auditEvents: DashboardAuditEvent[];
+    kpis: SecurityKPIs;
+  } | null;
   workflows: Workflow[];
   marketplacePolicies: MarketplacePolicyDto[];
 }

@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
+import { beforeEach, describe, expect, it } from "vitest";
 import { useBookmarks } from "./useBookmarks";
 
 beforeEach(() => {
@@ -42,9 +42,12 @@ describe("useBookmarks", () => {
   });
 
   it("loads from localStorage on init", () => {
-    localStorage.setItem("cs_bookmarks", JSON.stringify({
-      "evt-2": { note: "preloaded", pinned: true, ts: "2026-01-01T00:00:00Z" },
-    }));
+    localStorage.setItem(
+      "cs_bookmarks",
+      JSON.stringify({
+        "evt-2": { note: "preloaded", pinned: true, ts: "2026-01-01T00:00:00Z" },
+      }),
+    );
     const { result } = renderHook(() => useBookmarks());
     expect(result.current.isBookmarked("evt-2")).toBe(true);
     expect(result.current.bookmarks["evt-2"].note).toBe("preloaded");

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSSE } from "./useSSE";
 
 class MockEventSource {
@@ -103,12 +103,15 @@ describe("useSSE", () => {
     });
 
     act(() => {
-      es.dispatchEvent("check", JSON.stringify({
-        action_type: "file_access",
-        target: "/tmp/test",
-        allowed: true,
-        timestamp: "2024-01-01T00:00:00Z",
-      }));
+      es.dispatchEvent(
+        "check",
+        JSON.stringify({
+          action_type: "file_access",
+          target: "/tmp/test",
+          allowed: true,
+          timestamp: "2024-01-01T00:00:00Z",
+        }),
+      );
     });
 
     expect(result.current.events).toHaveLength(1);

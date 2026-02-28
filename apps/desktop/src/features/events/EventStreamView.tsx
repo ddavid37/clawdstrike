@@ -1,15 +1,15 @@
 /**
  * EventStreamView - Real-time policy decisions and audit log
  */
-import { useState, useMemo } from "react";
+
+import { GlassHeader, GlassPanel, GlowButton } from "@backbay/glia/primitives";
 import { clsx } from "clsx";
-import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
-import { GlowButton } from "@backbay/glia/primitives";
+import { useMemo, useState } from "react";
 import { useConnection } from "@/context/ConnectionContext";
 import { useEventStream } from "@/services/eventStream";
-import type { AuditEvent, ActionType, Decision, Severity, DaemonEvent } from "@/types/events";
-import { EventRow } from "./components/EventRow";
+import type { ActionType, AuditEvent, DaemonEvent, Decision, Severity } from "@/types/events";
 import { EventFilters } from "./components/EventFilters";
+import { EventRow } from "./components/EventRow";
 import { ReceiptPanel } from "./components/ReceiptPanel";
 
 export interface EventFilter {
@@ -85,16 +85,10 @@ export function EventStreamView() {
           </div>
 
           <div className="flex items-center gap-2">
-            <GlowButton
-              onClick={toggleLive}
-              variant={isLive ? "default" : "secondary"}
-            >
+            <GlowButton onClick={toggleLive} variant={isLive ? "default" : "secondary"}>
               {isLive ? "Live" : "Paused"}
             </GlowButton>
-            <GlowButton
-              onClick={clearEvents}
-              variant="secondary"
-            >
+            <GlowButton onClick={clearEvents} variant="secondary">
               Clear
             </GlowButton>
           </div>
@@ -158,7 +152,7 @@ function StatusBadge({ isConnected, isLive }: { isConnected: boolean; isLive: bo
         "flex items-center gap-1.5 px-2 py-1 text-xs rounded-full",
         isLive
           ? "bg-sdr-accent-green/20 text-sdr-accent-green"
-          : "bg-sdr-accent-amber/20 text-sdr-accent-amber"
+          : "bg-sdr-accent-amber/20 text-sdr-accent-amber",
       )}
     >
       <span className={clsx("w-1.5 h-1.5 rounded-full bg-current", isLive && "animate-pulse")} />

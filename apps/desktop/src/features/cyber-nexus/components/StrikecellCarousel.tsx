@@ -44,7 +44,7 @@ function resolveStrikecell(strikecells: Strikecell[], id: StrikecellDomainId): S
 function orderedAroundActive(
   strikecells: Strikecell[],
   strikecellOrder: StrikecellDomainId[],
-  activeStrikecellId: StrikecellDomainId | null
+  activeStrikecellId: StrikecellDomainId | null,
 ): Strikecell[] {
   const fullOrder = strikecellOrder
     .map((id) => resolveStrikecell(strikecells, id))
@@ -82,7 +82,7 @@ export function StrikecellCarousel({
   const [menu, setMenu] = useState<MenuState | null>(null);
   const ordered = useMemo(
     () => orderedAroundActive(strikecells, strikecellOrder, activeStrikecellId),
-    [activeStrikecellId, strikecellOrder, strikecells]
+    [activeStrikecellId, strikecellOrder, strikecells],
   );
   const railHeight = Math.max(ordered.length * 68, 280);
 
@@ -111,7 +111,9 @@ export function StrikecellCarousel({
           }}
           className={clsx(
             "origin-chrome-panel origin-focus-ring relative w-[214px] rounded-2xl px-3 py-3",
-            carouselFocused ? "border-[color:color-mix(in_srgb,var(--origin-gold)_72%,transparent)]" : ""
+            carouselFocused
+              ? "border-[color:color-mix(in_srgb,var(--origin-gold)_72%,transparent)]"
+              : "",
           )}
         >
           <div className="mb-2 flex items-center justify-between">
@@ -126,8 +128,7 @@ export function StrikecellCarousel({
             {ordered.map((strikecell, index) => {
               const isActive = strikecell.id === activeStrikecellId;
               const isHighlighted = strikecell.id === keyboardHighlightedId;
-              const normalized =
-                ordered.length <= 1 ? 0 : (index / (ordered.length - 1)) * 2 - 1;
+              const normalized = ordered.length <= 1 ? 0 : (index / (ordered.length - 1)) * 2 - 1;
               const curveOffset = Math.cos(normalized * (Math.PI / 2)) * 36;
               const top = index * 68;
               const isPinned = pinned.left === strikecell.id || pinned.right === strikecell.id;
@@ -142,7 +143,7 @@ export function StrikecellCarousel({
                       ? "border-[color:color-mix(in_srgb,var(--origin-gold)_76%,transparent)] bg-sdr-accent-amber/10 shadow-[0_0_18px_rgba(213,173,87,0.18)]"
                       : isHighlighted
                         ? "border-[color:color-mix(in_srgb,var(--origin-gold-dim)_64%,transparent)] bg-[color:color-mix(in_srgb,var(--origin-gold-dim)_12%,transparent)]"
-                        : "border-[color:color-mix(in_srgb,var(--origin-panel-border)_55%,transparent)] bg-sdr-bg-secondary/70"
+                        : "border-[color:color-mix(in_srgb,var(--origin-panel-border)_55%,transparent)] bg-sdr-bg-secondary/70",
                   )}
                   onMouseEnter={() => onHighlight(strikecell.id)}
                   onMouseLeave={() => onHighlight(null)}
@@ -164,7 +165,7 @@ export function StrikecellCarousel({
                       <span
                         className={clsx(
                           "rounded border px-1.5 py-0.5 text-[9px] font-mono uppercase",
-                          statusClass(strikecell.status)
+                          statusClass(strikecell.status),
                         )}
                       >
                         {strikecell.status}

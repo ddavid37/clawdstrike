@@ -2,7 +2,7 @@
   "name": "@backbay/cloud-dashboard",
   "version": "0.2.0",
   "private": true,
-  "description": "ClawdStrike Cloud web dashboard – BackbayOS desktop experience",
+  "description": "ClawdStrike Cloud web dashboard \u2013 BackbayOS desktop experience",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "format": "biome check --write src/",
+    "format:check": "biome check src/"
   },
   "dependencies": {
     "@backbay/glia": "^0.2.0",

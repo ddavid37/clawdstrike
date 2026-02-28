@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
-import { NoiseGrain } from "../ui";
+import { useEffect, useRef, useState } from "react";
 import type { AppNotification } from "../../hooks/useNotifications";
+import { NoiseGrain } from "../ui";
 
 function relativeTime(ts: string): string {
   const diff = Date.now() - new Date(ts).getTime();
@@ -40,7 +40,10 @@ export function NotificationCenter({
   }, [open]);
 
   return (
-    <div ref={ref} style={{ position: "relative", height: "100%", display: "flex", alignItems: "center" }}>
+    <div
+      ref={ref}
+      style={{ position: "relative", height: "100%", display: "flex", alignItems: "center" }}
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -55,7 +58,14 @@ export function NotificationCenter({
           alignItems: "center",
         }}
       >
-        <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5}>
+        <svg
+          viewBox="0 0 24 24"
+          width={16}
+          height={16}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+        >
           <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" />
         </svg>
         {unreadCount > 0 && (
@@ -108,21 +118,59 @@ export function NotificationCenter({
               borderBottom: "1px solid var(--slate)",
             }}
           >
-            <span className="font-mono" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--gold)" }}>
+            <span
+              className="font-mono"
+              style={{
+                fontSize: 10,
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                color: "var(--gold)",
+              }}
+            >
               Notifications
             </span>
             <div style={{ display: "flex", gap: 8 }}>
-              <button type="button" onClick={onMarkAllRead} className="font-mono" style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 10, cursor: "pointer" }}>
+              <button
+                type="button"
+                onClick={onMarkAllRead}
+                className="font-mono"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--muted)",
+                  fontSize: 10,
+                  cursor: "pointer",
+                }}
+              >
                 Mark read
               </button>
-              <button type="button" onClick={onClear} className="font-mono" style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 10, cursor: "pointer" }}>
+              <button
+                type="button"
+                onClick={onClear}
+                className="font-mono"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--muted)",
+                  fontSize: 10,
+                  cursor: "pointer",
+                }}
+              >
                 Clear
               </button>
             </div>
           </div>
           <div style={{ position: "relative", zIndex: 2, overflowY: "auto", flex: 1 }}>
             {notifications.length === 0 ? (
-              <div className="font-mono" style={{ padding: 20, textAlign: "center", fontSize: 11, color: "rgba(154,167,181,0.4)" }}>
+              <div
+                className="font-mono"
+                style={{
+                  padding: 20,
+                  textAlign: "center",
+                  fontSize: 11,
+                  color: "rgba(154,167,181,0.4)",
+                }}
+              >
                 No notifications
               </div>
             ) : (
@@ -138,10 +186,32 @@ export function NotificationCenter({
                     borderBottom: "1px solid rgba(27,34,48,0.3)",
                   }}
                 >
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: TYPE_COLORS[n.type] || "var(--muted)", flexShrink: 0, marginTop: 4 }} />
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: TYPE_COLORS[n.type] || "var(--muted)",
+                      flexShrink: 0,
+                      marginTop: 4,
+                    }}
+                  />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p className="font-body" style={{ fontSize: 12, color: "var(--text)", margin: 0, lineHeight: 1.4 }}>{n.message}</p>
-                    <p className="font-mono" style={{ fontSize: 9, color: "rgba(154,167,181,0.4)", margin: "2px 0 0", letterSpacing: "0.04em" }}>
+                    <p
+                      className="font-body"
+                      style={{ fontSize: 12, color: "var(--text)", margin: 0, lineHeight: 1.4 }}
+                    >
+                      {n.message}
+                    </p>
+                    <p
+                      className="font-mono"
+                      style={{
+                        fontSize: 9,
+                        color: "rgba(154,167,181,0.4)",
+                        margin: "2px 0 0",
+                        letterSpacing: "0.04em",
+                      }}
+                    >
                       {relativeTime(n.timestamp)}
                     </p>
                   </div>

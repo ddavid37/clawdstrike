@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { testGuard, type GuardTestResult } from "../api/guardApi";
-import { GuardSelector } from "../components/guards/GuardSelector";
+import { type GuardTestResult, testGuard } from "../api/guardApi";
 import { GuardInputForm } from "../components/guards/GuardInputForm";
+import { GuardSelector } from "../components/guards/GuardSelector";
 import { NoiseGrain, Stamp } from "../components/ui";
 
 export function GuardPlayground(_props: { windowId?: string }) {
@@ -48,10 +48,7 @@ export function GuardPlayground(_props: { windowId?: string }) {
         Guard Playground
       </h2>
 
-      <div
-        className="glass-panel rounded-lg"
-        style={{ padding: 16 }}
-      >
+      <div className="glass-panel rounded-lg" style={{ padding: 16 }}>
         <NoiseGrain />
         <div className="relative z-10 space-y-4">
           <GuardSelector value={guard} onChange={setGuard} />
@@ -93,10 +90,7 @@ export function GuardPlayground(_props: { windowId?: string }) {
               <Stamp variant={result.decision === "allowed" ? "allowed" : "blocked"}>
                 {result.decision}
               </Stamp>
-              <span
-                className="font-mono"
-                style={{ fontSize: 12, color: "var(--muted)" }}
-              >
+              <span className="font-mono" style={{ fontSize: 12, color: "var(--muted)" }}>
                 {result.guard}
               </span>
             </div>
@@ -126,10 +120,7 @@ export function GuardPlayground(_props: { windowId?: string }) {
             )}
 
             {result.duration_ms != null && (
-              <p
-                className="font-mono"
-                style={{ fontSize: 11, color: "var(--muted)", margin: 0 }}
-              >
+              <p className="font-mono" style={{ fontSize: 11, color: "var(--muted)", margin: 0 }}>
                 Duration: {result.duration_ms}ms
               </p>
             )}

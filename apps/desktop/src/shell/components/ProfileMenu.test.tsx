@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ProfileMenu } from "./ProfileMenu";
 
@@ -9,8 +10,9 @@ vi.mock("@/services/tauri", () => ({
   isTauri: () => false,
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("ProfileMenu", () => {
   let container: HTMLDivElement;
@@ -36,11 +38,13 @@ describe("ProfileMenu", () => {
           onOpenOperations={onOpenOperations}
           onOpenConnectionSettings={onOpenConnectionSettings}
           onOpenCommandPalette={vi.fn()}
-        />
+        />,
       );
     });
 
-    const trigger = container.querySelector("button[aria-label='Open profile menu']") as HTMLButtonElement;
+    const trigger = container.querySelector(
+      "button[aria-label='Open profile menu']",
+    ) as HTMLButtonElement;
     expect(trigger).toBeTruthy();
 
     act(() => {
@@ -48,7 +52,7 @@ describe("ProfileMenu", () => {
     });
 
     const operations = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Open Operations"
+      (button) => button.textContent?.trim() === "Open Operations",
     ) as HTMLButtonElement;
 
     act(() => {
@@ -62,7 +66,7 @@ describe("ProfileMenu", () => {
     });
 
     const connection = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Connection Settings"
+      (button) => button.textContent?.trim() === "Connection Settings",
     ) as HTMLButtonElement;
 
     act(() => {

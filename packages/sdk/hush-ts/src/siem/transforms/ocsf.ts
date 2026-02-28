@@ -1,6 +1,9 @@
 import type { SecurityEvent } from "../types";
 
-function ocsfSeverity(sev: SecurityEvent["decision"]["severity"]): { severity_id: number; severity: string } {
+function ocsfSeverity(sev: SecurityEvent["decision"]["severity"]): {
+  severity_id: number;
+  severity: string;
+} {
   switch (sev) {
     case "info":
       return { severity_id: 1, severity: "informational" };
@@ -87,4 +90,3 @@ export function toOcsf(event: SecurityEvent): Record<string, unknown> {
 
   return out;
 }
-

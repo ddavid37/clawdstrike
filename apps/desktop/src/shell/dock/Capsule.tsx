@@ -3,14 +3,15 @@
  *
  * Ported from Origin desktop dock system.
  */
+
+import { AnimatePresence, motion } from "motion/react";
 import {
-  useCallback,
-  useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  useCallback,
+  useState,
 } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import type { CapsuleKind, CapsuleViewMode, DockCapsuleState } from "./types";
 
 const timing = {
@@ -148,7 +149,7 @@ export function Capsule({
       e.stopPropagation();
       onClose(capsule.id);
     },
-    [capsule.id, onClose]
+    [capsule.id, onClose],
   );
 
   const handleMinimize = useCallback(
@@ -156,7 +157,7 @@ export function Capsule({
       e.stopPropagation();
       onMinimize(capsule.id);
     },
-    [capsule.id, onMinimize]
+    [capsule.id, onMinimize],
   );
 
   const handleMaximize = useCallback(
@@ -164,7 +165,7 @@ export function Capsule({
       e.stopPropagation();
       onMaximize?.(capsule.id);
     },
-    [capsule.id, onMaximize]
+    [capsule.id, onMaximize],
   );
 
   return (
@@ -202,24 +203,47 @@ export function Capsule({
             {capsule.subtitle ? <span className="capsule-subtitle">{capsule.subtitle}</span> : null}
           </div>
           {capsule.badgeCount ? (
-            <span className="capsule-badge">{capsule.badgeCount > 99 ? "99+" : capsule.badgeCount}</span>
+            <span className="capsule-badge">
+              {capsule.badgeCount > 99 ? "99+" : capsule.badgeCount}
+            </span>
           ) : null}
         </div>
 
         <div className="capsule-header-actions">
-          <button type="button" className="capsule-action-btn" onClick={handleMinimize} title="Minimize to dock">
+          <button
+            type="button"
+            className="capsule-action-btn"
+            onClick={handleMinimize}
+            title="Minimize to dock"
+          >
             <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12" aria-hidden="true">
               <path d="M3 8a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9A.5.5 0 0 1 3 8z" />
             </svg>
           </button>
           {onMaximize ? (
-            <button type="button" className="capsule-action-btn" onClick={handleMaximize} title="Maximize">
-              <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12" aria-hidden="true">
+            <button
+              type="button"
+              className="capsule-action-btn"
+              onClick={handleMaximize}
+              title="Maximize"
+            >
+              <svg
+                viewBox="0 0 16 16"
+                fill="currentColor"
+                width="12"
+                height="12"
+                aria-hidden="true"
+              >
                 <path d="M1.5 1a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 0h4a.5.5 0 0 1 0 1h-4zM10 .5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 16 1.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5zM.5 10a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 14.5v-4a.5.5 0 0 1 .5-.5zm15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5z" />
               </svg>
             </button>
           ) : null}
-          <button type="button" className="capsule-action-btn close" onClick={handleClose} title="Close">
+          <button
+            type="button"
+            className="capsule-action-btn close"
+            onClick={handleClose}
+            title="Close"
+          >
             <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12" aria-hidden="true">
               <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z" />
             </svg>
@@ -268,14 +292,21 @@ export function CapsuleTab({ capsule, isActive, onRestore, onClose }: CapsuleTab
     >
       {isActive ? <div className="capsule-tab-active-indicator" /> : null}
 
-      <button type="button" className="capsule-tab-main" onClick={() => onRestore(capsule.id)} title={capsule.title}>
+      <button
+        type="button"
+        className="capsule-tab-main"
+        onClick={() => onRestore(capsule.id)}
+        title={capsule.title}
+      >
         <div className="capsule-tab-icon">
           <CapsuleIcon kind={capsule.kind} />
         </div>
         <span className="capsule-tab-title">{capsule.title}</span>
 
         {capsule.badgeCount ? (
-          <span className="capsule-tab-badge">{capsule.badgeCount > 9 ? "9+" : capsule.badgeCount}</span>
+          <span className="capsule-tab-badge">
+            {capsule.badgeCount > 9 ? "9+" : capsule.badgeCount}
+          </span>
         ) : null}
       </button>
 

@@ -6,14 +6,20 @@
  * Includes dial menus for Commands, Whisper channels, and Coven capsules.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { useDock } from "./DockContext";
-import { CapsuleTab } from "./Capsule";
-import type { SessionItem, ShelfMode, CapsuleKind } from "./types";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOpenClaw } from "@/context/OpenClawContext";
 import { isTauri, openclawGatewayProbe } from "@/services/tauri";
 import {
+  dispatchShellExecuteHotCommand,
+  dispatchShellFocusAgentSession,
+  dispatchShellOpenCommandPalette,
+} from "../events";
+import { CapsuleTab } from "./Capsule";
+import { useDock } from "./DockContext";
+import {
+  type HotCommand,
+  type HotCommandScope,
   loadHotCommands,
   markHotCommandUsed,
   removeHotCommand,
@@ -21,14 +27,8 @@ import {
   saveHotCommands,
   sortHotCommands,
   upsertHotCommand,
-  type HotCommand,
-  type HotCommandScope,
 } from "./hotCommands";
-import {
-  dispatchShellExecuteHotCommand,
-  dispatchShellFocusAgentSession,
-  dispatchShellOpenCommandPalette,
-} from "../events";
+import type { CapsuleKind, SessionItem, ShelfMode } from "./types";
 
 // =============================================================================
 // Design Tokens
@@ -100,7 +100,17 @@ function OutputIcon({ className }: { className?: string }) {
 /** Oracle - Eye symbol for agent decisions/prophecies */
 function OracleIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      width="16"
+      height="16"
+    >
       <path d="M12 5C7 5 2.73 8.11 1 12c1.73 3.89 6 7 11 7s9.27-3.11 11-7c-1.73-3.89-6-7-11-7z" />
       <circle cx="12" cy="12" r="3" />
       <circle cx="12" cy="12" r="1" fill="currentColor" />
@@ -111,7 +121,17 @@ function OracleIcon({ className }: { className?: string }) {
 /** Whisper - Speech rune for agent communication */
 function WhisperIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      width="16"
+      height="16"
+    >
       <path d="M21 12c0 4.418-4.03 8-9 8-1.6 0-3.11-.36-4.41-1L3 21l1.5-4.5C3.56 15.18 3 13.64 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
       <path d="M9 10h6M9 14h4" />
     </svg>
@@ -121,7 +141,17 @@ function WhisperIcon({ className }: { className?: string }) {
 /** Coven - Connected nodes for agent collective */
 function CovenIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      width="16"
+      height="16"
+    >
       <circle cx="12" cy="12" r="2" />
       <circle cx="12" cy="5" r="2" />
       <circle cx="6" cy="17" r="2" />
@@ -174,11 +204,7 @@ function SessionPill({ session, onOpen, onClose }: SessionPillProps) {
       onMouseLeave={() => setIsHovered(false)}
       className={`session-pill ${statusClass} ${isHovered ? "hovered" : ""}`}
     >
-      <button
-        type="button"
-        className="session-pill-main"
-        onClick={() => onOpen?.(session.id)}
-      >
+      <button type="button" className="session-pill-main" onClick={() => onOpen?.(session.id)}>
         <span className="session-pill-status" />
         <Icon className="session-pill-icon" />
         <span className="session-pill-title">{session.title}</span>
@@ -226,7 +252,14 @@ interface ShelfButtonProps {
   onClick?: () => void;
 }
 
-function ShelfButton({ icon, label, mode: _mode, badgeCount, isActive, onClick }: ShelfButtonProps) {
+function ShelfButton({
+  icon,
+  label,
+  mode: _mode,
+  badgeCount,
+  isActive,
+  onClick,
+}: ShelfButtonProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   return (
@@ -252,9 +285,7 @@ function ShelfButton({ icon, label, mode: _mode, badgeCount, isActive, onClick }
       {icon}
 
       {badgeCount ? (
-        <span className="shelf-button-badge">
-          {badgeCount > 9 ? "9+" : badgeCount}
-        </span>
+        <span className="shelf-button-badge">{badgeCount > 9 ? "9+" : badgeCount}</span>
       ) : null}
     </button>
   );
@@ -274,7 +305,15 @@ interface AgenticButtonProps {
   onClick?: () => void;
 }
 
-function AgenticButton({ icon, label, variant, badgeCount, isActive, hasCritical, onClick }: AgenticButtonProps) {
+function AgenticButton({
+  icon,
+  label,
+  variant,
+  badgeCount,
+  isActive,
+  hasCritical,
+  onClick,
+}: AgenticButtonProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   return (
@@ -395,12 +434,21 @@ function DialMenu({ isOpen, variant, items, onClose, onSelectItem }: DialMenuPro
                 {item.subtitle && <span className="dial-item-subtitle">{item.subtitle}</span>}
               </div>
               {item.badgeCount !== undefined && item.badgeCount > 0 && (
-                <span className={`dial-item-badge ${item.priority === "critical" ? "critical" : ""}`}>
+                <span
+                  className={`dial-item-badge ${item.priority === "critical" ? "critical" : ""}`}
+                >
                   {item.badgeCount}
                 </span>
               )}
               <span className="dial-item-arrow">
-                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <path d="M6 4l4 4-4 4" />
                 </svg>
               </span>
@@ -684,7 +732,8 @@ function extractOpenClawSessionKey(id: string): string | null {
   if (!value.startsWith("openclaw:")) return null;
   const key = value.slice("openclaw:".length);
   if (!key) return null;
-  if (key.startsWith("node:") || key.startsWith("presence:") || key.startsWith("approval:")) return null;
+  if (key.startsWith("node:") || key.startsWith("presence:") || key.startsWith("approval:"))
+    return null;
   return key;
 }
 
@@ -707,7 +756,10 @@ function asNumber(value: unknown): number | null {
   return null;
 }
 
-function parseProbeSessions(payload: unknown): { sessions: SessionItem[]; coven: ProbeCovenEntry[] } {
+function parseProbeSessions(payload: unknown): {
+  sessions: SessionItem[];
+  coven: ProbeCovenEntry[];
+} {
   const root = asRecord(payload);
   if (!root) return { sessions: [], coven: [] };
 
@@ -750,7 +802,8 @@ function parseProbeSessions(payload: unknown): { sessions: SessionItem[]; coven:
               : "";
     if (!key) return;
 
-    const updatedAt = asNumber(row.updatedAt) ?? asNumber(row.updated_at) ?? asNumber(row.ts) ?? Date.now();
+    const updatedAt =
+      asNumber(row.updatedAt) ?? asNumber(row.updated_at) ?? asNumber(row.ts) ?? Date.now();
     const ageMs = asNumber(row.age) ?? Math.max(0, Date.now() - updatedAt);
     const existing = sessionMap.get(key);
     if (existing && existing.updatedAt >= updatedAt) return;
@@ -859,15 +912,20 @@ function parseProbeSessions(payload: unknown): { sessions: SessionItem[]; coven:
 }
 
 function buildRuntimeFallbackSessions(
-  runtime: {
-    nodes?: Array<{ nodeId?: string; displayName?: string; connected?: boolean }>;
-    presence?: unknown[];
-    execApprovalQueue?: Array<{ id: string; request: { command: string } }>;
-  } | null | undefined
+  runtime:
+    | {
+        nodes?: Array<{ nodeId?: string; displayName?: string; connected?: boolean }>;
+        presence?: unknown[];
+        execApprovalQueue?: Array<{ id: string; request: { command: string } }>;
+      }
+    | null
+    | undefined,
 ): SessionItem[] {
   const sessions: SessionItem[] = [];
 
-  const connectedNodes = (runtime?.nodes ?? []).filter((node) => node.connected !== false).slice(0, 5);
+  const connectedNodes = (runtime?.nodes ?? [])
+    .filter((node) => node.connected !== false)
+    .slice(0, 5);
   for (const node of connectedNodes) {
     const nodeId = typeof node.nodeId === "string" ? node.nodeId : "";
     if (!nodeId) continue;
@@ -978,28 +1036,31 @@ export function SessionRail({
 
         const response = await oc.request<OpenClawSessionListResponse>("sessions.list");
         const rows = Array.isArray(response.sessions) ? response.sessions : [];
-        const mapped = rows.reduce<SessionItem[]>((acc, session) => {
-          const key = typeof session.key === "string" ? session.key : "";
-          if (!key) return acc;
+        const mapped = rows
+          .reduce<SessionItem[]>((acc, session) => {
+            const key = typeof session.key === "string" ? session.key : "";
+            if (!key) return acc;
 
-          const statusRaw = typeof session.status === "string" ? session.status.toLowerCase() : "running";
-          const status: SessionItem["status"] =
-            statusRaw === "error"
-              ? "error"
-              : statusRaw === "completed" || statusRaw === "success"
-                ? "success"
-                : "running";
+            const statusRaw =
+              typeof session.status === "string" ? session.status.toLowerCase() : "running";
+            const status: SessionItem["status"] =
+              statusRaw === "error"
+                ? "error"
+                : statusRaw === "completed" || statusRaw === "success"
+                  ? "success"
+                  : "running";
 
-          acc.push({
-            id: `openclaw:${key}`,
-            kind: "run",
-            title: normalizeSessionLabel(key, session.displayName),
-            status,
-            route: "/nexus",
-          });
+            acc.push({
+              id: `openclaw:${key}`,
+              kind: "run",
+              title: normalizeSessionLabel(key, session.displayName),
+              status,
+              route: "/nexus",
+            });
 
-          return acc;
-        }, []).slice(0, 8);
+            return acc;
+          }, [])
+          .slice(0, 8);
 
         if (!cancelled) setLiveSessions(mapped.length > 0 ? mapped : fallbackSessions);
       } catch (error) {
@@ -1056,51 +1117,48 @@ export function SessionRail({
   }, [liveSessions.length, runtime?.status, tauriAvailable]);
 
   // Get capsules by type for dial menus
-  const whisperCapsules = useMemo(() =>
-    capsules.filter((c) => c.kind === "chat"),
-    [capsules]
-  );
+  const whisperCapsules = useMemo(() => capsules.filter((c) => c.kind === "chat"), [capsules]);
 
-  const covenCapsules = useMemo(() =>
-    capsules.filter((c) => c.kind === "social"),
-    [capsules]
-  );
+  const covenCapsules = useMemo(() => capsules.filter((c) => c.kind === "social"), [capsules]);
 
   // Convert capsules to dial menu items (fallback when OpenClaw is disconnected)
-  const whisperCapsuleItems: DialMenuItem[] = useMemo(() =>
-    whisperCapsules.map((c) => ({
-      id: c.id,
-      title: c.title,
-      subtitle: c.subtitle,
-      badgeCount: c.badgeCount,
-      kind: c.kind,
-    })),
-    [whisperCapsules]
+  const whisperCapsuleItems: DialMenuItem[] = useMemo(
+    () =>
+      whisperCapsules.map((c) => ({
+        id: c.id,
+        title: c.title,
+        subtitle: c.subtitle,
+        badgeCount: c.badgeCount,
+        kind: c.kind,
+      })),
+    [whisperCapsules],
   );
 
-  const covenCapsuleItems: DialMenuItem[] = useMemo(() =>
-    covenCapsules.map((c) => ({
-      id: c.id,
-      title: c.title,
-      subtitle: c.subtitle,
-      badgeCount: c.badgeCount,
-      kind: c.kind,
-    })),
-    [covenCapsules]
+  const covenCapsuleItems: DialMenuItem[] = useMemo(
+    () =>
+      covenCapsules.map((c) => ({
+        id: c.id,
+        title: c.title,
+        subtitle: c.subtitle,
+        badgeCount: c.badgeCount,
+        kind: c.kind,
+      })),
+    [covenCapsules],
   );
 
   const sessionSource = liveSessions.length > 0 ? liveSessions : probeSessions;
 
-  const whisperLiveItems: DialMenuItem[] = useMemo(() =>
-    sessionSource.map((session) => ({
-      id: `openclaw:session:${session.id}`,
-      title: session.title,
-      subtitle: "Active daemon session",
-      badgeCount: session.status === "error" ? 1 : 0,
-      priority: session.status === "error" ? "critical" : "normal",
-      kind: "chat",
-    })),
-    [sessionSource]
+  const whisperLiveItems: DialMenuItem[] = useMemo(
+    () =>
+      sessionSource.map((session) => ({
+        id: `openclaw:session:${session.id}`,
+        title: session.title,
+        subtitle: "Active daemon session",
+        badgeCount: session.status === "error" ? 1 : 0,
+        priority: session.status === "error" ? "critical" : "normal",
+        kind: "chat",
+      })),
+    [sessionSource],
   );
 
   const covenLiveItems: DialMenuItem[] = useMemo(() => {
@@ -1110,7 +1168,7 @@ export function SessionRail({
         const nodeId = typeof node.nodeId === "string" ? node.nodeId : `node-${index}`;
         const label = normalizeNodeLabel(node.displayName ?? node.nodeId);
         const detailParts = [node.platform, node.version].filter(
-          (value): value is string => typeof value === "string" && value.trim().length > 0
+          (value): value is string => typeof value === "string" && value.trim().length > 0,
         );
         return {
           id: `openclaw:node:${nodeId}`,
@@ -1133,7 +1191,9 @@ export function SessionRail({
     const presenceRows = Array.isArray(runtime?.presence) ? runtime?.presence : [];
     return presenceRows.slice(0, 24).map((row, index) => ({
       id: `openclaw:presence:${index}`,
-      title: normalizeNodeLabel((row as Record<string, unknown>)?.client ?? (row as Record<string, unknown>)?.id),
+      title: normalizeNodeLabel(
+        (row as Record<string, unknown>)?.client ?? (row as Record<string, unknown>)?.id,
+      ),
       subtitle: "Presence heartbeat",
       kind: "social" as const,
     }));
@@ -1150,8 +1210,10 @@ export function SessionRail({
 
   // Total badge counts
   const oracleBadgeCount = hotCommands.length;
-  const whisperBadgeCount = whisperItems.reduce((sum, item) => sum + (item.badgeCount || 0), 0) || whisperItems.length;
-  const covenBadgeCount = covenItems.reduce((sum, item) => sum + (item.badgeCount || 0), 0) || covenItems.length;
+  const whisperBadgeCount =
+    whisperItems.reduce((sum, item) => sum + (item.badgeCount || 0), 0) || whisperItems.length;
+  const covenBadgeCount =
+    covenItems.reduce((sum, item) => sum + (item.badgeCount || 0), 0) || covenItems.length;
 
   const handleDialToggle = useCallback((dial: "oracle" | "whisper" | "coven") => {
     setActiveDial((prev) => (prev === dial ? null : dial));
@@ -1161,36 +1223,39 @@ export function SessionRail({
     setActiveDial(null);
   }, []);
 
-  const handleDialSelect = useCallback((id: string) => {
-    const sessionKey = extractOpenClawSessionKey(id);
-    if (sessionKey) {
-      dispatchShellFocusAgentSession({
-        sessionKey,
-        agentId: parseAgentIdFromSessionKey(sessionKey) ?? undefined,
-      });
-    }
-    if (id.startsWith("openclaw:session:")) {
-      window.location.hash = "#/nexus";
+  const handleDialSelect = useCallback(
+    (id: string) => {
+      const sessionKey = extractOpenClawSessionKey(id);
+      if (sessionKey) {
+        dispatchShellFocusAgentSession({
+          sessionKey,
+          agentId: parseAgentIdFromSessionKey(sessionKey) ?? undefined,
+        });
+      }
+      if (id.startsWith("openclaw:session:")) {
+        window.location.hash = "#/nexus";
+        setActiveDial(null);
+        return;
+      }
+      if (id.startsWith("openclaw:probe-agent:")) {
+        window.location.hash = "#/nexus";
+        setActiveDial(null);
+        return;
+      }
+      if (
+        id.startsWith("openclaw:node:") ||
+        id.startsWith("openclaw:presence:") ||
+        id.startsWith("openclaw:approval:")
+      ) {
+        window.location.hash = "#/operations?tab=fleet";
+        setActiveDial(null);
+        return;
+      }
+      restoreCapsule(id);
       setActiveDial(null);
-      return;
-    }
-    if (id.startsWith("openclaw:probe-agent:")) {
-      window.location.hash = "#/nexus";
-      setActiveDial(null);
-      return;
-    }
-    if (
-      id.startsWith("openclaw:node:") ||
-      id.startsWith("openclaw:presence:") ||
-      id.startsWith("openclaw:approval:")
-    ) {
-      window.location.hash = "#/operations?tab=fleet";
-      setActiveDial(null);
-      return;
-    }
-    restoreCapsule(id);
-    setActiveDial(null);
-  }, [restoreCapsule]);
+    },
+    [restoreCapsule],
+  );
 
   const handleExecuteHotCommand = useCallback((command: HotCommand) => {
     const action = resolveHotCommandAction(command.command);
@@ -1227,7 +1292,7 @@ export function SessionRail({
       setCommandFeedback(input.id ? "Command updated" : "Command saved");
       window.setTimeout(() => setCommandFeedback(null), 1200);
     },
-    []
+    [],
   );
 
   const handleDeleteHotCommand = useCallback((id: string) => {
@@ -1242,9 +1307,9 @@ export function SessionRail({
         previous.map((candidate) =>
           candidate.id === entry.id
             ? { ...candidate, pinned: !candidate.pinned, updatedAt: Date.now() }
-            : candidate
-        )
-      )
+            : candidate,
+        ),
+      ),
     );
   }, []);
 
@@ -1252,14 +1317,14 @@ export function SessionRail({
     (id: string) => {
       restoreCapsule(id);
     },
-    [restoreCapsule]
+    [restoreCapsule],
   );
 
   const handleCloseCapsule = useCallback(
     (id: string) => {
       closeCapsule(id);
     },
-    [closeCapsule]
+    [closeCapsule],
   );
 
   const handleToggleShelf = useCallback(
@@ -1271,7 +1336,7 @@ export function SessionRail({
       }
       openShelf(mode);
     },
-    [closeShelf, openShelf, shelf.isOpen, shelf.mode]
+    [closeShelf, openShelf, shelf.isOpen, shelf.mode],
   );
 
   const handleOpenSessionPill = useCallback(
@@ -1297,7 +1362,7 @@ export function SessionRail({
       }
       onOpenSession?.(id);
     },
-    [onOpenSession]
+    [onOpenSession],
   );
 
   const handleCloseSessionPill = useCallback(
@@ -1305,17 +1370,14 @@ export function SessionRail({
       if (id.startsWith("openclaw:")) return;
       onCloseSession?.(id);
     },
-    [onCloseSession]
+    [onCloseSession],
   );
 
   const hasSessions = visibleSessions.length > 0;
   const hasCapsules = minimizedCapsules.length > 0;
 
   return (
-    <nav
-      className={`session-rail ${className ?? ""}`}
-      aria-label="Session Rail"
-    >
+    <nav className={`session-rail ${className ?? ""}`} aria-label="Session Rail">
       {/* Agentic Controls (left side) - The Trinity with Dial Menus */}
       <div className="session-rail-agentic">
         <div className="agentic-dial-wrapper">
@@ -1392,9 +1454,7 @@ export function SessionRail({
             />
           ))}
 
-          {!hasSessions && (
-            <span className="session-rail-empty">No active sessions</span>
-          )}
+          {!hasSessions && <span className="session-rail-empty">No active sessions</span>}
         </div>
 
         {/* Divider between sessions and capsules */}

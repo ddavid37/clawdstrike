@@ -111,7 +111,7 @@ export class PatchIntegrityGuard implements Guard {
 
     if (analysis.exceedsImbalance) {
       issues.push(
-        `Imbalanced patch: ratio ${analysis.imbalanceRatio.toFixed(2)} (max: ${this.maxImbalanceRatio.toFixed(2)})`
+        `Imbalanced patch: ratio ${analysis.imbalanceRatio.toFixed(2)} (max: ${this.maxImbalanceRatio.toFixed(2)})`,
       );
     }
 
@@ -152,8 +152,7 @@ export class PatchIntegrityGuard implements Guard {
       }
     }
 
-    const imbalanceRatio =
-      deletions > 0 ? additions / deletions : additions > 0 ? Infinity : 1.0;
+    const imbalanceRatio = deletions > 0 ? additions / deletions : additions > 0 ? Infinity : 1.0;
 
     return {
       additions,

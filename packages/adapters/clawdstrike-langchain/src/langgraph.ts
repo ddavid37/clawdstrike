@@ -1,13 +1,13 @@
-import { createSecurityContext } from '@clawdstrike/adapter-core';
 import type {
   AdapterConfig,
   Decision,
   PolicyEngineLike,
   SecurityContext,
   ToolInterceptor,
-} from '@clawdstrike/adapter-core';
+} from "@clawdstrike/adapter-core";
+import { createSecurityContext } from "@clawdstrike/adapter-core";
 
-import { createLangChainInterceptor } from './interceptor.js';
+import { createLangChainInterceptor } from "./interceptor.js";
 
 export interface PendingToolCall {
   name: string;
@@ -17,7 +17,7 @@ export interface PendingToolCall {
 export interface SecurityCheckpointNode {
   name: string;
   check(state: Record<string, unknown>): Promise<Decision>;
-  route(state: Record<string, unknown>): Promise<'allow' | 'block' | 'warn'>;
+  route(state: Record<string, unknown>): Promise<"allow" | "block" | "warn">;
 }
 
 export interface SecurityCheckpointOptions {
@@ -33,27 +33,25 @@ export function createSecurityCheckpoint(
   options: SecurityCheckpointOptions,
 ): SecurityCheckpointNode {
   const interceptor =
-    options.interceptor
-    ?? (options.engine
-      ? createLangChainInterceptor(options.engine, options.config)
-      : undefined);
+    options.interceptor ??
+    (options.engine ? createLangChainInterceptor(options.engine, options.config) : undefined);
 
   if (!interceptor) {
-    throw new Error('createSecurityCheckpoint requires { interceptor } or { engine }');
+    throw new Error("createSecurityCheckpoint requires { interceptor } or { engine }");
   }
 
   const extractToolCalls = options.extractToolCalls ?? defaultExtractToolCalls;
   const createContext =
-    options.createContext
-    ?? ((state: Record<string, unknown>) =>
-      options.context
-      ?? createSecurityContext({
-        sessionId: typeof state.sessionId === 'string' ? state.sessionId : undefined,
-        metadata: { framework: 'langgraph' },
+    options.createContext ??
+    ((state: Record<string, unknown>) =>
+      options.context ??
+      createSecurityContext({
+        sessionId: typeof state.sessionId === "string" ? state.sessionId : undefined,
+        metadata: { framework: "langgraph" },
       }));
 
   return {
-    name: 'clawdstrike_checkpoint',
+    name: "clawdstrike_checkpoint",
 
     async check(state: Record<string, unknown>): Promise<Decision> {
       const toolCalls = extractToolCalls(state);
@@ -64,32 +62,32 @@ export function createSecurityCheckpoint(
       for (const call of toolCalls) {
         const result = await interceptor.beforeExecute(call.name, call.args, context);
 
-        if (result.decision.status === 'deny') {
+        if (result.decision.status === "deny") {
           return result.decision;
         }
 
-        if (result.decision.status === 'warn' && !warningDecision) {
+        if (result.decision.status === "warn" && !warningDecision) {
           warningDecision = result.decision;
         }
       }
 
-      return (
-        warningDecision
-        ?? { status: 'allow' }
-      );
+      return warningDecision ?? { status: "allow" };
     },
 
-    async route(state: Record<string, unknown>): Promise<'allow' | 'block' | 'warn'> {
+    async route(state: Record<string, unknown>): Promise<"allow" | "block" | "warn"> {
       const decision = await this.check(state);
-      if (decision.status === 'deny') return 'block';
-      if (decision.status === 'warn') return 'warn';
-      return 'allow';
+      if (decision.status === "deny") return "block";
+      if (decision.status === "warn") return "warn";
+      return "allow";
     },
   };
 }
 
 export function wrapToolNode<S extends Record<string, unknown>>(
-  graph: { nodes: Map<string, (state: S) => Promise<S> | S>; addNode: (name: string, node: (state: S) => Promise<S> | S) => void },
+  graph: {
+    nodes: Map<string, (state: S) => Promise<S> | S>;
+    addNode: (name: string, node: (state: S) => Promise<S> | S) => void;
+  },
   nodeName: string,
   checkpoint: SecurityCheckpointNode,
   options?: {
@@ -104,11 +102,11 @@ export function wrapToolNode<S extends Record<string, unknown>>(
 
   graph.addNode(nodeName, async (state: S) => {
     const decision = await checkpoint.check(state as Record<string, unknown>);
-    if (decision.status === 'deny') {
+    if (decision.status === "deny") {
       return {
         ...state,
         __clawdstrike_blocked: true,
-        __clawdstrike_reason: decision.message ?? decision.reason ?? 'denied',
+        __clawdstrike_reason: decision.message ?? decision.reason ?? "denied",
       } as S;
     }
 
@@ -127,27 +125,31 @@ export function wrapToolNode<S extends Record<string, unknown>>(
   });
 }
 
-export function sanitizeState(value: unknown, engine: PolicyEngineLike, seen = new WeakSet<object>()): unknown {
+export function sanitizeState(
+  value: unknown,
+  engine: PolicyEngineLike,
+  seen = new WeakSet<object>(),
+): unknown {
   if (value === null || value === undefined) {
     return value;
   }
 
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return engine.redactSecrets ? engine.redactSecrets(value) : value;
   }
 
-  if (typeof value !== 'object') {
+  if (typeof value !== "object") {
     return value;
   }
 
   if (seen.has(value as object)) {
-    return '[Circular]';
+    return "[Circular]";
   }
   seen.add(value as object);
 
   let result: unknown;
   if (Array.isArray(value)) {
-    result = value.map(item => sanitizeState(item, engine, seen));
+    result = value.map((item) => sanitizeState(item, engine, seen));
   } else {
     const rec = value as Record<string, unknown>;
     const out: Record<string, unknown> = {};
@@ -161,13 +163,19 @@ export function sanitizeState(value: unknown, engine: PolicyEngineLike, seen = n
 }
 
 export function addSecurityRouting<S extends Record<string, unknown>>(
-  graph: { addConditionalEdges?: (from: string, condition: (state: S) => Promise<string> | string, mapping: Record<string, string>) => void },
+  graph: {
+    addConditionalEdges?: (
+      from: string,
+      condition: (state: S) => Promise<string> | string,
+      mapping: Record<string, string>,
+    ) => void;
+  },
   fromNode: string,
   checkpoint: SecurityCheckpointNode,
   mapping: { allow: string; block: string; warn: string },
 ): void {
-  if (typeof graph.addConditionalEdges !== 'function') {
-    throw new Error('Graph does not support addConditionalEdges');
+  if (typeof graph.addConditionalEdges !== "function") {
+    throw new Error("Graph does not support addConditionalEdges");
   }
 
   graph.addConditionalEdges(
@@ -185,11 +193,16 @@ function defaultExtractToolCalls(state: Record<string, unknown>): PendingToolCal
 
   const calls: PendingToolCall[] = [];
   for (const item of raw) {
-    if (typeof item !== 'object' || item === null) {
+    if (typeof item !== "object" || item === null) {
       continue;
     }
     const rec = item as Record<string, unknown>;
-    const name = typeof rec.name === 'string' ? rec.name : typeof rec.toolName === 'string' ? rec.toolName : undefined;
+    const name =
+      typeof rec.name === "string"
+        ? rec.name
+        : typeof rec.toolName === "string"
+          ? rec.toolName
+          : undefined;
     if (!name) {
       continue;
     }

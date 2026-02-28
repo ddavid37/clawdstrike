@@ -1,11 +1,11 @@
 import type {
+  NexusGraph,
   Strikecell,
   StrikecellConnection,
   StrikecellDomainId,
   StrikecellNode,
   StrikecellSourceSnapshot,
   StrikecellStatus,
-  NexusGraph,
 } from "../types";
 
 // Canonical deterministic strikecell order.
@@ -120,7 +120,7 @@ function metricNode(
   label: string,
   activity: number,
   severity: number,
-  meta?: Record<string, string | number | boolean>
+  meta?: Record<string, string | number | boolean>,
 ): StrikecellNode {
   return {
     id,
@@ -137,7 +137,7 @@ function buildCell(
   id: StrikecellDomainId,
   status: StrikecellStatus,
   activityCount: number,
-  nodes: StrikecellNode[]
+  nodes: StrikecellNode[],
 ): Strikecell {
   const meta = STRIKECELL_META[id];
   return {
@@ -269,7 +269,7 @@ function buildPolicyNodes(snapshot: StrikecellSourceSnapshot): StrikecellNode[] 
       {
         blocked: kpis.blockedCount,
         total: kpis.totalChecks,
-      }
+      },
     ),
     metricNode(
       "policies",
@@ -280,7 +280,7 @@ function buildPolicyNodes(snapshot: StrikecellSourceSnapshot): StrikecellNode[] 
       {
         allowed: kpis.allowedCount,
         total: kpis.totalChecks,
-      }
+      },
     ),
     metricNode(
       "policies",
@@ -288,7 +288,7 @@ function buildPolicyNodes(snapshot: StrikecellSourceSnapshot): StrikecellNode[] 
       "Active Agents",
       clamp01(kpis.activeAgents / 12),
       kpis.activeAgents > 0 ? 0.15 : 0.8,
-      { agents: kpis.activeAgents }
+      { agents: kpis.activeAgents },
     ),
   ];
 }
@@ -331,7 +331,7 @@ function buildOverviewNodes(snapshot: StrikecellSourceSnapshot): StrikecellNode[
       "Total Checks",
       clamp01(kpis.totalChecks / 500),
       ratio(kpis.blockedCount, Math.max(kpis.totalChecks, 1)),
-      { checks: kpis.totalChecks }
+      { checks: kpis.totalChecks },
     ),
     metricNode(
       "security-overview",
@@ -339,7 +339,7 @@ function buildOverviewNodes(snapshot: StrikecellSourceSnapshot): StrikecellNode[
       "Blocked",
       clamp01(kpis.blockedCount / 200),
       ratio(kpis.blockedCount, Math.max(kpis.totalChecks, 1)),
-      { blocked: kpis.blockedCount }
+      { blocked: kpis.blockedCount },
     ),
     metricNode(
       "security-overview",
@@ -347,7 +347,7 @@ function buildOverviewNodes(snapshot: StrikecellSourceSnapshot): StrikecellNode[
       "Uptime",
       clamp01(kpis.uptimePercent / 100),
       kpis.uptimePercent >= 99 ? 0.1 : 0.45,
-      { uptime: kpis.uptimePercent }
+      { uptime: kpis.uptimePercent },
     ),
   ];
 }
@@ -359,7 +359,7 @@ function computeConnections(strikecells: Strikecell[]): StrikecellConnection[] {
     sourceId: StrikecellDomainId,
     targetId: StrikecellDomainId,
     kind: StrikecellConnection["kind"],
-    baseStrength: number
+    baseStrength: number,
   ): StrikecellConnection => {
     const source = byId.get(sourceId);
     const target = byId.get(targetId);
@@ -419,7 +419,7 @@ export function buildStrikecellsFromSocData(snapshot: StrikecellSourceSnapshot):
         activityCount: overviewNodes.reduce((acc, node) => acc + node.activity, 0) * 10,
       }),
       totalChecks,
-      overviewNodes
+      overviewNodes,
     ),
     buildCell(
       "threat-radar",
@@ -433,7 +433,7 @@ export function buildStrikecellsFromSocData(snapshot: StrikecellSourceSnapshot):
         activityCount: snapshot.threats.filter((threat) => threat.active).length,
       }),
       snapshot.threats.filter((threat) => threat.active).length,
-      threatNodes
+      threatNodes,
     ),
     buildCell(
       "attack-graph",
@@ -447,7 +447,7 @@ export function buildStrikecellsFromSocData(snapshot: StrikecellSourceSnapshot):
         activityCount: snapshot.attacks.reduce((acc, chain) => acc + chain.techniques.length, 0),
       }),
       snapshot.attacks.reduce((acc, chain) => acc + chain.techniques.length, 0),
-      attackNodes
+      attackNodes,
     ),
     buildCell(
       "network-map",
@@ -461,7 +461,7 @@ export function buildStrikecellsFromSocData(snapshot: StrikecellSourceSnapshot):
         activityCount: snapshot.network.nodes.length + snapshot.network.edges.length,
       }),
       snapshot.network.nodes.length + snapshot.network.edges.length,
-      networkNodes
+      networkNodes,
     ),
     buildCell(
       "workflows",
@@ -475,7 +475,7 @@ export function buildStrikecellsFromSocData(snapshot: StrikecellSourceSnapshot):
         activityCount: snapshot.workflows.filter((workflow) => workflow.enabled).length,
       }),
       snapshot.workflows.reduce((acc, workflow) => acc + workflow.run_count, 0),
-      workflowNodes
+      workflowNodes,
     ),
     buildCell(
       "marketplace",
@@ -484,24 +484,27 @@ export function buildStrikecellsFromSocData(snapshot: StrikecellSourceSnapshot):
         severityScore:
           marketplaceNodes.length === 0
             ? 0.2
-            : marketplaceNodes.reduce((acc, node) => acc + node.severity, 0) / marketplaceNodes.length,
+            : marketplaceNodes.reduce((acc, node) => acc + node.severity, 0) /
+              marketplaceNodes.length,
         blockedRate,
         activityCount: snapshot.marketplacePolicies.length,
       }),
       snapshot.marketplacePolicies.length,
-      marketplaceNodes
+      marketplaceNodes,
     ),
     buildCell(
       "events",
       deriveStrikecellHealth({
         connected: snapshot.connected,
         severityScore:
-          eventNodes.length === 0 ? blockedRate : eventNodes.reduce((acc, node) => acc + node.severity, 0) / eventNodes.length,
+          eventNodes.length === 0
+            ? blockedRate
+            : eventNodes.reduce((acc, node) => acc + node.severity, 0) / eventNodes.length,
         blockedRate,
         activityCount: eventNodes.length,
       }),
       eventNodes.length,
-      eventNodes
+      eventNodes,
     ),
     buildCell(
       "forensics-river",
@@ -515,7 +518,7 @@ export function buildStrikecellsFromSocData(snapshot: StrikecellSourceSnapshot):
         activityCount: forensicsNodes.length,
       }),
       forensicsNodes.length,
-      forensicsNodes
+      forensicsNodes,
     ),
     buildCell(
       "policies",
@@ -526,13 +529,13 @@ export function buildStrikecellsFromSocData(snapshot: StrikecellSourceSnapshot):
         activityCount: kpis?.activeAgents ?? 0,
       }),
       kpis?.activeAgents ?? 0,
-      policyNodes
+      policyNodes,
     ),
   ];
 
-  const ordered = STRIKECELL_ORDER.map((id) => strikecells.find((strikecell) => strikecell.id === id)).filter(
-    (strikecell): strikecell is Strikecell => Boolean(strikecell)
-  );
+  const ordered = STRIKECELL_ORDER.map((id) =>
+    strikecells.find((strikecell) => strikecell.id === id),
+  ).filter((strikecell): strikecell is Strikecell => Boolean(strikecell));
 
   if (!snapshot.connected) {
     return ordered.map((strikecell) => ({

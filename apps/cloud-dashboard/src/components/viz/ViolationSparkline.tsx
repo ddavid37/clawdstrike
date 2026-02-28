@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { bucketByTime } from "../../utils/vizHelpers";
 import type { SSEEvent } from "../../hooks/useSSE";
+import { bucketByTime } from "../../utils/vizHelpers";
 
 export function ViolationSparkline({ events }: { events: SSEEvent[] }) {
   const violations = useMemo(
@@ -13,7 +13,15 @@ export function ViolationSparkline({ events }: { events: SSEEvent[] }) {
   return (
     <svg viewBox="0 0 240 40" width="100%" height={40} preserveAspectRatio="none">
       {/* Axis line */}
-      <line x1={0} y1={39} x2={240} y2={39} stroke="var(--gold)" strokeOpacity={0.3} strokeWidth={1} />
+      <line
+        x1={0}
+        y1={39}
+        x2={240}
+        y2={39}
+        stroke="var(--gold)"
+        strokeOpacity={0.3}
+        strokeWidth={1}
+      />
       {buckets.map((count, i) => {
         const h = (count / max) * 36;
         return (

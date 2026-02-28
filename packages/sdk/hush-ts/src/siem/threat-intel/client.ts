@@ -135,7 +135,10 @@ export class ThreatIntelClient extends EventEmitter {
     if (event.resource.type === "file" && event.resource.path) {
       const name = event.resource.path.split("/").pop() ?? event.resource.path;
       if (this.cache.isFileNameBlocked(name)) {
-        cloned.threat = { ...(cloned.threat ?? {}), indicator: { type: "file_path", value: event.resource.path } };
+        cloned.threat = {
+          ...(cloned.threat ?? {}),
+          indicator: { type: "file_path", value: event.resource.path },
+        };
       }
     }
     return cloned;
@@ -160,7 +163,7 @@ export class ThreatIntelClient extends EventEmitter {
           indicators.push(...this.extractIndicators(objects, server.url));
         }
 
-        const filtered = indicators.filter(i => i.confidence >= this.config.feed.minConfidence);
+        const filtered = indicators.filter((i) => i.confidence >= this.config.feed.minConfidence);
         if (filtered.length) {
           this.cache.add(filtered);
           totalAdded += filtered.length;
@@ -200,5 +203,8 @@ export class ThreatIntelClient extends EventEmitter {
 
 export interface ThreatIntelClient {
   on<T extends keyof ThreatIntelEvents>(event: T, listener: ThreatIntelEvents[T]): this;
-  emit<T extends keyof ThreatIntelEvents>(event: T, ...args: Parameters<ThreatIntelEvents[T]>): boolean;
+  emit<T extends keyof ThreatIntelEvents>(
+    event: T,
+    ...args: Parameters<ThreatIntelEvents[T]>
+  ): boolean;
 }

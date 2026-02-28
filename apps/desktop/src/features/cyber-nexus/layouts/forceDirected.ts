@@ -25,7 +25,7 @@ function orderedPairKey(a: string, b: string): string {
 export function calculateForceDirectedLayout(
   nodes: NexusLayoutNode[],
   connections: StrikecellConnection[],
-  config: ForceDirectedConfig = {}
+  config: ForceDirectedConfig = {},
 ): Map<NexusLayoutNode["id"], LayoutPosition> {
   const positions = new Map<NexusLayoutNode["id"], LayoutPosition>();
   if (nodes.length === 0) return positions;

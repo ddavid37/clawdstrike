@@ -37,7 +37,7 @@ describe("tauri openclaw helpers", () => {
     await expect(openclawGatewayDiscover()).rejects.toThrow("OpenClaw discovery requires Tauri");
     await expect(openclawGatewayProbe()).rejects.toThrow("OpenClaw probe requires Tauri");
     await expect(openclawAgentRequest("GET", "/api/v1/openclaw/gateways")).rejects.toThrow(
-      "OpenClaw agent request requires Tauri"
+      "OpenClaw agent request requires Tauri",
     );
   });
 
@@ -58,7 +58,11 @@ describe("tauri openclaw helpers", () => {
     await expect(openclawGatewayProbe()).resolves.toEqual({ ok: true });
     expect(invokeMock).toHaveBeenLastCalledWith("openclaw_gateway_probe", {});
 
-    invokeMock.mockResolvedValueOnce({ gateways: [], active_gateway_id: null, secret_store_mode: "keyring" });
+    invokeMock.mockResolvedValueOnce({
+      gateways: [],
+      active_gateway_id: null,
+      secret_store_mode: "keyring",
+    });
     await expect(openclawAgentRequest("GET", "/api/v1/openclaw/gateways")).resolves.toEqual({
       gateways: [],
       active_gateway_id: null,

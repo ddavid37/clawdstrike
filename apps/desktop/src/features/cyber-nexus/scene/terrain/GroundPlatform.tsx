@@ -3,8 +3,9 @@
  *
  * Adapted from Origin Realm terrain (`GroundPlatform.tsx`).
  */
-import { useMemo, useRef } from "react";
+
 import { useFrame } from "@react-three/fiber";
+import { useMemo, useRef } from "react";
 import * as THREE from "three";
 
 export interface GroundPlatformProps {
@@ -46,7 +47,7 @@ export function GroundPlatform({ radius = 16, hue = 45, showGrid = true }: Groun
       glow: `hsl(${hue}, 60%, 40%)`,
       edge: `hsl(${hue}, 70%, 50%)`,
     }),
-    [hue]
+    [hue],
   );
 
   const platformGeometry = useMemo(() => {
@@ -69,7 +70,11 @@ export function GroundPlatform({ radius = 16, hue = 45, showGrid = true }: Groun
       points.push(new THREE.Vector3(xExtent, 0.01, z));
     }
 
-    for (let i = -Math.ceil(gridExtent / gridSpacing); i <= Math.ceil(gridExtent / gridSpacing); i++) {
+    for (
+      let i = -Math.ceil(gridExtent / gridSpacing);
+      i <= Math.ceil(gridExtent / gridSpacing);
+      i++
+    ) {
       const offset = i * gridSpacing;
 
       const angle1 = Math.PI / 3;
@@ -148,12 +153,7 @@ export function GroundPlatform({ radius = 16, hue = 45, showGrid = true }: Groun
 
       <mesh ref={glowRef} position={[0, -0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[radius * 0.8, radius * 1.1, 6]} />
-        <meshBasicMaterial
-          color={colors.glow}
-          transparent
-          opacity={0.15}
-          side={THREE.DoubleSide}
-        />
+        <meshBasicMaterial color={colors.glow} transparent opacity={0.15} side={THREE.DoubleSide} />
       </mesh>
 
       <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -161,15 +161,9 @@ export function GroundPlatform({ radius = 16, hue = 45, showGrid = true }: Groun
         <meshBasicMaterial color={colors.edge} transparent opacity={0.4} />
       </mesh>
 
-      <pointLight
-        position={[0, -2, 0]}
-        color={colors.glow}
-        intensity={0.5}
-        distance={radius * 2}
-      />
+      <pointLight position={[0, -2, 0]} color={colors.glow} intensity={0.5} distance={radius * 2} />
     </group>
   );
 }
 
 export default GroundPlatform;
-

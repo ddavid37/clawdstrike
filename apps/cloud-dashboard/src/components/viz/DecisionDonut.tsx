@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { computeDecisionRatio } from "../../utils/vizHelpers";
 import type { SSEEvent } from "../../hooks/useSSE";
+import { computeDecisionRatio } from "../../utils/vizHelpers";
 
 const R = 60;
 const CX = 80;
@@ -33,7 +33,14 @@ export function DecisionDonut({ events }: { events: SSEEvent[] }) {
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
       <svg viewBox="0 0 160 160" width={140} height={140}>
         {total === 0 ? (
-          <circle cx={CX} cy={CY} r={R} fill="none" stroke="var(--slate)" strokeWidth={STROKE_WIDTH} />
+          <circle
+            cx={CX}
+            cy={CY}
+            r={R}
+            fill="none"
+            stroke="var(--slate)"
+            strokeWidth={STROKE_WIDTH}
+          />
         ) : (
           segments.map((s) => (
             <circle

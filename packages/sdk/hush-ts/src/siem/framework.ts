@@ -61,7 +61,7 @@ class TokenBucketLimiter {
 
   constructor(
     private readonly requestsPerSecond: number,
-    private readonly burstSize: number
+    private readonly burstSize: number,
   ) {
     this.tokens = burstSize;
     this.lastRefillMs = Date.now();
@@ -75,7 +75,7 @@ class TokenBucketLimiter {
         return;
       }
       const waitMs = Math.max(1, Math.ceil(1000 / Math.max(1, this.requestsPerSecond)));
-      await new Promise<void>(resolve => setTimeout(resolve, waitMs));
+      await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
     }
   }
 
@@ -128,7 +128,7 @@ export abstract class BaseExporter implements Exporter {
     if (this.config.rateLimit) {
       this.rateLimiter = new TokenBucketLimiter(
         Math.max(1, this.config.rateLimit.requestsPerSecond),
-        Math.max(1, this.config.rateLimit.burstSize)
+        Math.max(1, this.config.rateLimit.burstSize),
       );
     }
   }
@@ -179,7 +179,7 @@ export abstract class BaseExporter implements Exporter {
           await this.sleep(backoffMs);
           backoffMs = Math.min(
             Math.floor(backoffMs * this.config.retry.backoffMultiplier),
-            this.config.retry.maxBackoffMs
+            this.config.retry.maxBackoffMs,
           );
         }
       }
@@ -188,7 +188,7 @@ export abstract class BaseExporter implements Exporter {
     return {
       exported: 0,
       failed: events.length,
-      errors: events.map(e => ({
+      errors: events.map((e) => ({
         eventId: e.event_id,
         error: lastError?.message ?? "Unknown error",
         retryable: false,
@@ -197,7 +197,7 @@ export abstract class BaseExporter implements Exporter {
   }
 
   protected sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   abstract export(events: SecurityEvent[]): Promise<ExportResult>;

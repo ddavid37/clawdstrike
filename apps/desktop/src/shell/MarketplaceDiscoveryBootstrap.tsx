@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { isTauri, startMarketplaceDiscovery } from "@/services/tauri";
 import { loadMarketplaceDiscoverySettings } from "@/services/marketplaceDiscoverySettings";
+import { isTauri, startMarketplaceDiscovery } from "@/services/tauri";
 
 export function MarketplaceDiscoveryBootstrap() {
   useEffect(() => {
@@ -19,4 +19,3 @@ export function MarketplaceDiscoveryBootstrap() {
 
   return null;
 }
-

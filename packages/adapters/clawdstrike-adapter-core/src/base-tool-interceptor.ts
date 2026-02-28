@@ -1,18 +1,18 @@
-import type { AdapterConfig, GenericToolCall } from './adapter.js';
-import type { AuditEvent } from './audit.js';
-import type { SecurityContext } from './context.js';
-import type { PolicyEngineLike } from './engine.js';
-import type { InterceptResult, ProcessedOutput, ToolInterceptor } from './interceptor.js';
-import type { OutputSanitizer, RedactionInfo } from './sanitizer.js';
-import { DefaultOutputSanitizer } from './default-output-sanitizer.js';
-import { PolicyEventFactory } from './policy-event-factory.js';
-import { allowDecision, type Decision, type PolicyEvent } from './types.js';
+import type { AdapterConfig, GenericToolCall } from "./adapter.js";
+import type { AuditEvent } from "./audit.js";
+import type { SecurityContext } from "./context.js";
+import { DefaultOutputSanitizer } from "./default-output-sanitizer.js";
+import type { PolicyEngineLike } from "./engine.js";
+import type { InterceptResult, ProcessedOutput, ToolInterceptor } from "./interceptor.js";
+import { PolicyEventFactory } from "./policy-event-factory.js";
+import type { OutputSanitizer, RedactionInfo } from "./sanitizer.js";
+import { allowDecision, type Decision, type PolicyEvent } from "./types.js";
 
 type SanitizeExecutionOverrides = {
   modifiedInput?: unknown;
   modifiedParameters?: Record<string, unknown>;
   replacementResult?: unknown;
-  mode: 'advisory' | 'enforced';
+  mode: "advisory" | "enforced";
   strategy: string;
 };
 
@@ -39,7 +39,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
     if (this.config.excludedTools?.includes(toolName)) {
       return {
         proceed: true,
-        decision: allowDecision({ guard: 'excluded' }),
+        decision: allowDecision({ guard: "excluded" }),
         duration: Date.now() - startTime,
       };
     }
@@ -52,7 +52,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
       name: normalizedName,
       parameters: params,
       timestamp: new Date(),
-      source: 'generic',
+      source: "generic",
     };
 
     let event: PolicyEvent;
@@ -62,10 +62,10 @@ export class BaseToolInterceptor implements ToolInterceptor {
     } catch (error) {
       const translationError = error instanceof Error ? error : new Error(String(error));
       const decision: Decision = {
-        status: 'deny',
-        reason_code: 'ADC_GUARD_ERROR',
-        guard: 'provider_translator',
-        severity: 'high',
+        status: "deny",
+        reason_code: "ADC_GUARD_ERROR",
+        guard: "provider_translator",
+        severity: "high",
         reason: `Policy event translation failed: ${translationError.message}`,
         message: `Policy event translation failed: ${translationError.message}`,
       };
@@ -79,7 +79,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
 
       await this.emitAuditEvent(context, {
         id: `${toolCall.id}-translation-error`,
-        type: 'tool_call_blocked',
+        type: "tool_call_blocked",
         timestamp: new Date(),
         contextId: context.id,
         sessionId: context.sessionId,
@@ -88,7 +88,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
           ? (this.sanitizeForAudit(params) as Record<string, unknown>)
           : undefined,
         decision,
-        details: { error: translationError.message, phase: 'translation' },
+        details: { error: translationError.message, phase: "translation" },
       });
 
       if (this.config.blockOnViolation !== false) {
@@ -103,8 +103,8 @@ export class BaseToolInterceptor implements ToolInterceptor {
         proceed: true,
         decision: {
           ...decision,
-          status: 'warn',
-          severity: 'medium',
+          status: "warn",
+          severity: "medium",
         },
         warning: decision.message,
         duration: Date.now() - startTime,
@@ -119,14 +119,14 @@ export class BaseToolInterceptor implements ToolInterceptor {
 
     this.config.handlers?.onAfterEvaluate?.(toolCall, decision);
 
-    if (decision.status === 'deny') {
+    if (decision.status === "deny") {
       context.violationCount++;
       context.recordBlocked(normalizedName, decision);
       this.config.handlers?.onBlocked?.(toolCall, decision);
 
       await this.emitAuditEvent(context, {
         id: `${event.eventId}-blocked`,
-        type: 'tool_call_blocked',
+        type: "tool_call_blocked",
         timestamp: new Date(),
         contextId: context.id,
         sessionId: context.sessionId,
@@ -146,21 +146,21 @@ export class BaseToolInterceptor implements ToolInterceptor {
       }
     }
 
-    if (decision.status === 'sanitize') {
+    if (decision.status === "sanitize") {
       sanitizeOverrides = this.deriveSanitizeExecutionOverrides(input, params, decision);
       this.config.handlers?.onWarning?.(toolCall, decision);
 
       await this.emitAuditEvent(context, {
         id: `${event.eventId}-sanitized`,
-        type: 'output_sanitized',
+        type: "output_sanitized",
         timestamp: new Date(),
         contextId: context.id,
         sessionId: context.sessionId,
         toolName: normalizedName,
         decision,
         details: {
-          original: 'original' in decision ? decision.original : undefined,
-          sanitized: 'sanitized' in decision ? decision.sanitized : undefined,
+          original: "original" in decision ? decision.original : undefined,
+          sanitized: "sanitized" in decision ? decision.sanitized : undefined,
           execution: {
             mode: sanitizeOverrides.mode,
             strategy: sanitizeOverrides.strategy,
@@ -170,17 +170,17 @@ export class BaseToolInterceptor implements ToolInterceptor {
       });
     }
 
-    const dispatchInput = sanitizeOverrides?.modifiedInput
-      ?? sanitizeOverrides?.modifiedParameters
-      ?? input;
-    const dispatchParams = BaseToolInterceptor.asRecord(dispatchInput) ?? this.normalizeParams(dispatchInput);
+    const dispatchInput =
+      sanitizeOverrides?.modifiedInput ?? sanitizeOverrides?.modifiedParameters ?? input;
+    const dispatchParams =
+      BaseToolInterceptor.asRecord(dispatchInput) ?? this.normalizeParams(dispatchInput);
 
-    if (decision.status === 'warn') {
+    if (decision.status === "warn") {
       this.config.handlers?.onWarning?.(toolCall, decision);
 
       await this.emitAuditEvent(context, {
         id: `${event.eventId}-warning`,
-        type: 'tool_call_warning',
+        type: "tool_call_warning",
         timestamp: new Date(),
         contextId: context.id,
         sessionId: context.sessionId,
@@ -191,7 +191,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
 
     await this.emitAuditEvent(context, {
       id: `${event.eventId}-start`,
-      type: 'tool_call_start',
+      type: "tool_call_start",
       timestamp: new Date(),
       contextId: context.id,
       sessionId: context.sessionId,
@@ -209,9 +209,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
       modifiedParameters: sanitizeOverrides?.modifiedParameters,
       replacementResult: sanitizeOverrides?.replacementResult,
       warning:
-        decision.status === 'warn' || decision.status === 'sanitize'
-          ? decision.message
-          : undefined,
+        decision.status === "warn" || decision.status === "sanitize" ? decision.message : undefined,
       duration: Date.now() - startTime,
     };
   }
@@ -223,7 +221,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
     context: SecurityContext,
   ): PolicyEvent {
     const translated = this.config.translateToolCall?.({
-      framework: String(context.metadata?.framework ?? 'generic'),
+      framework: String(context.metadata?.framework ?? "generic"),
       toolName,
       parameters,
       rawInput,
@@ -262,7 +260,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
 
     await this.emitAuditEvent(context, {
       id: `${context.id}-${Date.now()}-end`,
-      type: 'tool_call_end',
+      type: "tool_call_end",
       timestamp: new Date(),
       contextId: context.id,
       sessionId: context.sessionId,
@@ -291,12 +289,12 @@ export class BaseToolInterceptor implements ToolInterceptor {
       name: normalizedName,
       parameters: this.normalizeParams(input),
       timestamp: new Date(),
-      source: 'generic',
+      source: "generic",
     });
 
     await this.emitAuditEvent(context, {
       id: `${context.id}-${Date.now()}-error`,
-      type: 'tool_call_error',
+      type: "tool_call_error",
       timestamp: new Date(),
       contextId: context.id,
       sessionId: context.sessionId,
@@ -306,10 +304,10 @@ export class BaseToolInterceptor implements ToolInterceptor {
   }
 
   protected normalizeParams(input: unknown): Record<string, unknown> {
-    if (typeof input === 'object' && input !== null) {
+    if (typeof input === "object" && input !== null) {
       return input as Record<string, unknown>;
     }
-    if (typeof input === 'string') {
+    if (typeof input === "string") {
       try {
         return JSON.parse(input) as Record<string, unknown>;
       } catch {
@@ -322,15 +320,15 @@ export class BaseToolInterceptor implements ToolInterceptor {
   private deriveSanitizeExecutionOverrides(
     input: unknown,
     params: Record<string, unknown>,
-    decision: Extract<Decision, { status: 'sanitize' }>,
+    decision: Extract<Decision, { status: "sanitize" }>,
   ): SanitizeExecutionOverrides {
     const details = BaseToolInterceptor.asRecord(decision.details);
 
-    if (details && 'replacement_result' in details) {
+    if (details && "replacement_result" in details) {
       return {
         replacementResult: details.replacement_result,
-        mode: 'enforced',
-        strategy: 'details.replacement_result',
+        mode: "enforced",
+        strategy: "details.replacement_result",
       };
     }
 
@@ -338,17 +336,17 @@ export class BaseToolInterceptor implements ToolInterceptor {
     if (sanitizedParameters) {
       return {
         modifiedParameters: sanitizedParameters,
-        mode: 'enforced',
-        strategy: 'details.sanitized_parameters',
+        mode: "enforced",
+        strategy: "details.sanitized_parameters",
       };
     }
 
-    if (typeof decision.sanitized === 'string') {
-      if (typeof input === 'string') {
+    if (typeof decision.sanitized === "string") {
+      if (typeof input === "string") {
         return {
           modifiedInput: decision.sanitized,
-          mode: 'enforced',
-          strategy: 'decision.sanitized_string_input',
+          mode: "enforced",
+          strategy: "decision.sanitized_string_input",
         };
       }
 
@@ -359,21 +357,21 @@ export class BaseToolInterceptor implements ToolInterceptor {
             ...params,
             [textKey]: decision.sanitized,
           },
-          mode: 'enforced',
+          mode: "enforced",
           strategy: `decision.sanitized_field:${textKey}`,
         };
       }
     }
 
     return {
-      mode: 'advisory',
-      strategy: 'no_applicable_override',
+      mode: "advisory",
+      strategy: "no_applicable_override",
     };
   }
 
   private findTextParameterKey(params: Record<string, unknown>): string | undefined {
-    for (const key of ['text', 'input', 'prompt', 'query', 'command', 'content']) {
-      if (typeof params[key] === 'string') {
+    for (const key of ["text", "input", "prompt", "query", "command", "content"]) {
+      if (typeof params[key] === "string") {
         return key;
       }
     }
@@ -381,7 +379,7 @@ export class BaseToolInterceptor implements ToolInterceptor {
   }
 
   private static asRecord(value: unknown): Record<string, unknown> | null {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
       return null;
     }
     return value as Record<string, unknown>;
@@ -400,12 +398,12 @@ export class BaseToolInterceptor implements ToolInterceptor {
       return value;
     }
 
-    if (typeof value === 'string') {
+    if (typeof value === "string") {
       const secretRedacted = this.engine.redactSecrets ? this.engine.redactSecrets(value) : value;
       return this.config.audit?.redactPII ? redactPII(secretRedacted) : secretRedacted;
     }
 
-    if (typeof value !== 'object') {
+    if (typeof value !== "object") {
       return value;
     }
 
@@ -463,14 +461,11 @@ export class BaseToolInterceptor implements ToolInterceptor {
 function redactPII(value: string): string {
   let redacted = value;
 
-  redacted = redacted.replace(
-    /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
-    '[REDACTED_EMAIL]',
-  );
+  redacted = redacted.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED_EMAIL]");
 
-  redacted = redacted.replace(/\b\d{3}-\d{2}-\d{4}\b/g, '[REDACTED_SSN]');
+  redacted = redacted.replace(/\b\d{3}-\d{2}-\d{4}\b/g, "[REDACTED_SSN]");
 
-  redacted = redacted.replace(/\+?\d[\d\s().-]{8,}\d/g, '[REDACTED_PHONE]');
+  redacted = redacted.replace(/\+?\d[\d\s().-]{8,}\d/g, "[REDACTED_PHONE]");
 
   return redacted;
 }

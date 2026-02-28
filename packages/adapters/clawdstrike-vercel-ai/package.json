@@ -19,7 +19,9 @@
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "format": "biome check --write src/",
+    "format:check": "biome check src/"
   },
   "dependencies": {
     "@clawdstrike/adapter-core": "^0.1.1",

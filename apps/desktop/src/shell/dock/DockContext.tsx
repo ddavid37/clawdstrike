@@ -3,14 +3,7 @@
  *
  * Ported from Origin desktop dock system.
  */
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useReducer,
-  type ReactNode,
-} from "react";
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useReducer } from "react";
 import type {
   CapsuleKind,
   CapsuleTabState,
@@ -81,25 +74,33 @@ function dockReducer(state: DockState, action: DockAction): DockState {
     case "MINIMIZE_CAPSULE":
       return {
         ...state,
-        capsules: state.capsules.map((c) => (c.id === action.payload ? { ...c, isMinimized: true } : c)),
+        capsules: state.capsules.map((c) =>
+          c.id === action.payload ? { ...c, isMinimized: true } : c,
+        ),
       };
 
     case "RESTORE_CAPSULE":
       return {
         ...state,
-        capsules: state.capsules.map((c) => (c.id === action.payload ? { ...c, isMinimized: false } : c)),
+        capsules: state.capsules.map((c) =>
+          c.id === action.payload ? { ...c, isMinimized: false } : c,
+        ),
       };
 
     case "SET_VIEW_MODE":
       return {
         ...state,
-        capsules: state.capsules.map((c) => (c.id === action.payload.id ? { ...c, viewMode: action.payload.mode } : c)),
+        capsules: state.capsules.map((c) =>
+          c.id === action.payload.id ? { ...c, viewMode: action.payload.mode } : c,
+        ),
       };
 
     case "UPDATE_CAPSULE":
       return {
         ...state,
-        capsules: state.capsules.map((c) => (c.id === action.payload.id ? { ...c, ...action.payload.updates } : c)),
+        capsules: state.capsules.map((c) =>
+          c.id === action.payload.id ? { ...c, ...action.payload.updates } : c,
+        ),
       };
 
     case "OPEN_SHELF":
@@ -139,7 +140,7 @@ export interface DockContextValue {
 
   openCapsule: (
     capsule: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isPinned">,
-    minimized?: boolean
+    minimized?: boolean,
   ) => void;
   closeCapsule: (id: string) => void;
   minimizeCapsule: (id: string) => void;
@@ -170,12 +171,12 @@ export function DockProvider({ children }: { children: ReactNode }) {
 
   const visibleCapsules = useMemo(
     () => state.capsules.filter((c) => !c.isMinimized && c.viewMode !== "fullView"),
-    [state.capsules]
+    [state.capsules],
   );
 
   const minimizedCapsules = useMemo(
     () => state.capsules.filter((c) => c.isMinimized),
-    [state.capsules]
+    [state.capsules],
   );
 
   const capsuleTabs = useMemo<CapsuleTabState[]>(
@@ -188,11 +189,14 @@ export function DockProvider({ children }: { children: ReactNode }) {
         badgeCount: c.badgeCount,
         isMinimized: true,
       })),
-    [minimizedCapsules]
+    [minimizedCapsules],
   );
 
   const openCapsule = useCallback(
-    (capsule: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isPinned">, minimized = false) => {
+    (
+      capsule: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isPinned">,
+      minimized = false,
+    ) => {
       const viewMode = getDefaultViewMode(capsule.kind);
       dispatch({
         type: "OPEN_CAPSULE",
@@ -204,7 +208,7 @@ export function DockProvider({ children }: { children: ReactNode }) {
         },
       });
     },
-    []
+    [],
   );
 
   const closeCapsule = useCallback((id: string) => {
@@ -233,7 +237,7 @@ export function DockProvider({ children }: { children: ReactNode }) {
       if (!capsule) return;
       dispatch({ type: capsule.isMinimized ? "RESTORE_CAPSULE" : "MINIMIZE_CAPSULE", payload: id });
     },
-    [state.capsules]
+    [state.capsules],
   );
 
   const openShelf = useCallback((mode: ShelfMode) => {
@@ -252,7 +256,7 @@ export function DockProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "OPEN_SHELF", payload: mode });
       }
     },
-    [state.shelf]
+    [state.shelf],
   );
 
   const setSessions = useCallback((sessions: SessionItem[]) => {
@@ -271,9 +275,18 @@ export function DockProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "SET_HOVERED_CAPSULE", payload: id });
   }, []);
 
-  const getCapsule = useCallback((id: string) => state.capsules.find((c) => c.id === id), [state.capsules]);
-  const hasCapsule = useCallback((id: string) => state.capsules.some((c) => c.id === id), [state.capsules]);
-  const getCapsulesByKind = useCallback((kind: CapsuleKind) => state.capsules.filter((c) => c.kind === kind), [state.capsules]);
+  const getCapsule = useCallback(
+    (id: string) => state.capsules.find((c) => c.id === id),
+    [state.capsules],
+  );
+  const hasCapsule = useCallback(
+    (id: string) => state.capsules.some((c) => c.id === id),
+    [state.capsules],
+  );
+  const getCapsulesByKind = useCallback(
+    (kind: CapsuleKind) => state.capsules.filter((c) => c.kind === kind),
+    [state.capsules],
+  );
 
   const value: DockContextValue = {
     capsules: state.capsules,
@@ -322,4 +335,3 @@ export function useCapsulesByKind(kind: CapsuleKind): DockCapsuleState[] {
   const { getCapsulesByKind } = useDock();
   return getCapsulesByKind(kind);
 }
-

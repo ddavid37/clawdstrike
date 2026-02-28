@@ -1,10 +1,9 @@
-import http from 'node:http';
+import http from "node:http";
 
-import type { PolicyEvent } from '@clawdstrike/adapter-core';
-
-import { createPolicyEngineFromPolicy } from './engine.js';
-import { CustomGuardRegistry } from './custom-registry.js';
-import { loadPolicyFromString } from './policy/loader.js';
+import type { PolicyEvent } from "@clawdstrike/adapter-core";
+import { CustomGuardRegistry } from "./custom-registry.js";
+import { createPolicyEngineFromPolicy } from "./engine.js";
+import { loadPolicyFromString } from "./policy/loader.js";
 
 async function startCountingServer(): Promise<{
   baseUrl: string;
@@ -14,7 +13,7 @@ async function startCountingServer(): Promise<{
   const counts = { hits: 0 };
   const server = http.createServer((_req, res) => {
     counts.hits += 1;
-    res.writeHead(200, { 'content-type': 'application/json' });
+    res.writeHead(200, { "content-type": "application/json" });
     res.end(
       JSON.stringify({
         data: { attributes: { last_analysis_stats: { malicious: 0, suspicious: 0 } } },
@@ -22,10 +21,10 @@ async function startCountingServer(): Promise<{
     );
   });
 
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
   const addr = server.address();
-  if (!addr || typeof addr === 'string') {
-    throw new Error('server failed to bind');
+  if (!addr || typeof addr === "string") {
+    throw new Error("server failed to bind");
   }
 
   const baseUrl = `http://127.0.0.1:${addr.port}`;
@@ -33,12 +32,14 @@ async function startCountingServer(): Promise<{
     baseUrl,
     counts,
     close: async () => {
-      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
     },
   };
 }
 
-test('policy custom_guards fail closed when registry missing', () => {
+test("policy custom_guards fail closed when registry missing", () => {
   const policy = loadPolicyFromString(
     `
 version: "1.1.0"
@@ -54,7 +55,7 @@ custom_guards:
   expect(() => createPolicyEngineFromPolicy(policy)).toThrow(/CustomGuardRegistry/i);
 });
 
-test('custom_guards deny prevents async guard network calls', async () => {
+test("custom_guards deny prevents async guard network calls", async () => {
   const server = await startCountingServer();
 
   const policy = loadPolicyFromString(
@@ -79,33 +80,37 @@ guards:
 
   const registry = new CustomGuardRegistry();
   registry.register({
-    id: 'acme.deny',
+    id: "acme.deny",
     build: () => ({
-      name: 'acme.deny',
+      name: "acme.deny",
       handles: () => true,
-      check: () => ({ allowed: false, guard: 'acme.deny', severity: 'high', message: 'Denied by custom guard' }),
+      check: () => ({
+        allowed: false,
+        guard: "acme.deny",
+        severity: "high",
+        message: "Denied by custom guard",
+      }),
     }),
   });
 
   const engine = createPolicyEngineFromPolicy(policy, { customGuardRegistry: registry });
 
   const event: PolicyEvent = {
-    eventId: 'evt-file',
-    eventType: 'file_write',
+    eventId: "evt-file",
+    eventType: "file_write",
     timestamp: new Date().toISOString(),
     data: {
-      type: 'file',
-      path: '/tmp/ok.txt',
-      operation: 'write',
-      content: 'hello',
+      type: "file",
+      path: "/tmp/ok.txt",
+      operation: "write",
+      content: "hello",
     },
   };
 
   const decision = await engine.evaluate(event);
-  expect(decision.status).toBe('deny');
-  expect(decision.guard).toBe('acme.deny');
+  expect(decision.status).toBe("deny");
+  expect(decision.guard).toBe("acme.deny");
   expect(server.counts.hits).toBe(0);
 
   await server.close();
 });
-

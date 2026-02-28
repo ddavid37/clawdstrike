@@ -23,7 +23,7 @@ export class EventStream {
 
   constructor(
     private baseUrl: string,
-    private options: EventStreamOptions
+    private options: EventStreamOptions,
   ) {}
 
   connect(): void {
@@ -158,7 +158,7 @@ export class EventStream {
 }
 
 // Hook for React components
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface UseEventStreamOptions {
   baseUrl: string;
@@ -196,7 +196,7 @@ export function useEventStream(options: UseEventStreamOptions): UseEventStreamRe
       }
       onEvent?.(event);
     },
-    [isLive, maxEvents, onEvent]
+    [isLive, maxEvents, onEvent],
   );
 
   useEffect(() => {

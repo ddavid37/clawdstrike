@@ -22,7 +22,7 @@ export interface DecisionReceipt {
   policyHash: string;
   /** The decision that was made */
   decision: {
-    status: 'allow' | 'warn' | 'deny' | 'sanitize';
+    status: "allow" | "warn" | "deny" | "sanitize";
     guard?: string;
     reason?: string;
   };
@@ -35,7 +35,7 @@ export interface DecisionReceipt {
   /** Ed25519 signature in JWS compact format (null when unsigned) */
   signature: string | null;
   /** Signing algorithm (always 'EdDSA' for Ed25519) */
-  algorithm: 'EdDSA';
+  algorithm: "EdDSA";
   /** Public key identifier (null when unsigned) */
   keyId: string | null;
 }

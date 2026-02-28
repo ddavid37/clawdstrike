@@ -29,11 +29,11 @@ const KNOWN_APP_IDS = new Set<AppId>([
 /** Map legacy persisted app IDs from prior versions to current equivalents. */
 const LEGACY_APP_ID_MAP: Record<string, AppId> = {
   "cyber-nexus": "nexus",
-  "settings": "operations",
-  "forensics": "events",
+  settings: "operations",
+  forensics: "events",
   "forensics-river": "events",
   "policy-workbench": "policies",
-  "strikecell": "swarm",
+  strikecell: "swarm",
 };
 
 const KNOWN_SESSION_STATUSES = new Set<SessionStatus>(["idle", "running", "error", "completed"]);
@@ -130,7 +130,8 @@ export class SessionStore {
           this.sessions = new Map(normalizedSessions.map((session) => [session.id, session]));
 
           const activeSessionId = asString(data.activeSessionId);
-          this.activeSessionId = activeSessionId && this.sessions.has(activeSessionId) ? activeSessionId : null;
+          this.activeSessionId =
+            activeSessionId && this.sessions.has(activeSessionId) ? activeSessionId : null;
 
           const activeAppId = asAppId(data.activeAppId);
           this.activeAppId = activeAppId ?? null;
@@ -234,7 +235,7 @@ export class SessionStore {
     appId: AppId,
     title?: string,
     data?: unknown,
-    options?: { strikecellId?: string; strikecellKind?: StrikecellSessionKind }
+    options?: { strikecellId?: string; strikecellKind?: StrikecellSessionKind },
   ): Session {
     const now = Date.now();
     const session: Session = {

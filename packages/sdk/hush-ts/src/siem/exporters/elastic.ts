@@ -1,4 +1,4 @@
-import type { ExportError, ExportResult, ExporterConfig } from "../framework";
+import type { ExportError, ExporterConfig, ExportResult } from "../framework";
 import { BaseExporter, SchemaFormat } from "../framework";
 import { HttpClient, readResponseBody } from "../http";
 import { toEcs } from "../transforms/ecs";

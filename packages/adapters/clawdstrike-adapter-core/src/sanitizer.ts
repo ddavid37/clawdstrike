@@ -1,7 +1,7 @@
-import type { SecurityContext } from './context.js';
+import type { SecurityContext } from "./context.js";
 
 export interface RedactionInfo {
-  type: 'secret' | 'pii' | 'sensitive';
+  type: "secret" | "pii" | "sensitive";
   pattern: string;
   location?: string;
 }
@@ -11,4 +11,3 @@ export interface OutputSanitizer<T = unknown> {
   containsSensitive(output: T): boolean;
   getRedactions(output: T): RedactionInfo[];
 }
-

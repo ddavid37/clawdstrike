@@ -1,16 +1,16 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-  DEFAULT_MARKETPLACE_FEED_SOURCES,
   DEFAULT_IPFS_GATEWAY_SETTINGS,
+  DEFAULT_MARKETPLACE_FEED_SOURCES,
   DEFAULT_SPINE_MODE_SETTINGS,
   formatMarketplaceFeedSourcesInput,
-  loadMarketplaceFeedSources,
   loadIpfsGatewaySettings,
+  loadMarketplaceFeedSources,
   loadSpineModeSettings,
   parseMarketplaceFeedSourcesInput,
-  saveMarketplaceFeedSources,
   saveIpfsGatewaySettings,
+  saveMarketplaceFeedSources,
   saveSpineModeSettings,
 } from "./marketplaceSettings";
 
@@ -41,13 +41,15 @@ beforeEach(() => {
 describe("marketplaceSettings", () => {
   it("parses one source per line and ignores comments", () => {
     const sources = parseMarketplaceFeedSourcesInput(
-      ["", "# comment", " builtin ", "ipfs://bafy...", "https://example.com/feed.json"].join("\n")
+      ["", "# comment", " builtin ", "ipfs://bafy...", "https://example.com/feed.json"].join("\n"),
     );
     expect(sources).toEqual(["builtin", "ipfs://bafy...", "https://example.com/feed.json"]);
   });
 
   it("formats sources as newline-separated", () => {
-    expect(formatMarketplaceFeedSourcesInput(["builtin", "ipfs://cid"])).toBe("builtin\nipfs://cid");
+    expect(formatMarketplaceFeedSourcesInput(["builtin", "ipfs://cid"])).toBe(
+      "builtin\nipfs://cid",
+    );
   });
 
   it("round-trips save/load", () => {
@@ -138,4 +140,3 @@ describe("spineModeSettings", () => {
     expect(loaded.preferSpineMode).toBe(true);
   });
 });
-

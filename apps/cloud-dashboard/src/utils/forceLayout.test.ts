@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { createSimulation, tickSimulation, type ForceNode, type ForceEdge } from "./forceLayout";
+import { describe, expect, it } from "vitest";
+import { createSimulation, type ForceEdge, type ForceNode, tickSimulation } from "./forceLayout";
 
 function makeNode(id: string, x = 50, y = 50): ForceNode {
   return { id, x, y, vx: 0, vy: 0, color: "#fff", label: id, radius: 10, type: "agent" };
@@ -29,8 +29,7 @@ describe("tickSimulation", () => {
 
     // Nodes should have moved apart due to charge repulsion
     const dist = Math.sqrt(
-      (sim.nodes[0].x - sim.nodes[1].x) ** 2 +
-      (sim.nodes[0].y - sim.nodes[1].y) ** 2,
+      (sim.nodes[0].x - sim.nodes[1].x) ** 2 + (sim.nodes[0].y - sim.nodes[1].y) ** 2,
     );
     expect(dist).toBeGreaterThan(5);
   });

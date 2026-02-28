@@ -1,66 +1,64 @@
-import path from 'node:path';
-import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
-import { describe, it, expect } from 'vitest';
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { PolicyEvent } from "@clawdstrike/adapter-core";
+import { describe, expect, it } from "vitest";
+import { createStrikeCell } from "./strike-cell.js";
 
-import type { PolicyEvent } from '@clawdstrike/adapter-core';
-import { createStrikeCell } from './strike-cell.js';
+const describeE2E = hasRunnableHush(process.env.HUSH_PATH ?? "hush") ? describe : describe.skip;
 
-const describeE2E = hasRunnableHush(process.env.HUSH_PATH ?? 'hush') ? describe : describe.skip;
-
-describeE2E('hush-cli-engine (e2e)', () => {
-  it('evaluates via real hush binary', async () => {
+describeE2E("hush-cli-engine (e2e)", () => {
+  it("evaluates via real hush binary", async () => {
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const repoRoot = path.resolve(__dirname, '../../../../');
+    const repoRoot = path.resolve(__dirname, "../../../../");
 
     const engine = createStrikeCell({
-      hushPath: process.env.HUSH_PATH ?? 'hush',
-      policyRef:
-        process.env.HUSH_POLICY_REF ?? path.join(repoRoot, 'rulesets/permissive.yaml'),
+      hushPath: process.env.HUSH_PATH ?? "hush",
+      policyRef: process.env.HUSH_POLICY_REF ?? path.join(repoRoot, "rulesets/permissive.yaml"),
       timeoutMs: 10_000,
     });
 
     const event: PolicyEvent = {
-      eventId: 'evt-e2e',
-      eventType: 'tool_call',
+      eventId: "evt-e2e",
+      eventType: "tool_call",
       timestamp: new Date().toISOString(),
-      data: { type: 'tool', toolName: 'e2e', parameters: { ok: true } },
-      metadata: { source: 'vitest' },
+      data: { type: "tool", toolName: "e2e", parameters: { ok: true } },
+      metadata: { source: "vitest" },
     };
 
     const decision = await engine.evaluate(event);
-    expect(decision.reason).not.toBe('engine_error');
-    expect(['allow', 'warn', 'deny']).toContain(decision.status);
+    expect(decision.reason).not.toBe("engine_error");
+    expect(["allow", "warn", "deny"]).toContain(decision.status);
   });
 
-  it('matches fixture decisions (default ruleset)', async () => {
+  it("matches fixture decisions (default ruleset)", async () => {
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const repoRoot = path.resolve(__dirname, '../../../../');
+    const repoRoot = path.resolve(__dirname, "../../../../");
 
     const engine = createStrikeCell({
-      hushPath: process.env.HUSH_PATH ?? 'hush',
-      policyRef: 'default',
+      hushPath: process.env.HUSH_PATH ?? "hush",
+      policyRef: "default",
       timeoutMs: 10_000,
     });
 
-    const eventsPath = path.join(repoRoot, 'fixtures/policy-events/v1/events.jsonl');
+    const eventsPath = path.join(repoRoot, "fixtures/policy-events/v1/events.jsonl");
     const expectedPath = path.join(
       repoRoot,
-      'fixtures/policy-events/v1/expected/default.decisions.json',
+      "fixtures/policy-events/v1/expected/default.decisions.json",
     );
 
-    const expectedJson = JSON.parse(fs.readFileSync(expectedPath, 'utf8')) as any;
+    const expectedJson = JSON.parse(fs.readFileSync(expectedPath, "utf8")) as any;
     const expectedById = new Map<string, any>();
     for (const r of expectedJson?.results ?? []) {
-      if (r && typeof r.eventId === 'string') {
+      if (r && typeof r.eventId === "string") {
         expectedById.set(r.eventId, r.decision);
       }
     }
 
     const lines = fs
-      .readFileSync(eventsPath, 'utf8')
-      .split('\n')
+      .readFileSync(eventsPath, "utf8")
+      .split("\n")
       .map((l) => l.trim())
       .filter(Boolean);
 
@@ -81,14 +79,14 @@ function normalizeDecision(value: any): any {
   const status = toStatus(value);
   const out: any = { status };
 
-  if (status !== 'allow') {
+  if (status !== "allow") {
     const reasonCode = value?.reason_code;
     if (reasonCode !== null && reasonCode !== undefined) {
       out.reason_code = reasonCode;
     }
   }
 
-  for (const k of ['reason', 'guard', 'severity', 'message'] as const) {
+  for (const k of ["reason", "guard", "severity", "message"] as const) {
     const v = value?.[k];
     if (v === null || v === undefined) continue;
     out[k] = v;
@@ -97,25 +95,25 @@ function normalizeDecision(value: any): any {
   return out;
 }
 
-function toStatus(value: any): 'allow' | 'warn' | 'deny' {
-  if (value?.status === 'allow' || value?.status === 'warn' || value?.status === 'deny') {
+function toStatus(value: any): "allow" | "warn" | "deny" {
+  if (value?.status === "allow" || value?.status === "warn" || value?.status === "deny") {
     return value.status;
   }
 
   if (value?.denied === true) {
-    return 'deny';
+    return "deny";
   }
 
   if (value?.warn === true) {
-    return 'warn';
+    return "warn";
   }
 
-  return 'allow';
+  return "allow";
 }
 
 function hasRunnableHush(hushPath: string): boolean {
-  const result = spawnSync(hushPath, ['--version'], {
-    stdio: 'ignore',
+  const result = spawnSync(hushPath, ["--version"], {
+    stdio: "ignore",
     timeout: 5_000,
   });
   return result.status === 0;

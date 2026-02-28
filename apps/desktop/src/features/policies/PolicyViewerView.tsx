@@ -1,13 +1,12 @@
 /**
  * PolicyViewerView - Browse and validate policies
  */
-import { useState, useMemo } from "react";
+
+import { Badge, GlassCard, GlassPanel, GlowButton } from "@backbay/glia/primitives";
 import { clsx } from "clsx";
-import { GlassPanel, GlassCard } from "@backbay/glia/primitives";
-import { GlowButton } from "@backbay/glia/primitives";
-import { Badge } from "@backbay/glia/primitives";
-import { usePolicy } from "@/context/PolicyContext";
+import { useMemo, useState } from "react";
 import { useConnection } from "@/context/ConnectionContext";
+import { usePolicy } from "@/context/PolicyContext";
 import { BUILTIN_RULESETS, type BuiltinRuleset } from "@/types/policies";
 
 type PolicySource = BuiltinRuleset | "current" | "custom";
@@ -66,13 +65,13 @@ export function PolicyViewerView() {
             <GlassCard
               className={clsx(
                 "cursor-pointer mb-1",
-                selectedSource === "current" && "ring-1 ring-sdr-accent-blue"
+                selectedSource === "current" && "ring-1 ring-sdr-accent-blue",
               )}
               onClick={() => setSelectedSource("current")}
             >
               <div className="font-medium text-sm">{currentPolicy?.name ?? "Current Policy"}</div>
               <div className="text-xs text-sdr-text-muted truncate">
-                {isLoading ? "Loading..." : error ?? "Active daemon policy"}
+                {isLoading ? "Loading..." : (error ?? "Active daemon policy")}
               </div>
             </GlassCard>
           </div>
@@ -87,7 +86,7 @@ export function PolicyViewerView() {
                 key={ruleset.id}
                 className={clsx(
                   "cursor-pointer mb-1",
-                  selectedSource === ruleset.id && "ring-1 ring-sdr-accent-blue"
+                  selectedSource === ruleset.id && "ring-1 ring-sdr-accent-blue",
                 )}
                 onClick={() => setSelectedSource(ruleset.id)}
               >
@@ -118,8 +117,8 @@ export function PolicyViewerView() {
           <div>
             <h1 className="text-lg font-semibold text-sdr-text-primary">
               {selectedSource === "current"
-                ? currentPolicy?.name ?? "Current Policy"
-                : BUILTIN_RULESETS.find((r) => r.id === selectedSource)?.name ?? "Policy"}
+                ? (currentPolicy?.name ?? "Current Policy")
+                : (BUILTIN_RULESETS.find((r) => r.id === selectedSource)?.name ?? "Policy")}
             </h1>
             {policyBundle?.policy_hash && selectedSource === "current" && (
               <p className="text-xs text-sdr-text-muted font-mono mt-0.5">
@@ -149,7 +148,6 @@ export function PolicyViewerView() {
   );
 }
 
-
 function ValidationBadge({ valid }: { valid: boolean }) {
   return (
     <Badge variant={valid ? "default" : "destructive"}>
@@ -173,7 +171,11 @@ function GuardSummary({ guards }: { guards: unknown }) {
   const enabledGuards = Object.entries(guardsObj)
     .filter(([key, value]) => {
       if (key === "custom") return false;
-      return typeof value === "object" && value !== null && (value as { enabled?: boolean }).enabled !== false;
+      return (
+        typeof value === "object" &&
+        value !== null &&
+        (value as { enabled?: boolean }).enabled !== false
+      );
     })
     .map(([key]) => key);
 
@@ -231,7 +233,13 @@ function formatPolicyYaml(policy: Record<string, unknown>): string {
 
 function CheckIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M20 6L9 17l-5-5" />
     </svg>
   );
@@ -239,7 +247,13 @@ function CheckIcon({ className }: { className?: string }) {
 
 function XIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   );

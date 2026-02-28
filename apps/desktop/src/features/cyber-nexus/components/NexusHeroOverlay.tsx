@@ -39,7 +39,10 @@ export function NexusHeroOverlay({ visible, onDismiss }: NexusHeroOverlayProps) 
     >
       <div className="nexus-hero-backdrop" />
 
-      <div className="nexus-hero-content origin-chrome-panel rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="nexus-hero-content origin-chrome-panel rounded-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="nexus-hero-sigil">
           <div className="nexus-hero-sigil-glow" />
           <span className="origin-glyph-orb" aria-hidden="true" />
@@ -48,9 +51,7 @@ export function NexusHeroOverlay({ visible, onDismiss }: NexusHeroOverlayProps) 
         <div>
           <div className="origin-label text-[10px] tracking-[0.18em]">Workspace Surface</div>
           <h1 className="nexus-hero-title">Nexus Labs</h1>
-          <p className="nexus-hero-subtitle">
-            Focus labs. Trace signals. Move with intent.
-          </p>
+          <p className="nexus-hero-subtitle">Focus labs. Trace signals. Move with intent.</p>
         </div>
 
         <button

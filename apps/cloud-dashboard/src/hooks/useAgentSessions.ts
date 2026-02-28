@@ -37,7 +37,9 @@ export function useAgentSessions(events: SSEEvent[]): AgentInfo[] {
       let violations = 0;
 
       for (const [sessionId, evts] of sessionMap) {
-        const sorted = [...evts].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        const sorted = [...evts].sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+        );
         sessions.push({
           sessionId,
           events: sorted,
@@ -45,7 +47,9 @@ export function useAgentSessions(events: SSEEvent[]): AgentInfo[] {
           endTime: sorted[sorted.length - 1].timestamp,
         });
         totalActions += sorted.length;
-        violations += sorted.filter((e) => e.allowed === false || e.event_type === "violation").length;
+        violations += sorted.filter(
+          (e) => e.allowed === false || e.event_type === "violation",
+        ).length;
         const last = sorted[sorted.length - 1].timestamp;
         if (!latestTs || last > latestTs) latestTs = last;
       }

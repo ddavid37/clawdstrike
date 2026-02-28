@@ -1,6 +1,6 @@
-import type { SecurityContext } from './context.js';
-import type { PolicyEngineLike } from './engine.js';
-import type { OutputSanitizer, RedactionInfo } from './sanitizer.js';
+import type { SecurityContext } from "./context.js";
+import type { PolicyEngineLike } from "./engine.js";
+import type { OutputSanitizer, RedactionInfo } from "./sanitizer.js";
 
 export class DefaultOutputSanitizer implements OutputSanitizer {
   private readonly engine: PolicyEngineLike;
@@ -34,8 +34,8 @@ export class DefaultOutputSanitizer implements OutputSanitizer {
 
     if (this.containsSensitive(output)) {
       redactions.push({
-        type: 'secret',
-        pattern: 'detected',
+        type: "secret",
+        pattern: "detected",
       });
     }
 
@@ -47,12 +47,12 @@ export class DefaultOutputSanitizer implements OutputSanitizer {
       return false;
     }
 
-    if (typeof output === 'string') {
+    if (typeof output === "string") {
       const redacted = this.engine.redactSecrets?.(output) ?? output;
       return redacted !== output;
     }
 
-    if (typeof output !== 'object') {
+    if (typeof output !== "object") {
       return false;
     }
 
@@ -91,11 +91,11 @@ export class DefaultOutputSanitizer implements OutputSanitizer {
       return output;
     }
 
-    if (typeof output === 'string') {
+    if (typeof output === "string") {
       return this.engine.redactSecrets ? this.engine.redactSecrets(output) : output;
     }
 
-    if (typeof output !== 'object') {
+    if (typeof output !== "object") {
       return output;
     }
 

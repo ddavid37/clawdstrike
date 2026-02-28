@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { verifyReceipt, type ReceiptVerification } from "../utils/receiptVerify";
 import { ReceiptDisplay } from "../components/receipts/ReceiptDisplay";
 import { GlassButton } from "../components/ui";
+import { type ReceiptVerification, verifyReceipt } from "../utils/receiptVerify";
 
 export function ReceiptVerifier(_props: { windowId?: string }) {
   const [input, setInput] = useState("");
@@ -22,7 +22,10 @@ export function ReceiptVerifier(_props: { windowId?: string }) {
   };
 
   return (
-    <div className="space-y-5" style={{ padding: 20, color: "var(--text)", overflow: "auto", height: "100%" }}>
+    <div
+      className="space-y-5"
+      style={{ padding: 20, color: "var(--text)", overflow: "auto", height: "100%" }}
+    >
       <textarea
         value={input}
         onChange={(e) => setInput(e.target.value)}
@@ -36,7 +39,14 @@ export function ReceiptVerifier(_props: { windowId?: string }) {
           {loading ? "Verifying..." : "Verify"}
         </GlassButton>
         {result && (
-          <GlassButton onClick={() => { setResult(null); setInput(""); }}>Clear</GlassButton>
+          <GlassButton
+            onClick={() => {
+              setResult(null);
+              setInput("");
+            }}
+          >
+            Clear
+          </GlassButton>
         )}
       </div>
 

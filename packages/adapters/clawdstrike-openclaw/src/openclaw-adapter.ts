@@ -1,4 +1,3 @@
-import { createFrameworkAdapter } from '@clawdstrike/adapter-core';
 import type {
   AdapterConfig,
   AuditLogger,
@@ -10,11 +9,12 @@ import type {
   ProcessedOutput,
   SecurityContext,
   SessionSummary,
-} from '@clawdstrike/adapter-core';
+} from "@clawdstrike/adapter-core";
+import { createFrameworkAdapter } from "@clawdstrike/adapter-core";
 
-import { OpenClawAuditLogger } from './audit/adapter-logger.js';
-import { PolicyEngine } from './policy/engine.js';
-import { composeOpenClawConfig } from './translator/openclaw-translator.js';
+import { OpenClawAuditLogger } from "./audit/adapter-logger.js";
+import { PolicyEngine } from "./policy/engine.js";
+import { composeOpenClawConfig } from "./translator/openclaw-translator.js";
 
 export interface OpenClawAdapterOptions extends AdapterConfig {
   auditLogger?: AuditLogger;
@@ -67,7 +67,11 @@ export class OpenClawAdapter implements FrameworkAdapter {
       },
     };
 
-    this.delegate = createFrameworkAdapter('openclaw', engine as PolicyEngineLike, composeOpenClawConfig(adapterConfig));
+    this.delegate = createFrameworkAdapter(
+      "openclaw",
+      engine as PolicyEngineLike,
+      composeOpenClawConfig(adapterConfig),
+    );
   }
 
   get name(): string {

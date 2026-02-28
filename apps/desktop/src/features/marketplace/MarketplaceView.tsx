@@ -1,24 +1,28 @@
 /**
  * MarketplaceView - Discover and share community policies
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { Badge, GlassCard, GlowButton, GlowInput } from "@backbay/glia/primitives";
 import { clsx } from "clsx";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useConnection } from "@/context/ConnectionContext";
-import { loadMarketplaceFeedSources, saveMarketplaceFeedSources } from "@/services/marketplaceSettings";
 import { loadMarketplaceProvenanceSettings } from "@/services/marketplaceProvenanceSettings";
+import {
+  loadMarketplaceFeedSources,
+  saveMarketplaceFeedSources,
+} from "@/services/marketplaceSettings";
 import {
   getMarketplaceDiscoveryStatus,
   installMarketplacePolicy,
   isTauri,
   listMarketplacePolicies,
-  verifyMarketplaceAttestation,
   type MarketplaceDiscoveryEvent,
   type MarketplaceDiscoveryStatus,
   type MarketplaceListResponse,
   type MarketplacePolicyDto,
   type NotaryVerifyResult,
+  verifyMarketplaceAttestation,
 } from "@/services/tauri";
-import { GlassCard, GlowButton, GlowInput, Badge } from "@backbay/glia/primitives";
 
 type PolicyCategory = "all" | "compliance" | "ai-safety" | "enterprise" | "minimal" | "custom";
 
@@ -52,15 +56,15 @@ export function MarketplaceView() {
 
   const [provenanceSettings] = useState(() => loadMarketplaceProvenanceSettings());
   const [requireVerifiedAttestations, setRequireVerifiedAttestations] = useState(
-    provenanceSettings.requireVerified
+    provenanceSettings.requireVerified,
   );
   const trustedAttesters = useMemo(
     () => provenanceSettings.trustedAttesters.map((a) => a.trim().toLowerCase()).filter(Boolean),
-    [provenanceSettings.trustedAttesters]
+    [provenanceSettings.trustedAttesters],
   );
   const defaultNotaryUrl = provenanceSettings.notaryUrl;
   const [attestationCache, setAttestationCache] = useState<Record<string, AttestationCacheEntry>>(
-    {}
+    {},
   );
 
   const refresh = useCallback(async () => {
@@ -85,9 +89,11 @@ export function MarketplaceView() {
   useEffect(() => {
     if (!isTauri()) return;
 
-    getMarketplaceDiscoveryStatus().then(setDiscoveryStatus).catch(() => {
-      // ignore
-    });
+    getMarketplaceDiscoveryStatus()
+      .then(setDiscoveryStatus)
+      .catch(() => {
+        // ignore
+      });
 
     let unlisten: (() => void) | null = null;
     (async () => {
@@ -174,13 +180,7 @@ export function MarketplaceView() {
     return () => {
       cancelled = true;
     };
-  }, [
-    requireVerifiedAttestations,
-    data,
-    defaultNotaryUrl,
-    attestationCache,
-    verifyAttestation,
-  ]);
+  }, [requireVerifiedAttestations, data, defaultNotaryUrl, attestationCache, verifyAttestation]);
 
   const filteredPolicies = useMemo(() => {
     const policies = data?.policies ?? [];
@@ -303,7 +303,7 @@ export function MarketplaceView() {
                 "px-3 py-1.5 text-sm font-medium rounded-md transition-colors border",
                 requireVerifiedAttestations
                   ? "bg-sdr-accent-green/10 text-sdr-accent-green border-sdr-accent-green/40"
-                  : "text-sdr-text-secondary hover:text-sdr-text-primary hover:bg-sdr-bg-tertiary border-sdr-border"
+                  : "text-sdr-text-secondary hover:text-sdr-text-primary hover:bg-sdr-bg-tertiary border-sdr-border",
               )}
               title={
                 trustedAttesters.length > 0
@@ -330,13 +330,18 @@ export function MarketplaceView() {
                 {discoveryStatus && (
                   <div className="text-right">
                     <div>{discoveryStatus.running ? "Discovery running" : "Discovery stopped"}</div>
-                    {discoveryStatus.peer_id && <div className="opacity-80">{formatKey(discoveryStatus.peer_id)}</div>}
+                    {discoveryStatus.peer_id && (
+                      <div className="opacity-80">{formatKey(discoveryStatus.peer_id)}</div>
+                    )}
                   </div>
                 )}
               </div>
               <ul className="mt-2 space-y-1">
                 {discoveredFeeds.slice(0, 5).map((d) => (
-                  <li key={d.announcement.feed_uri} className="flex items-center justify-between gap-3">
+                  <li
+                    key={d.announcement.feed_uri}
+                    className="flex items-center justify-between gap-3"
+                  >
                     <span className="font-mono">{d.announcement.feed_uri}</span>
                     <button
                       onClick={() => handleAddDiscoveredSource(d.announcement.feed_uri)}
@@ -372,14 +377,16 @@ export function MarketplaceView() {
                   <>
                     <p className="text-sm">No verifiable attestations</p>
                     <p className="text-xs mt-1">
-                      Configure a notary URL in Settings, or use a feed that provides <code>notary_url</code>.
+                      Configure a notary URL in Settings, or use a feed that provides{" "}
+                      <code>notary_url</code>.
                     </p>
                   </>
                 ) : pendingAttestationCount > 0 ? (
                   <>
                     <p className="text-sm">Verifying attestations…</p>
                     <p className="text-xs mt-1">
-                      Checking {pendingAttestationCount} attestation{pendingAttestationCount === 1 ? "" : "s"} via notary
+                      Checking {pendingAttestationCount} attestation
+                      {pendingAttestationCount === 1 ? "" : "s"} via notary
                     </p>
                   </>
                 ) : (
@@ -397,7 +404,9 @@ export function MarketplaceView() {
                 <div className="p-3 rounded-md border border-sdr-border bg-sdr-bg-secondary text-xs text-sdr-text-muted">
                   Some entries were skipped:
                   <ul className="list-disc pl-5 mt-1 space-y-0.5">
-                    {data?.warnings?.slice(0, 5).map((w) => <li key={w}>{w}</li>)}
+                    {data?.warnings?.slice(0, 5).map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
                   </ul>
                 </div>
               )}
@@ -455,7 +464,10 @@ function PolicyCard({ policy, attestationUid, attestationStatus, onClick }: Poli
   const attestationPill = getAttestationPill(attestationUid, attestationStatus);
 
   return (
-    <GlassCard className="cursor-pointer hover:ring-1 hover:ring-sdr-accent-blue/50 transition-all" onClick={onClick}>
+    <GlassCard
+      className="cursor-pointer hover:ring-1 hover:ring-sdr-accent-blue/50 transition-all"
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between mb-2">
         <div>
           <h3 className="font-medium text-sdr-text-primary">{policy.title}</h3>
@@ -468,9 +480,7 @@ function PolicyCard({ policy, attestationUid, attestationStatus, onClick }: Poli
         <span className="text-xs text-sdr-text-muted">v{policyVersion}</span>
       </div>
 
-      <p className="text-sm text-sdr-text-secondary line-clamp-2 mb-3">
-        {policy.description}
-      </p>
+      <p className="text-sm text-sdr-text-secondary line-clamp-2 mb-3">{policy.description}</p>
 
       <div className="flex flex-wrap gap-1 mt-3">
         {policy.tags.slice(0, 3).map((tag) => (
@@ -610,7 +620,8 @@ function PolicyDetailPanel({
             <div className="space-y-1">
               <p>Attestation UID: {formatKey(attestationUid)}</p>
               <p>
-                Notary: {attestationPointer ? attestationPointer.notaryUrl : defaultNotaryUrl ?? "unset"}
+                Notary:{" "}
+                {attestationPointer ? attestationPointer.notaryUrl : (defaultNotaryUrl ?? "unset")}
               </p>
               {attestationResult && (
                 <>
@@ -622,25 +633,33 @@ function PolicyDetailPanel({
                       <span className="text-sdr-accent-red">invalid</span>
                     )}
                   </p>
-                  {attestationResult.attester && <p>Attester: {formatKey(attestationResult.attester)}</p>}
-                  {attestationResult.attested_at && <p>Attested at: {attestationResult.attested_at}</p>}
+                  {attestationResult.attester && (
+                    <p>Attester: {formatKey(attestationResult.attester)}</p>
+                  )}
+                  {attestationResult.attested_at && (
+                    <p>Attested at: {attestationResult.attested_at}</p>
+                  )}
                   {!attesterTrusted && (
-                    <p className="text-sdr-accent-red">Untrusted attester (see Settings → Marketplace Provenance)</p>
+                    <p className="text-sdr-accent-red">
+                      Untrusted attester (see Settings → Marketplace Provenance)
+                    </p>
                   )}
                 </>
               )}
-              {attestationError && <p className="text-sdr-accent-red">Verify error: {attestationError}</p>}
+              {attestationError && (
+                <p className="text-sdr-accent-red">Verify error: {attestationError}</p>
+              )}
               {!attestationResult && !attestationError && (
-                <p className="text-xs text-sdr-text-muted">
-                  Not verified yet.
-                </p>
+                <p className="text-xs text-sdr-text-muted">Not verified yet.</p>
               )}
               <button
                 onClick={() => {
                   if (!attestationPointer || isAttestationPending) return;
-                  onVerifyAttestation(attestationPointer.notaryUrl, attestationPointer.uid).catch(() => {
-                    // errors are surfaced via cached status
-                  });
+                  onVerifyAttestation(attestationPointer.notaryUrl, attestationPointer.uid).catch(
+                    () => {
+                      // errors are surfaced via cached status
+                    },
+                  );
                 }}
                 disabled={!attestationPointer || isAttestationPending}
                 className="mt-2 px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors disabled:opacity-50"
@@ -694,10 +713,11 @@ function VerifiedBadge() {
 function AttestationPill({ kind }: { kind: "attested" | "verified" | "invalid" | "error" }) {
   const className = clsx(
     "px-1.5 py-0.5 rounded border text-[10px] uppercase tracking-wide",
-    kind === "verified" && "border-sdr-accent-green/40 text-sdr-accent-green bg-sdr-accent-green/10",
+    kind === "verified" &&
+      "border-sdr-accent-green/40 text-sdr-accent-green bg-sdr-accent-green/10",
     kind === "attested" && "border-sdr-border text-sdr-text-muted bg-sdr-bg-tertiary",
     kind === "invalid" && "border-sdr-accent-red/40 text-sdr-accent-red bg-sdr-accent-red/10",
-    kind === "error" && "border-sdr-accent-red/40 text-sdr-accent-red bg-sdr-accent-red/10"
+    kind === "error" && "border-sdr-accent-red/40 text-sdr-accent-red bg-sdr-accent-red/10",
   );
 
   const label = kind === "verified" ? "verified" : kind === "attested" ? "attested" : kind;
@@ -710,7 +730,11 @@ function getAttestationPill(attestationUid: string | null, status?: AttestationC
   if (!status) return <AttestationPill kind="attested" />;
   if (status.status === "pending") return <AttestationPill kind="attested" />;
   if (status.status === "error") return <AttestationPill kind="error" />;
-  return status.result.valid ? <AttestationPill kind="verified" /> : <AttestationPill kind="invalid" />;
+  return status.result.valid ? (
+    <AttestationPill kind="verified" />
+  ) : (
+    <AttestationPill kind="invalid" />
+  );
 }
 
 interface AttestationPointer {
@@ -732,7 +756,7 @@ function getAttestationUid(policy: MarketplacePolicyDto): string | null {
 
 function resolveAttestationPointer(
   policy: MarketplacePolicyDto,
-  defaultNotaryUrl: string | null
+  defaultNotaryUrl: string | null,
 ): AttestationPointer | null {
   const uid = getAttestationUid(policy);
   if (!uid) return null;
@@ -746,7 +770,7 @@ function resolveAttestationPointer(
 }
 
 function extractAttestationPointerFromMetadata(
-  metadata: unknown
+  metadata: unknown,
 ): { uid: string; notaryUrl: string | null } | null {
   const obj = asObject(metadata);
   if (!obj) return null;
@@ -758,14 +782,17 @@ function extractAttestationPointerFromMetadata(
   const attestation = asObject(obj.attestation);
   if (attestation) {
     const uid = normalizeString(attestation.uid) ?? normalizeString(attestation.attestation_uid);
-    const notaryUrl = normalizeString(attestation.notary_url) ?? normalizeString(attestation.notaryUrl);
+    const notaryUrl =
+      normalizeString(attestation.notary_url) ?? normalizeString(attestation.notaryUrl);
     if (uid) return { uid, notaryUrl };
   }
 
   const marketplace = asObject(obj.marketplace);
   if (marketplace) {
-    const uid = normalizeString(marketplace.attestation_uid) ?? normalizeString(marketplace.attestationUid);
-    const notaryUrl = normalizeString(marketplace.notary_url) ?? normalizeString(marketplace.notaryUrl);
+    const uid =
+      normalizeString(marketplace.attestation_uid) ?? normalizeString(marketplace.attestationUid);
+    const notaryUrl =
+      normalizeString(marketplace.notary_url) ?? normalizeString(marketplace.notaryUrl);
     if (uid) return { uid, notaryUrl };
   }
 
@@ -809,7 +836,13 @@ function formatKey(key: string): string {
 
 function SearchIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <circle cx="11" cy="11" r="8" />
       <path d="M21 21l-4.35-4.35" />
     </svg>
@@ -818,7 +851,14 @@ function SearchIcon({ className }: { className?: string }) {
 
 function CloseIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   );

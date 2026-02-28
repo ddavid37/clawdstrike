@@ -1,6 +1,6 @@
-import * as React from "react";
 import { CognitionController } from "@backbay/glia-agent/cognition";
 import type { AVO } from "@backbay/glia-agent/emotion";
+import * as React from "react";
 
 type OrganismState =
   | "idle"
@@ -67,7 +67,10 @@ function clamp01(value: number): number {
 }
 
 function normalizeAgentId(value: string): string {
-  return value.trim().replace(/^agent\s+/i, "").toLowerCase();
+  return value
+    .trim()
+    .replace(/^agent\s+/i, "")
+    .toLowerCase();
 }
 
 function extractAgentIdFromSessionKey(sessionKey: string): string | null {
@@ -84,7 +87,7 @@ function toOrganismState(
   status: string | undefined,
   latestAt: number,
   actionCount: number,
-  nowMs: number
+  nowMs: number,
 ): OrganismState {
   const ageMs = Math.max(0, nowMs - latestAt);
   if (actionCount === 0) return "idle";
@@ -119,7 +122,7 @@ function toLayoutPosition(index: number, total: number): [number, number, number
 
 function ensureController(
   registry: Map<string, CognitionController>,
-  id: string
+  id: string,
 ): CognitionController {
   const existing = registry.get(id);
   if (existing) return existing;
@@ -138,10 +141,12 @@ export function useAgentCognitionState({
   const [glyphs, setGlyphs] = React.useState<AgentGlyphState[]>([]);
 
   React.useEffect(() => {
+    const controllers = controllersRef.current;
+    const lastProcessedRun = lastProcessedRunRef.current;
     return () => {
-      controllersRef.current.forEach((controller) => controller.dispose());
-      controllersRef.current.clear();
-      lastProcessedRunRef.current.clear();
+      controllers.forEach((controller) => controller.dispose());
+      controllers.clear();
+      lastProcessedRun.clear();
     };
   }, []);
 
@@ -203,23 +208,25 @@ export function useAgentCognitionState({
       const sortedActions = [...entry.actions].sort((a, b) => b.timestamp - a.timestamp);
       const latestAction = sortedActions[0];
       const riskSamples = sortedActions.slice(0, 16).map((action) => clamp01(action.riskScore));
-      const noveltySamples = sortedActions.slice(0, 16).map((action) => clamp01(action.noveltyScore));
+      const noveltySamples = sortedActions
+        .slice(0, 16)
+        .map((action) => clamp01(action.noveltyScore));
       const blastSamples = sortedActions.slice(0, 16).map((action) => clamp01(action.blastRadius));
 
       const density =
         sortedActions.filter((action) => nowMs - action.timestamp <= 120_000).length / 12;
       const deniedCount = sortedActions.filter(
-        (action) => action.policyStatus === "denied" || action.policyStatus === "exception"
+        (action) => action.policyStatus === "denied" || action.policyStatus === "exception",
       ).length;
       const pendingApprovals = sortedActions.filter(
-        (action) => action.policyStatus === "approval-required"
+        (action) => action.policyStatus === "approval-required",
       ).length;
 
       const risk = average(riskSamples);
       const workload = clamp01(density);
       const uncertainty = average(noveltySamples);
       const errorStress = clamp01(
-        (deniedCount + pendingApprovals * 0.35) / Math.max(sortedActions.length, 1)
+        (deniedCount + pendingApprovals * 0.35) / Math.max(sortedActions.length, 1),
       );
       const confidence = clamp01(1 - uncertainty * 0.55 - errorStress * 0.65);
       const timePressure = clamp01(workload * 0.74 + average(blastSamples) * 0.3);
@@ -256,8 +263,7 @@ export function useAgentCognitionState({
             type: "run.completed",
             runId: latestAction.id,
             success:
-              latestAction.policyStatus !== "denied" &&
-              latestAction.policyStatus !== "exception",
+              latestAction.policyStatus !== "denied" && latestAction.policyStatus !== "exception",
           });
           lastProcessedRunRef.current.set(entry.normalizedId, latestAction.id);
         } else {
@@ -287,7 +293,7 @@ export function useAgentCognitionState({
           latestAction?.policyStatus,
           entry.latestAt,
           sortedActions.length,
-          nowMs
+          nowMs,
         ),
         power: toPower(risk, workload, focused),
         position: toLayoutPosition(index, entries.length),

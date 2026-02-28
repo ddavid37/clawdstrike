@@ -25,12 +25,18 @@ function statusTone(status: StrikecellStatus): string {
   }
 }
 
-function findActive(strikecells: Strikecell[], activeStrikecellId: StrikecellDomainId | null): Strikecell | null {
+function findActive(
+  strikecells: Strikecell[],
+  activeStrikecellId: StrikecellDomainId | null,
+): Strikecell | null {
   if (!activeStrikecellId) return null;
   return strikecells.find((strikecell) => strikecell.id === activeStrikecellId) ?? null;
 }
 
-function findFocusedNode(active: Strikecell | null, focusedNodeId: string | null): StrikecellNode | null {
+function findFocusedNode(
+  active: Strikecell | null,
+  focusedNodeId: string | null,
+): StrikecellNode | null {
   if (!active || !focusedNodeId) return null;
   return active.nodes.find((node) => node.id === focusedNodeId) ?? null;
 }
@@ -69,7 +75,9 @@ export function NexusDetailPanel({
       </div>
 
       {!active ? (
-        <div className="p-4 text-sm text-sdr-text-muted">Select a strikecell to inspect details.</div>
+        <div className="p-4 text-sm text-sdr-text-muted">
+          Select a strikecell to inspect details.
+        </div>
       ) : (
         <div className="space-y-4 overflow-y-auto p-4">
           <div>
@@ -129,7 +137,9 @@ export function NexusDetailPanel({
             <div className="origin-card rounded-lg border border-sdr-accent-blue/30 p-3">
               <div className="origin-label text-[10px]">Focused Node</div>
               <div className="mt-1 text-sm text-sdr-text-primary">{focused.label}</div>
-              <div className="mt-1 text-[10px] font-mono uppercase text-sdr-text-muted">{focused.kind}</div>
+              <div className="mt-1 text-[10px] font-mono uppercase text-sdr-text-muted">
+                {focused.kind}
+              </div>
             </div>
           ) : null}
 

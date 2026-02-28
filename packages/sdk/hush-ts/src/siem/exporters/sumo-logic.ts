@@ -1,7 +1,7 @@
 import os from "node:os";
 import { gzipSync } from "node:zlib";
 
-import type { ExportResult, ExporterConfig } from "../framework";
+import type { ExporterConfig, ExportResult } from "../framework";
 import { BaseExporter, SchemaFormat } from "../framework";
 import { readResponseBody } from "../http";
 import type { SecurityEvent } from "../types";
@@ -66,7 +66,7 @@ export class SumoLogicExporter extends BaseExporter {
       return { exported: 0, failed: 0, errors: [] };
     }
 
-    const bodyText = events.map(e => this.formatEvent(e)).join("\n");
+    const bodyText = events.map((e) => this.formatEvent(e)).join("\n");
     const headers: Record<string, string> = {
       "X-Sumo-Category": this.cfg.sourceCategory,
       "X-Sumo-Name": this.cfg.sourceName,

@@ -34,10 +34,7 @@ export type GatewayEventFrame<TPayload = unknown> = {
   stateVersion?: number | string;
 };
 
-export type GatewayFrame =
-  | GatewayRequestFrame
-  | GatewayResponseFrame
-  | GatewayEventFrame;
+export type GatewayFrame = GatewayRequestFrame | GatewayResponseFrame | GatewayEventFrame;
 
 export type GatewayRole = "operator" | "node";
 
@@ -119,4 +116,3 @@ export function createRequestId(prefix = "sdr"): string {
   }
   return `${prefix}:${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
-

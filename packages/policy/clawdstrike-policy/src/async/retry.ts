@@ -1,5 +1,5 @@
-import type { RetryConfig } from './types.js';
-import { sleep } from './util.js';
+import type { RetryConfig } from "./types.js";
+import { sleep } from "./util.js";
 
 export async function retry<T>(
   cfg: RetryConfig,
@@ -27,4 +27,3 @@ function backoffForAttempt(cfg: RetryConfig, attempt: number): number {
   const jitterMs = (attempt * 17) % 97;
   return capped + jitterMs;
 }
-

@@ -3,8 +3,9 @@
  *
  * Adapted from Origin Realm sentinels (`GlyphSentinel.tsx`).
  */
-import { useEffect, useMemo, useRef } from "react";
+
 import { useFrame } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
 export interface Vec3 {
@@ -34,7 +35,13 @@ interface TrailPoint {
   time: number;
 }
 
-export function GlyphSentinel({ from, to, onArrive, hue = 45, duration = 0.8 }: GlyphSentinelProps) {
+export function GlyphSentinel({
+  from,
+  to,
+  onArrive,
+  hue = 45,
+  duration = 0.8,
+}: GlyphSentinelProps) {
   const groupRef = useRef<THREE.Group>(null);
   const coreRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
@@ -141,7 +148,9 @@ export function GlyphSentinel({ from, to, onArrive, hue = 45, duration = 0.8 }: 
     trailPointsRef.current.push({ position: currentPos.clone(), time: clock.elapsedTime });
 
     const trailLifetime = 0.4;
-    trailPointsRef.current = trailPointsRef.current.filter((p) => clock.elapsedTime - p.time < trailLifetime);
+    trailPointsRef.current = trailPointsRef.current.filter(
+      (p) => clock.elapsedTime - p.time < trailLifetime,
+    );
 
     if (trailRef.current) {
       const positions = trailGeometry.attributes.position.array as Float32Array;
@@ -202,4 +211,3 @@ export function GlyphSentinel({ from, to, onArrive, hue = 45, duration = 0.8 }: 
 }
 
 export default GlyphSentinel;
-

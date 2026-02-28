@@ -1,4 +1,3 @@
-import { BaseToolInterceptor, createSecurityContext, createSessionSummary } from '@clawdstrike/adapter-core';
 import type {
   AdapterConfig,
   FrameworkAdapter,
@@ -8,14 +7,19 @@ import type {
   ProcessedOutput,
   SecurityContext,
   SessionSummary,
-} from '@clawdstrike/adapter-core';
+} from "@clawdstrike/adapter-core";
+import {
+  BaseToolInterceptor,
+  createSecurityContext,
+  createSessionSummary,
+} from "@clawdstrike/adapter-core";
 
-import { ClawdstrikeCallbackHandler } from './callback-handler.js';
-import { wrapTool, wrapTools } from './wrap.js';
+import { ClawdstrikeCallbackHandler } from "./callback-handler.js";
+import { wrapTool, wrapTools } from "./wrap.js";
 
 export class LangChainAdapter implements FrameworkAdapter {
-  readonly name = 'langchain';
-  readonly version = '0.1.1'; // TODO: derive from package.json at build time
+  readonly name = "langchain";
+  readonly version = "0.1.1"; // TODO: derive from package.json at build time
 
   private readonly engine: PolicyEngineLike;
   private config: AdapterConfig = {};
@@ -34,14 +38,11 @@ export class LangChainAdapter implements FrameworkAdapter {
 
   createContext(metadata: Record<string, unknown> = {}): SecurityContext {
     return createSecurityContext({
-      metadata: { framework: 'langchain', ...metadata },
+      metadata: { framework: "langchain", ...metadata },
     });
   }
 
-  async interceptToolCall(
-    context: SecurityContext,
-    toolCall: GenericToolCall,
-  ) {
+  async interceptToolCall(context: SecurityContext, toolCall: GenericToolCall) {
     return await this.interceptor.beforeExecute(toolCall.name, toolCall.parameters, context);
   }
 
@@ -65,8 +66,8 @@ export class LangChainAdapter implements FrameworkAdapter {
     return {
       createCallbackHandler: () =>
         new ClawdstrikeCallbackHandler({ interceptor: this.interceptor, config: this.config }),
-      wrapTool: tool => wrapTool(tool as any, this.interceptor),
-      injectIntoContext: ctx => ctx,
+      wrapTool: (tool) => wrapTool(tool as any, this.interceptor),
+      injectIntoContext: (ctx) => ctx,
       extractFromContext: () => ({}),
     };
   }

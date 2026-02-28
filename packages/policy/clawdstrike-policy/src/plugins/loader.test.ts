@@ -1,50 +1,49 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-import type { PolicyEvent } from '@clawdstrike/adapter-core';
-
-import { createPolicyEngineFromPolicy } from '../engine.js';
-import { CustomGuardRegistry } from '../custom-registry.js';
-import { loadPolicyFromString } from '../policy/loader.js';
-import { inspectPlugin, loadTrustedPluginIntoRegistry, PluginLoader } from './loader.js';
+import type { PolicyEvent } from "@clawdstrike/adapter-core";
+import { CustomGuardRegistry } from "../custom-registry.js";
+import { createPolicyEngineFromPolicy } from "../engine.js";
+import { loadPolicyFromString } from "../policy/loader.js";
+import { inspectPlugin, loadTrustedPluginIntoRegistry, PluginLoader } from "./loader.js";
 
 function makeTempPluginDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'clawdstrike-plugin-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), "clawdstrike-plugin-"));
 }
 
-test('refuses untrusted plugins (trusted-only loader)', async () => {
+test("refuses untrusted plugins (trusted-only loader)", async () => {
   const dir = makeTempPluginDir();
   fs.writeFileSync(
-    path.join(dir, 'clawdstrike.plugin.json'),
+    path.join(dir, "clawdstrike.plugin.json"),
     JSON.stringify({
-      version: '1.0.0',
-      name: 'acme-untrusted',
-      guards: [{ name: 'acme.deny', entrypoint: './guard.mjs' }],
-      trust: { level: 'untrusted', sandbox: 'wasm' },
+      version: "1.0.0",
+      name: "acme-untrusted",
+      guards: [{ name: "acme.deny", entrypoint: "./guard.mjs" }],
+      trust: { level: "untrusted", sandbox: "wasm" },
     }),
-    'utf8',
+    "utf8",
   );
 
   const registry = new CustomGuardRegistry();
   await expect(loadTrustedPluginIntoRegistry(dir, registry)).rejects.toThrow(/untrusted/i);
 });
 
-test('loads a trusted plugin and registers guard factories', async () => {
+test("loads a trusted plugin and registers guard factories", async () => {
   const dir = makeTempPluginDir();
   fs.writeFileSync(
-    path.join(dir, 'clawdstrike.plugin.json'),
+    path.join(dir, "clawdstrike.plugin.json"),
     JSON.stringify({
-      version: '1.0.0',
-      name: 'acme-trusted',
-      guards: [{ name: 'acme.deny', entrypoint: './guard.mjs' }],
-      trust: { level: 'trusted', sandbox: 'node' },
+      version: "1.0.0",
+      name: "acme-trusted",
+      guards: [{ name: "acme.deny", entrypoint: "./guard.mjs" }],
+      trust: { level: "trusted", sandbox: "node" },
     }),
-    'utf8',
+    "utf8",
   );
 
   fs.writeFileSync(
-    path.join(dir, 'guard.mjs'),
+    path.join(dir, "guard.mjs"),
     `
 export default {
   id: "acme.deny",
@@ -55,13 +54,13 @@ export default {
   }),
 };
 `,
-    'utf8',
+    "utf8",
   );
 
   const registry = new CustomGuardRegistry();
   const loaded = await loadTrustedPluginIntoRegistry(dir, registry);
-  expect(loaded.registered).toEqual(['acme.deny']);
-  expect(loaded.executionMode).toBe('node');
+  expect(loaded.registered).toEqual(["acme.deny"]);
+  expect(loaded.executionMode).toBe("node");
 
   const policy = loadPolicyFromString(
     `
@@ -77,34 +76,34 @@ custom_guards:
 
   const engine = createPolicyEngineFromPolicy(policy, { customGuardRegistry: registry });
   const event: PolicyEvent = {
-    eventId: 'evt-plugin',
-    eventType: 'tool_call',
+    eventId: "evt-plugin",
+    eventType: "tool_call",
     timestamp: new Date().toISOString(),
-    data: { type: 'tool', toolName: 'demo', parameters: { ok: true } },
+    data: { type: "tool", toolName: "demo", parameters: { ok: true } },
   };
 
   const decision = await engine.evaluate(event);
-  expect(decision.status).toBe('deny');
-  expect(decision.guard).toBe('acme.deny');
+  expect(decision.status).toBe("deny");
+  expect(decision.guard).toBe("acme.deny");
 });
 
-test('gates untrusted high-risk capabilities (scaffold policy)', async () => {
+test("gates untrusted high-risk capabilities (scaffold policy)", async () => {
   const dir = makeTempPluginDir();
   fs.writeFileSync(
-    path.join(dir, 'clawdstrike.plugin.json'),
+    path.join(dir, "clawdstrike.plugin.json"),
     JSON.stringify({
-      version: '1.0.0',
-      name: 'acme-untrusted-risky',
-      guards: [{ name: 'acme.deny', entrypoint: './guard.mjs' }],
-      trust: { level: 'untrusted', sandbox: 'node' },
+      version: "1.0.0",
+      name: "acme-untrusted-risky",
+      guards: [{ name: "acme.deny", entrypoint: "./guard.mjs" }],
+      trust: { level: "untrusted", sandbox: "node" },
       capabilities: {
         subprocess: true,
       },
     }),
-    'utf8',
+    "utf8",
   );
   fs.writeFileSync(
-    path.join(dir, 'guard.mjs'),
+    path.join(dir, "guard.mjs"),
     `
 export default {
   id: "acme.deny",
@@ -115,7 +114,7 @@ export default {
   }),
 };
 `,
-    'utf8',
+    "utf8",
   );
 
   const loader = new PluginLoader({
@@ -126,23 +125,23 @@ export default {
   await expect(loader.inspect(dir)).rejects.toThrow(/cannot request subprocess capability/i);
 });
 
-test('checks clawdstrike compatibility range during inspect', async () => {
+test("checks clawdstrike compatibility range during inspect", async () => {
   const dir = makeTempPluginDir();
   fs.writeFileSync(
-    path.join(dir, 'clawdstrike.plugin.json'),
+    path.join(dir, "clawdstrike.plugin.json"),
     JSON.stringify({
-      version: '1.0.0',
-      name: 'acme-versioned',
+      version: "1.0.0",
+      name: "acme-versioned",
       clawdstrike: {
-        minVersion: '9.9.9',
+        minVersion: "9.9.9",
       },
-      guards: [{ name: 'acme.deny', entrypoint: './guard.mjs' }],
-      trust: { level: 'trusted', sandbox: 'node' },
+      guards: [{ name: "acme.deny", entrypoint: "./guard.mjs" }],
+      trust: { level: "trusted", sandbox: "node" },
     }),
-    'utf8',
+    "utf8",
   );
   fs.writeFileSync(
-    path.join(dir, 'guard.mjs'),
+    path.join(dir, "guard.mjs"),
     `
 export default {
   id: "acme.deny",
@@ -153,21 +152,21 @@ export default {
   }),
 };
 `,
-    'utf8',
+    "utf8",
   );
 
   await expect(inspectPlugin(dir)).rejects.toThrow(/requires clawdstrike >= 9.9.9/i);
 });
 
-test('loads wasm plugin via CLI bridge runtime', async () => {
+test("loads wasm plugin via CLI bridge runtime", async () => {
   const dir = makeTempPluginDir();
   fs.writeFileSync(
-    path.join(dir, 'clawdstrike.plugin.json'),
+    path.join(dir, "clawdstrike.plugin.json"),
     JSON.stringify({
-      version: '1.0.0',
-      name: 'acme-wasm',
-      guards: [{ name: 'acme.wasm', entrypoint: './guard.wasm' }],
-      trust: { level: 'trusted', sandbox: 'wasm' },
+      version: "1.0.0",
+      name: "acme-wasm",
+      guards: [{ name: "acme.wasm", entrypoint: "./guard.wasm" }],
+      trust: { level: "trusted", sandbox: "wasm" },
       capabilities: {
         network: false,
         subprocess: false,
@@ -180,11 +179,11 @@ test('loads wasm plugin via CLI bridge runtime', async () => {
         maxTimeoutMs: 500,
       },
     }),
-    'utf8',
+    "utf8",
   );
-  fs.writeFileSync(path.join(dir, 'guard.wasm'), 'wasm', 'utf8');
+  fs.writeFileSync(path.join(dir, "guard.wasm"), "wasm", "utf8");
 
-  const bridge = path.join(dir, 'mock-bridge.mjs');
+  const bridge = path.join(dir, "mock-bridge.mjs");
   fs.writeFileSync(
     bridge,
     `#!/usr/bin/env node
@@ -207,7 +206,7 @@ process.stdin.on('end', () => {
   };
   process.stdout.write(JSON.stringify(out));
 });`,
-    'utf8',
+    "utf8",
   );
   fs.chmodSync(bridge, 0o755);
 
@@ -216,13 +215,13 @@ process.stdin.on('end', () => {
     trustedOnly: true,
     allowWasmSandbox: true,
     wasmBridge: {
-      command: ['node', bridge],
+      command: ["node", bridge],
       timeoutMs: 5_000,
     },
   });
   const loaded = await loader.loadIntoRegistry(dir, registry);
-  expect(loaded.executionMode).toBe('wasm');
-  expect(loaded.registered).toEqual(['acme.wasm']);
+  expect(loaded.executionMode).toBe("wasm");
+  expect(loaded.registered).toEqual(["acme.wasm"]);
 
   const policy = loadPolicyFromString(
     `
@@ -238,26 +237,26 @@ custom_guards:
 
   const engine = createPolicyEngineFromPolicy(policy, { customGuardRegistry: registry });
   const event: PolicyEvent = {
-    eventId: 'evt-wasm',
-    eventType: 'tool_call',
+    eventId: "evt-wasm",
+    eventType: "tool_call",
     timestamp: new Date().toISOString(),
-    data: { type: 'tool', toolName: 'demo', parameters: { ok: true } },
+    data: { type: "tool", toolName: "demo", parameters: { ok: true } },
   };
 
   const decision = await engine.evaluate(event);
-  expect(decision.status).toBe('deny');
-  expect(decision.guard).toBe('acme.wasm');
+  expect(decision.status).toBe("deny");
+  expect(decision.guard).toBe("acme.wasm");
 });
 
-test('trusted loader helper respects allowWasmSandbox for wasm-sandboxed plugins', async () => {
+test("trusted loader helper respects allowWasmSandbox for wasm-sandboxed plugins", async () => {
   const dir = makeTempPluginDir();
   fs.writeFileSync(
-    path.join(dir, 'clawdstrike.plugin.json'),
+    path.join(dir, "clawdstrike.plugin.json"),
     JSON.stringify({
-      version: '1.0.0',
-      name: 'acme-wasm-helper',
-      guards: [{ name: 'acme.wasm', entrypoint: './guard.wasm' }],
-      trust: { level: 'trusted', sandbox: 'wasm' },
+      version: "1.0.0",
+      name: "acme-wasm-helper",
+      guards: [{ name: "acme.wasm", entrypoint: "./guard.wasm" }],
+      trust: { level: "trusted", sandbox: "wasm" },
       capabilities: {
         network: false,
         subprocess: false,
@@ -270,11 +269,11 @@ test('trusted loader helper respects allowWasmSandbox for wasm-sandboxed plugins
         maxTimeoutMs: 500,
       },
     }),
-    'utf8',
+    "utf8",
   );
-  fs.writeFileSync(path.join(dir, 'guard.wasm'), 'wasm', 'utf8');
+  fs.writeFileSync(path.join(dir, "guard.wasm"), "wasm", "utf8");
 
-  const bridge = path.join(dir, 'mock-bridge.mjs');
+  const bridge = path.join(dir, "mock-bridge.mjs");
   fs.writeFileSync(
     bridge,
     `#!/usr/bin/env node
@@ -297,12 +296,12 @@ process.stdin.on('end', () => {
   };
   process.stdout.write(JSON.stringify(out));
 });`,
-    'utf8',
+    "utf8",
   );
 
   const bridgeOptions = {
     wasmBridge: {
-      command: ['node', bridge],
+      command: ["node", bridge],
       timeoutMs: 5_000,
     },
   };
@@ -317,8 +316,8 @@ process.stdin.on('end', () => {
     ...bridgeOptions,
     allowWasmSandbox: true,
   });
-  expect(loaded.executionMode).toBe('wasm');
-  expect(loaded.registered).toEqual(['acme.wasm']);
+  expect(loaded.executionMode).toBe("wasm");
+  expect(loaded.registered).toEqual(["acme.wasm"]);
 
   const policy = loadPolicyFromString(
     `
@@ -334,26 +333,26 @@ custom_guards:
 
   const engine = createPolicyEngineFromPolicy(policy, { customGuardRegistry: registryAllowed });
   const event: PolicyEvent = {
-    eventId: 'evt-wasm-helper',
-    eventType: 'tool_call',
+    eventId: "evt-wasm-helper",
+    eventType: "tool_call",
     timestamp: new Date().toISOString(),
-    data: { type: 'tool', toolName: 'demo', parameters: { ok: true } },
+    data: { type: "tool", toolName: "demo", parameters: { ok: true } },
   };
 
   const decision = await engine.evaluate(event);
-  expect(decision.status).toBe('deny');
-  expect(decision.guard).toBe('acme.wasm');
+  expect(decision.status).toBe("deny");
+  expect(decision.guard).toBe("acme.wasm");
 });
 
 test('wasm plugin handle "custom" only matches custom events', async () => {
   const dir = makeTempPluginDir();
   fs.writeFileSync(
-    path.join(dir, 'clawdstrike.plugin.json'),
+    path.join(dir, "clawdstrike.plugin.json"),
     JSON.stringify({
-      version: '1.0.0',
-      name: 'acme-wasm-custom-handles',
-      guards: [{ name: 'acme.wasm', entrypoint: './guard.wasm', handles: ['custom'] }],
-      trust: { level: 'trusted', sandbox: 'wasm' },
+      version: "1.0.0",
+      name: "acme-wasm-custom-handles",
+      guards: [{ name: "acme.wasm", entrypoint: "./guard.wasm", handles: ["custom"] }],
+      trust: { level: "trusted", sandbox: "wasm" },
       capabilities: {
         network: false,
         subprocess: false,
@@ -366,11 +365,11 @@ test('wasm plugin handle "custom" only matches custom events', async () => {
         maxTimeoutMs: 500,
       },
     }),
-    'utf8',
+    "utf8",
   );
-  fs.writeFileSync(path.join(dir, 'guard.wasm'), 'wasm', 'utf8');
+  fs.writeFileSync(path.join(dir, "guard.wasm"), "wasm", "utf8");
 
-  const bridge = path.join(dir, 'mock-bridge.mjs');
+  const bridge = path.join(dir, "mock-bridge.mjs");
   fs.writeFileSync(
     bridge,
     `#!/usr/bin/env node
@@ -393,7 +392,7 @@ process.stdin.on('end', () => {
   };
   process.stdout.write(JSON.stringify(out));
 });`,
-    'utf8',
+    "utf8",
   );
   fs.chmodSync(bridge, 0o755);
 
@@ -402,7 +401,7 @@ process.stdin.on('end', () => {
     trustedOnly: true,
     allowWasmSandbox: true,
     wasmBridge: {
-      command: ['node', bridge],
+      command: ["node", bridge],
       timeoutMs: 5_000,
     },
   });
@@ -422,21 +421,21 @@ custom_guards:
 
   const engine = createPolicyEngineFromPolicy(policy, { customGuardRegistry: registry });
   const toolEvent: PolicyEvent = {
-    eventId: 'evt-tool',
-    eventType: 'tool_call',
+    eventId: "evt-tool",
+    eventType: "tool_call",
     timestamp: new Date().toISOString(),
-    data: { type: 'tool', toolName: 'demo', parameters: { ok: true } },
+    data: { type: "tool", toolName: "demo", parameters: { ok: true } },
   };
   const toolDecision = await engine.evaluate(toolEvent);
-  expect(toolDecision.status).toBe('allow');
+  expect(toolDecision.status).toBe("allow");
 
   const customEvent: PolicyEvent = {
-    eventId: 'evt-custom',
-    eventType: 'custom',
+    eventId: "evt-custom",
+    eventType: "custom",
     timestamp: new Date().toISOString(),
-    data: { type: 'custom', customType: 'demo', ok: true },
+    data: { type: "custom", customType: "demo", ok: true },
   };
   const customDecision = await engine.evaluate(customEvent);
-  expect(customDecision.status).toBe('deny');
-  expect(customDecision.guard).toBe('acme.wasm');
+  expect(customDecision.status).toBe("deny");
+  expect(customDecision.guard).toBe("acme.wasm");
 });

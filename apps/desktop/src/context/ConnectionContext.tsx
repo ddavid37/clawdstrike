@@ -1,7 +1,7 @@
 /**
  * ConnectionContext - Hushd daemon connection state management
  */
-import { createContext, useContext, useCallback, useState, useEffect, type ReactNode } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 
 export type ConnectionMode = "local" | "remote" | "embedded";
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
@@ -73,30 +73,39 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     status: "disconnected",
   });
 
-  const setDaemonUrl = useCallback((url: string) => {
-    setState((s) => ({ ...s, daemonUrl: url, status: "disconnected", error: undefined }));
-    saveConnection({ mode: state.mode, daemonUrl: url });
-  }, [state.mode]);
+  const setDaemonUrl = useCallback(
+    (url: string) => {
+      setState((s) => ({ ...s, daemonUrl: url, status: "disconnected", error: undefined }));
+      saveConnection({ mode: state.mode, daemonUrl: url });
+    },
+    [state.mode],
+  );
 
-  const setMode = useCallback((mode: ConnectionMode) => {
-    setState((s) => ({ ...s, mode, status: "disconnected", error: undefined }));
-    saveConnection({ mode, daemonUrl: state.daemonUrl });
-  }, [state.daemonUrl]);
+  const setMode = useCallback(
+    (mode: ConnectionMode) => {
+      setState((s) => ({ ...s, mode, status: "disconnected", error: undefined }));
+      saveConnection({ mode, daemonUrl: state.daemonUrl });
+    },
+    [state.daemonUrl],
+  );
 
-  const testConnection = useCallback(async (url?: string): Promise<DaemonInfo> => {
-    const targetUrl = url ?? state.daemonUrl;
-    const response = await fetch(`${targetUrl}/health`);
-    if (!response.ok) {
-      throw new Error(`Connection failed: ${response.status}`);
-    }
-    const data = await response.json();
-    return {
-      version: data.version ?? "unknown",
-      policy_hash: data.policy_hash,
-      policy_name: data.policy_name,
-      uptime_secs: data.uptime_secs,
-    };
-  }, [state.daemonUrl]);
+  const testConnection = useCallback(
+    async (url?: string): Promise<DaemonInfo> => {
+      const targetUrl = url ?? state.daemonUrl;
+      const response = await fetch(`${targetUrl}/health`);
+      if (!response.ok) {
+        throw new Error(`Connection failed: ${response.status}`);
+      }
+      const data = await response.json();
+      return {
+        version: data.version ?? "unknown",
+        policy_hash: data.policy_hash,
+        policy_name: data.policy_name,
+        uptime_secs: data.uptime_secs,
+      };
+    },
+    [state.daemonUrl],
+  );
 
   const connect = useCallback(async () => {
     setState((s) => ({ ...s, status: "connecting", error: undefined }));

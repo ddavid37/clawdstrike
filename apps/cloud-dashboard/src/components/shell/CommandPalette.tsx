@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect, useRef } from "react";
 import { useDesktopOS } from "@backbay/glia-desktop";
 import { AnimatePresence, motion } from "framer-motion";
-import { processes, PROCESS_ICONS } from "../../state/processRegistry";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PROCESS_ICONS, processes } from "../../state/processRegistry";
 import { NoiseGrain } from "../ui";
 
 interface Command {
@@ -12,7 +12,15 @@ interface Command {
   action: () => void;
 }
 
-export function CommandPalette({ open, onClose, onLock }: { open: boolean; onClose: () => void; onLock?: () => void }) {
+export function CommandPalette({
+  open,
+  onClose,
+  onLock,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onLock?: () => void;
+}) {
   const { processes: procManager } = useDesktopOS();
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -24,16 +32,29 @@ export function CommandPalette({ open, onClose, onLock }: { open: boolean; onClo
       name: p.name,
       description: p.description || "",
       icon: PROCESS_ICONS[p.id],
-      action: () => { procManager.launch(p.id); onClose(); },
+      action: () => {
+        procManager.launch(p.id);
+        onClose();
+      },
     }));
-    cmds.push({ id: "lock", name: "Lock Screen", description: "Lock the desktop", action: () => { onLock?.(); onClose(); } });
+    cmds.push({
+      id: "lock",
+      name: "Lock Screen",
+      description: "Lock the desktop",
+      action: () => {
+        onLock?.();
+        onClose();
+      },
+    });
     return cmds;
   }, [procManager, onClose, onLock]);
 
   const filtered = useMemo(() => {
     if (!query) return commands;
     const q = query.toLowerCase();
-    return commands.filter((c) => c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q));
+    return commands.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q),
+    );
   }, [commands, query]);
 
   useEffect(() => {
@@ -48,10 +69,17 @@ export function CommandPalette({ open, onClose, onLock }: { open: boolean; onClo
   }, [open]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); setSelectedIdx((i) => Math.min(i + 1, filtered.length - 1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setSelectedIdx((i) => Math.max(i - 1, 0)); }
-    else if (e.key === "Enter" && filtered[selectedIdx]) { filtered[selectedIdx].action(); }
-    else if (e.key === "Escape") { onClose(); }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIdx((i) => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIdx((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter" && filtered[selectedIdx]) {
+      filtered[selectedIdx].action();
+    } else if (e.key === "Escape") {
+      onClose();
+    }
   };
 
   return (
@@ -122,9 +150,14 @@ export function CommandPalette({ open, onClose, onLock }: { open: boolean; onClo
                   >
                     {cmd.icon && <span style={{ display: "flex", flexShrink: 0 }}>{cmd.icon}</span>}
                     <div>
-                      <div className="font-mono" style={{ fontSize: 13, color: "var(--text)" }}>{cmd.name}</div>
+                      <div className="font-mono" style={{ fontSize: 13, color: "var(--text)" }}>
+                        {cmd.name}
+                      </div>
                       {cmd.description && (
-                        <div className="font-body" style={{ fontSize: 11, color: "var(--muted)", opacity: 0.6 }}>
+                        <div
+                          className="font-body"
+                          style={{ fontSize: 11, color: "var(--muted)", opacity: 0.6 }}
+                        >
                           {cmd.description}
                         </div>
                       )}
@@ -132,7 +165,10 @@ export function CommandPalette({ open, onClose, onLock }: { open: boolean; onClo
                   </div>
                 ))}
                 {filtered.length === 0 && (
-                  <div className="font-mono" style={{ padding: "16px 20px", fontSize: 12, color: "var(--muted)" }}>
+                  <div
+                    className="font-mono"
+                    style={{ padding: "16px 20px", fontSize: 12, color: "var(--muted)" }}
+                  >
                     No matching commands
                   </div>
                 )}

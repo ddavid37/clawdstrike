@@ -1,9 +1,8 @@
-import type { ExportResult, Exporter } from "./framework";
-import type { SecurityEvent } from "./types";
-import type { EventFilter } from "./filter";
-
 import { EventBus, type Unsubscribe } from "./event-bus";
+import type { EventFilter } from "./filter";
 import { eventMatchesFilter } from "./filter";
+import type { Exporter, ExportResult } from "./framework";
+import type { SecurityEvent } from "./types";
 
 export interface ManagedExporter {
   exporter: Exporter;
@@ -30,7 +29,7 @@ export class ExporterManager {
       return;
     }
 
-    this.unsubscribe = this.bus.subscribe(event => {
+    this.unsubscribe = this.bus.subscribe((event) => {
       for (const entry of this.exporters) {
         if (!entry.enabled) {
           continue;
@@ -39,7 +38,9 @@ export class ExporterManager {
           continue;
         }
 
-        const maybeEnqueue = (entry.exporter as Partial<{ enqueue: (e: SecurityEvent) => Promise<void> }>).enqueue;
+        const maybeEnqueue = (
+          entry.exporter as Partial<{ enqueue: (e: SecurityEvent) => Promise<void> }>
+        ).enqueue;
         if (maybeEnqueue) {
           void maybeEnqueue.call(entry.exporter, event);
         } else {
@@ -81,4 +82,3 @@ export class ExporterManager {
     }
   }
 }
-

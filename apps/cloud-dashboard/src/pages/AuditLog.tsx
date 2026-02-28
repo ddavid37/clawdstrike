@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchAuditEvents, type AuditEvent, type AuditFilters } from "../api/client";
-import { NoiseGrain, GlassButton, Stamp } from "../components/ui";
-import { EventDetailDrawer } from "../components/events/EventDetailDrawer";
+import { type AuditEvent, type AuditFilters, fetchAuditEvents } from "../api/client";
 import { EventBookmarks } from "../components/events/EventBookmarks";
-import { exportAsCSV, exportAsJSON } from "../utils/exportData";
+import { EventDetailDrawer } from "../components/events/EventDetailDrawer";
+import { GlassButton, NoiseGrain, Stamp } from "../components/ui";
 import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
+import { exportAsCSV, exportAsJSON } from "../utils/exportData";
 
 export function AuditLog(_props: { windowId?: string }) {
   const [events, setEvents] = useState<AuditEvent[]>([]);
@@ -28,20 +28,22 @@ export function AuditLog(_props: { windowId?: string }) {
     }
   }, [filters]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const page = Math.floor((filters.offset ?? 0) / (filters.limit ?? 50));
   const totalPages = Math.ceil(total / (filters.limit ?? 50));
 
-  const debouncedSetFilter = useDebouncedCallback(
-    (key: string, value: string) => {
-      setFilters((f) => ({ ...f, [key]: value || undefined, offset: 0 }));
-    },
-    300,
-  );
+  const debouncedSetFilter = useDebouncedCallback((key: string, value: string) => {
+    setFilters((f) => ({ ...f, [key]: value || undefined, offset: 0 }));
+  }, 300);
 
   return (
-    <div className="space-y-5" style={{ padding: 20, minHeight: "100%", color: "#e2e8f0", overflow: "auto", height: "100%" }}>
+    <div
+      className="space-y-5"
+      style={{ padding: 20, minHeight: "100%", color: "#e2e8f0", overflow: "auto", height: "100%" }}
+    >
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3">
         <FilterSelect
@@ -56,21 +58,17 @@ export function AuditLog(_props: { windowId?: string }) {
           options={["", "file_access", "file_write", "egress", "shell", "mcp_tool", "patch"]}
           onChange={(v) => setFilters((f) => ({ ...f, action_type: v || undefined, offset: 0 }))}
         />
-        <FilterInput
-          label="Session ID"
-          onChange={(v) => debouncedSetFilter("session_id", v)}
-        />
-        <FilterInput
-          label="Agent ID"
-          onChange={(v) => debouncedSetFilter("agent_id", v)}
-        />
+        <FilterInput label="Session ID" onChange={(v) => debouncedSetFilter("session_id", v)} />
+        <FilterInput label="Agent ID" onChange={(v) => debouncedSetFilter("agent_id", v)} />
         <GlassButton onClick={load}>Refresh</GlassButton>
-        <GlassButton onClick={() => exportAsCSV(events as unknown as Record<string, unknown>[], "audit-events")}>
+        <GlassButton
+          onClick={() =>
+            exportAsCSV(events as unknown as Record<string, unknown>[], "audit-events")
+          }
+        >
           Export CSV
         </GlassButton>
-        <GlassButton onClick={() => exportAsJSON(events, "audit-events")}>
-          Export JSON
-        </GlassButton>
+        <GlassButton onClick={() => exportAsJSON(events, "audit-events")}>Export JSON</GlassButton>
       </div>
 
       {/* Error banner */}
@@ -93,18 +91,31 @@ export function AuditLog(_props: { windowId?: string }) {
         <div className="glass-panel overflow-x-auto rounded-lg">
           <NoiseGrain />
 
-          <table className="relative w-full text-left text-sm" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+          <table
+            className="relative w-full text-left text-sm"
+            style={{ borderCollapse: "separate", borderSpacing: 0 }}
+          >
             <thead>
               <tr
                 style={{
                   borderBottom: "1px solid transparent",
-                  backgroundImage: "linear-gradient(to right, rgba(27,34,48,0.0), rgba(27,34,48,0.6), rgba(27,34,48,0.0))",
+                  backgroundImage:
+                    "linear-gradient(to right, rgba(27,34,48,0.0), rgba(27,34,48,0.6), rgba(27,34,48,0.0))",
                   backgroundSize: "100% 1px",
                   backgroundPosition: "bottom",
                   backgroundRepeat: "no-repeat",
                 }}
               >
-                {["\u2606", "Time", "Action", "Target", "Decision", "Guard", "Session", "Agent"].map((h) => (
+                {[
+                  "\u2606",
+                  "Time",
+                  "Action",
+                  "Target",
+                  "Decision",
+                  "Guard",
+                  "Session",
+                  "Agent",
+                ].map((h) => (
                   <th
                     key={h}
                     className="font-mono px-4 py-3 text-[10px] uppercase"
@@ -123,13 +134,21 @@ export function AuditLog(_props: { windowId?: string }) {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="font-mono px-4 py-8 text-center" style={{ color: "rgba(154,167,181,0.4)" }}>
+                  <td
+                    colSpan={8}
+                    className="font-mono px-4 py-8 text-center"
+                    style={{ color: "rgba(154,167,181,0.4)" }}
+                  >
                     Loading...
                   </td>
                 </tr>
               ) : events.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="font-mono px-4 py-8 text-center" style={{ color: "rgba(226,232,240,0.3)" }}>
+                  <td
+                    colSpan={8}
+                    className="font-mono px-4 py-8 text-center"
+                    style={{ color: "rgba(226,232,240,0.3)" }}
+                  >
                     No events found
                   </td>
                 </tr>
@@ -142,7 +161,12 @@ export function AuditLog(_props: { windowId?: string }) {
                     onClick={() => setSelectedEvent(event)}
                     tabIndex={0}
                     role="button"
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedEvent(event); } }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedEvent(event);
+                      }
+                    }}
                   >
                     <td className="whitespace-nowrap px-4 py-2.5" style={{ width: "40px" }}>
                       <EventBookmarks eventId={event.id} />
@@ -166,7 +190,9 @@ export function AuditLog(_props: { windowId?: string }) {
                       {event.target ?? "-"}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2.5">
-                      <Stamp variant={event.decision === "blocked" ? "blocked" : "allowed"}>{event.decision}</Stamp>
+                      <Stamp variant={event.decision === "blocked" ? "blocked" : "allowed"}>
+                        {event.decision}
+                      </Stamp>
                     </td>
                     <td
                       className="whitespace-nowrap px-4 py-2.5 text-sm"
@@ -212,7 +238,9 @@ export function AuditLog(_props: { windowId?: string }) {
         <div className="flex items-center gap-2">
           <PaginationButton
             disabled={page === 0}
-            onClick={() => setFilters((f) => ({ ...f, offset: Math.max(0, (f.offset ?? 0) - (f.limit ?? 50)) }))}
+            onClick={() =>
+              setFilters((f) => ({ ...f, offset: Math.max(0, (f.offset ?? 0) - (f.limit ?? 50)) }))
+            }
           >
             Previous
           </PaginationButton>
@@ -238,7 +266,15 @@ export function AuditLog(_props: { windowId?: string }) {
   );
 }
 
-function PaginationButton({ disabled, onClick, children }: { disabled: boolean; onClick: () => void; children: React.ReactNode }) {
+function PaginationButton({
+  disabled,
+  onClick,
+  children,
+}: {
+  disabled: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <button
       disabled={disabled}
@@ -254,7 +290,17 @@ function PaginationButton({ disabled, onClick, children }: { disabled: boolean; 
   );
 }
 
-function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
+function FilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
   return (
     <label className="flex flex-col gap-1">
       <span
@@ -273,7 +319,9 @@ function FilterSelect({ label, value, options, onChange }: { label: string; valu
         style={{ color: "#e2e8f0" }}
       >
         {options.map((o) => (
-          <option key={o} value={o} style={{ background: "#0b0d10" }}>{o || "All"}</option>
+          <option key={o} value={o} style={{ background: "#0b0d10" }}>
+            {o || "All"}
+          </option>
         ))}
       </select>
     </label>

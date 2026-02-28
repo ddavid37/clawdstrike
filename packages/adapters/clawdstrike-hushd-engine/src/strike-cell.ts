@@ -1,5 +1,5 @@
-import type { Decision, PolicyEngineLike, PolicyEvent } from '@clawdstrike/adapter-core';
-import { failClosed, parsePolicyEvalResponse } from '@clawdstrike/adapter-core';
+import type { Decision, PolicyEngineLike, PolicyEvent } from "@clawdstrike/adapter-core";
+import { failClosed, parsePolicyEvalResponse } from "@clawdstrike/adapter-core";
 
 export interface StrikeCellOptions {
   baseUrl: string;
@@ -18,10 +18,10 @@ export interface StrikeCellOptions {
 /**
  * Provenance metadata attached to offline-mode decisions.
  */
-const DEGRADED_PROVENANCE = { mode: 'degraded' as const };
+const DEGRADED_PROVENANCE = { mode: "degraded" as const };
 
 export function createStrikeCell(options: StrikeCellOptions): PolicyEngineLike {
-  const baseUrl = options.baseUrl.replace(/\/+$/, '');
+  const baseUrl = options.baseUrl.replace(/\/+$/, "");
   const timeoutMs = options.timeoutMs ?? 10_000;
   const token = options.token;
   const fallback = options.fallback;
@@ -30,13 +30,8 @@ export function createStrikeCell(options: StrikeCellOptions): PolicyEngineLike {
   return {
     async evaluate(event: PolicyEvent): Promise<Decision> {
       try {
-        const response = await postJson(
-          `${baseUrl}/api/v1/eval`,
-          { event },
-          token,
-          timeoutMs,
-        );
-        const parsed = parsePolicyEvalResponse(response, 'hushd');
+        const response = await postJson(`${baseUrl}/api/v1/eval`, { event }, token, timeoutMs);
+        const parsed = parsePolicyEvalResponse(response, "hushd");
         return parsed.decision;
       } catch (error) {
         // If offline fallback is enabled and we have a fallback engine,
@@ -47,7 +42,7 @@ export function createStrikeCell(options: StrikeCellOptions): PolicyEngineLike {
             return {
               ...decision,
               details: {
-                ...(typeof decision.details === 'object' && decision.details !== null
+                ...(typeof decision.details === "object" && decision.details !== null
                   ? decision.details
                   : {}),
                 provenance: DEGRADED_PROVENANCE,
@@ -72,14 +67,14 @@ function isConnectivityError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const msg = error.message.toLowerCase();
   return (
-    msg.includes('econnrefused') ||
-    msg.includes('econnreset') ||
-    msg.includes('enotfound') ||
-    msg.includes('fetch failed') ||
-    msg.includes('network') ||
-    msg.includes('abort') ||
-    msg.includes('timeout') ||
-    msg.includes('etimedout')
+    msg.includes("econnrefused") ||
+    msg.includes("econnreset") ||
+    msg.includes("enotfound") ||
+    msg.includes("fetch failed") ||
+    msg.includes("network") ||
+    msg.includes("abort") ||
+    msg.includes("timeout") ||
+    msg.includes("etimedout")
   );
 }
 
@@ -95,14 +90,14 @@ async function postJson(
 
   try {
     const headers: Record<string, string> = {
-      'content-type': 'application/json',
+      "content-type": "application/json",
     };
     if (token) {
       headers.authorization = `Bearer ${token}`;
     }
 
     const resp = await fetch(url, {
-      method: 'POST',
+      method: "POST",
       headers,
       body: JSON.stringify(body),
       signal: controller.signal,

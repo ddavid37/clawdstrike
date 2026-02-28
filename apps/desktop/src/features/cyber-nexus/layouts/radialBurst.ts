@@ -10,7 +10,7 @@ export interface RadialBurstConfig {
 
 export function calculateRadialBurstLayout(
   nodes: NexusLayoutNode[],
-  config: RadialBurstConfig = {}
+  config: RadialBurstConfig = {},
 ): Map<NexusLayoutNode["id"], LayoutPosition> {
   const positions = new Map<NexusLayoutNode["id"], LayoutPosition>();
   if (nodes.length === 0) return positions;

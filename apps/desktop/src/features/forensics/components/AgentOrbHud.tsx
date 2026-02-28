@@ -38,11 +38,7 @@ function rowPolicyTone(action: AgentActionTelemetry): string {
   return "text-[rgba(179,189,204,0.86)]";
 }
 
-export function AgentOrbHud({
-  focusedGlyph,
-  focusedSessionKey,
-  onClearFocus,
-}: AgentOrbHudProps) {
+export function AgentOrbHud({ focusedGlyph, focusedSessionKey, onClearFocus }: AgentOrbHudProps) {
   if (!focusedGlyph) return null;
 
   return (
@@ -99,7 +95,9 @@ export function AgentOrbHud({
                     {action.kind}
                   </span>
                   <span className="truncate">{action.label}</span>
-                  <span className={`ml-auto shrink-0 text-[10px] uppercase tracking-[0.06em] ${rowPolicyTone(action)}`}>
+                  <span
+                    className={`ml-auto shrink-0 text-[10px] uppercase tracking-[0.06em] ${rowPolicyTone(action)}`}
+                  >
                     {action.policyStatus}
                   </span>
                 </li>
@@ -111,4 +109,3 @@ export function AgentOrbHud({
     </div>
   );
 }
-

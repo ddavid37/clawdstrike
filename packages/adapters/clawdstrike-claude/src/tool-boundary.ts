@@ -1,11 +1,11 @@
-import { FrameworkToolBoundary, wrapFrameworkToolDispatcher } from '@clawdstrike/adapter-core';
 import type {
   FrameworkToolBoundaryOptions,
   FrameworkToolDispatcher,
   ToolCallTranslationInput,
-} from '@clawdstrike/adapter-core';
+} from "@clawdstrike/adapter-core";
+import { FrameworkToolBoundary, wrapFrameworkToolDispatcher } from "@clawdstrike/adapter-core";
 
-import { claudeCuaTranslator } from './claude-cua-translator.js';
+import { claudeCuaTranslator } from "./claude-cua-translator.js";
 
 export type ClaudeToolBoundaryOptions = FrameworkToolBoundaryOptions;
 export type ClaudeToolDispatcher<TOutput = unknown> = FrameworkToolDispatcher<TOutput>;
@@ -28,7 +28,7 @@ function composeOptions(options: ClaudeToolBoundaryOptions = {}): ClaudeToolBoun
 
 export class ClaudeToolBoundary extends FrameworkToolBoundary {
   constructor(options: ClaudeToolBoundaryOptions = {}) {
-    super('claude', composeOptions(options));
+    super("claude", composeOptions(options));
   }
 }
 

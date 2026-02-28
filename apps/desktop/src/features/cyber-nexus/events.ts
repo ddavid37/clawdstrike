@@ -21,5 +21,7 @@ export const CYBER_NEXUS_COMMAND_EVENT = "cyber-nexus:command";
 
 export function dispatchCyberNexusCommand(command: CyberNexusCommand) {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent<CyberNexusCommand>(CYBER_NEXUS_COMMAND_EVENT, { detail: command }));
+  window.dispatchEvent(
+    new CustomEvent<CyberNexusCommand>(CYBER_NEXUS_COMMAND_EVENT, { detail: command }),
+  );
 }

@@ -193,8 +193,8 @@ export function markHotCommandUsed(commands: HotCommand[], id: string): HotComma
   const ts = now();
   return sortHotCommands(
     commands.map((entry) =>
-      entry.id === id ? { ...entry, lastUsedAt: ts, updatedAt: ts } : entry
-    )
+      entry.id === id ? { ...entry, lastUsedAt: ts, updatedAt: ts } : entry,
+    ),
   );
 }
 

@@ -1,9 +1,14 @@
-import { createSecurityContext } from '@clawdstrike/adapter-core';
-import type { AuditEvent, PolicyEngineLike, SecurityContext, ToolInterceptor } from '@clawdstrike/adapter-core';
+import type {
+  AuditEvent,
+  PolicyEngineLike,
+  SecurityContext,
+  ToolInterceptor,
+} from "@clawdstrike/adapter-core";
+import { createSecurityContext } from "@clawdstrike/adapter-core";
 
-import { ClawdstrikeViolationError } from './errors.js';
-import { createLangChainInterceptor } from './interceptor.js';
-import type { LangChainClawdstrikeConfig } from './types.js';
+import { ClawdstrikeViolationError } from "./errors.js";
+import { createLangChainInterceptor } from "./interceptor.js";
+import type { LangChainClawdstrikeConfig } from "./types.js";
 
 export interface ClawdstrikeCallbackHandlerOptions {
   engine?: PolicyEngineLike;
@@ -19,13 +24,16 @@ type SerializedToolLike = {
 };
 
 export class ClawdstrikeCallbackHandler {
-  readonly name = 'clawdstrike';
+  readonly name = "clawdstrike";
 
   private readonly config: LangChainClawdstrikeConfig;
   private readonly interceptor: ToolInterceptor;
   private readonly createContext?: (runId: string) => SecurityContext;
   private readonly contexts = new Map<string, SecurityContext>();
-  private readonly pending = new Map<string, { toolName: string; input: unknown; context: SecurityContext }>();
+  private readonly pending = new Map<
+    string,
+    { toolName: string; input: unknown; context: SecurityContext }
+  >();
 
   constructor(options: ClawdstrikeCallbackHandlerOptions = {}) {
     this.config = options.config ?? {};
@@ -36,7 +44,7 @@ export class ClawdstrikeCallbackHandler {
     } else if (engine) {
       this.interceptor = createLangChainInterceptor(engine, this.config);
     } else {
-      throw new Error('ClawdstrikeCallbackHandler requires { interceptor } or { engine }');
+      throw new Error("ClawdstrikeCallbackHandler requires { interceptor } or { engine }");
     }
 
     if (options.context) {
@@ -97,7 +105,7 @@ export class ClawdstrikeCallbackHandler {
   }
 
   getAuditEvents(): AuditEvent[] {
-    return Array.from(this.contexts.values()).flatMap(ctx => ctx.auditEvents);
+    return Array.from(this.contexts.values()).flatMap((ctx) => ctx.auditEvents);
   }
 
   clearAuditEvents(): void {
@@ -108,18 +116,18 @@ export class ClawdstrikeCallbackHandler {
   }
 
   private resolveToolName(tool: SerializedToolLike): string {
-    const name = typeof tool?.name === 'string' ? tool.name : undefined;
+    const name = typeof tool?.name === "string" ? tool.name : undefined;
     if (name) {
       return this.config.toolNameMapping?.[name] ?? name;
     }
 
     const id = tool?.id;
-    if (Array.isArray(id) && typeof id[id.length - 1] === 'string') {
+    if (Array.isArray(id) && typeof id[id.length - 1] === "string") {
       const fallback = id[id.length - 1] as string;
       return this.config.toolNameMapping?.[fallback] ?? fallback;
     }
 
-    return 'unknown';
+    return "unknown";
   }
 
   private getContextForRun(runId: string): SecurityContext {
@@ -129,10 +137,10 @@ export class ClawdstrikeCallbackHandler {
     }
 
     const context =
-      this.createContext?.(runId)
-      ?? createSecurityContext({
+      this.createContext?.(runId) ??
+      createSecurityContext({
         sessionId: runId,
-        metadata: { framework: 'langchain' },
+        metadata: { framework: "langchain" },
       });
 
     this.contexts.set(runId, context);

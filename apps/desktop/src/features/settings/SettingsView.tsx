@@ -1,20 +1,11 @@
 /**
  * SettingsView - Daemon connection and preferences
  */
-import { useEffect, useState, type ReactNode } from "react";
+
+import { Badge, GlassHeader, GlassPanel, GlowButton, GlowInput } from "@backbay/glia/primitives";
 import { clsx } from "clsx";
-import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
-import { GlowButton } from "@backbay/glia/primitives";
-import { GlowInput } from "@backbay/glia/primitives";
-import { Badge } from "@backbay/glia/primitives";
-import { useConnection, type ConnectionMode } from "@/context/ConnectionContext";
-import {
-  DEFAULT_MARKETPLACE_FEED_SOURCES,
-  formatMarketplaceFeedSourcesInput,
-  loadMarketplaceFeedSources,
-  parseMarketplaceFeedSourcesInput,
-  saveMarketplaceFeedSources,
-} from "@/services/marketplaceSettings";
+import { type ReactNode, useEffect, useState } from "react";
+import { type ConnectionMode, useConnection } from "@/context/ConnectionContext";
 import {
   DEFAULT_MARKETPLACE_DISCOVERY_SETTINGS,
   formatMarketplaceDiscoveryBootstrapInput,
@@ -30,12 +21,19 @@ import {
   saveMarketplaceProvenanceSettings,
 } from "@/services/marketplaceProvenanceSettings";
 import {
+  DEFAULT_MARKETPLACE_FEED_SOURCES,
+  formatMarketplaceFeedSourcesInput,
+  loadMarketplaceFeedSources,
+  parseMarketplaceFeedSourcesInput,
+  saveMarketplaceFeedSources,
+} from "@/services/marketplaceSettings";
+import {
   announceMarketplaceDiscovery,
   getMarketplaceDiscoveryStatus,
   isTauri,
+  type MarketplaceDiscoveryStatus,
   startMarketplaceDiscovery,
   stopMarketplaceDiscovery,
-  type MarketplaceDiscoveryStatus,
 } from "@/services/tauri";
 
 export interface SettingsViewProps {
@@ -63,17 +61,17 @@ export function SettingsView({ scope = "all" }: SettingsViewProps) {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const [marketplaceSourcesInput, setMarketplaceSourcesInput] = useState<string>(() =>
-    formatMarketplaceFeedSourcesInput(loadMarketplaceFeedSources())
+    formatMarketplaceFeedSourcesInput(loadMarketplaceFeedSources()),
   );
   const [marketplaceSaved, setMarketplaceSaved] = useState<string | null>(null);
 
   const [initialDiscoverySettings] = useState(() => loadMarketplaceDiscoverySettings());
   const [discoveryEnabled, setDiscoveryEnabled] = useState(initialDiscoverySettings.enabled);
   const [discoveryListenPort, setDiscoveryListenPort] = useState(
-    initialDiscoverySettings.listenPort ? String(initialDiscoverySettings.listenPort) : ""
+    initialDiscoverySettings.listenPort ? String(initialDiscoverySettings.listenPort) : "",
   );
   const [discoveryBootstrapInput, setDiscoveryBootstrapInput] = useState(() =>
-    formatMarketplaceDiscoveryBootstrapInput(initialDiscoverySettings.bootstrap)
+    formatMarketplaceDiscoveryBootstrapInput(initialDiscoverySettings.bootstrap),
   );
   const [discoveryTopic, setDiscoveryTopic] = useState(initialDiscoverySettings.topic ?? "");
   const [discoverySaved, setDiscoverySaved] = useState<string | null>(null);
@@ -83,10 +81,10 @@ export function SettingsView({ scope = "all" }: SettingsViewProps) {
   const [initialProvenanceSettings] = useState(() => loadMarketplaceProvenanceSettings());
   const [notaryUrl, setNotaryUrl] = useState(initialProvenanceSettings.notaryUrl ?? "");
   const [trustedAttestersInput, setTrustedAttestersInput] = useState(() =>
-    formatMarketplaceTrustedAttestersInput(initialProvenanceSettings.trustedAttesters)
+    formatMarketplaceTrustedAttestersInput(initialProvenanceSettings.trustedAttesters),
   );
   const [requireVerifiedAttestation, setRequireVerifiedAttestation] = useState(
-    initialProvenanceSettings.requireVerified
+    initialProvenanceSettings.requireVerified,
   );
   const [provenanceSaved, setProvenanceSaved] = useState<string | null>(null);
 
@@ -97,7 +95,10 @@ export function SettingsView({ scope = "all" }: SettingsViewProps) {
       const info = await testConnection(urlInput);
       setTestResult({ success: true, message: `Connected to hushd v${info.version}` });
     } catch (e) {
-      setTestResult({ success: false, message: e instanceof Error ? e.message : "Connection failed" });
+      setTestResult({
+        success: false,
+        message: e instanceof Error ? e.message : "Connection failed",
+      });
     } finally {
       setIsTesting(false);
     }
@@ -124,9 +125,11 @@ export function SettingsView({ scope = "all" }: SettingsViewProps) {
 
   useEffect(() => {
     if (!isTauri()) return;
-    getMarketplaceDiscoveryStatus().then(setDiscoveryStatus).catch(() => {
-      // ignore
-    });
+    getMarketplaceDiscoveryStatus()
+      .then(setDiscoveryStatus)
+      .catch(() => {
+        // ignore
+      });
   }, []);
 
   const parseListenPort = (value: string): number | null => {
@@ -188,9 +191,11 @@ export function SettingsView({ scope = "all" }: SettingsViewProps) {
       await stopMarketplaceDiscovery().catch(() => {
         // ignore
       });
-      getMarketplaceDiscoveryStatus().then(setDiscoveryStatus).catch(() => {
-        // ignore
-      });
+      getMarketplaceDiscoveryStatus()
+        .then(setDiscoveryStatus)
+        .catch(() => {
+          // ignore
+        });
     }
 
     setDiscoverySaved("Reset to default");
@@ -215,7 +220,12 @@ export function SettingsView({ scope = "all" }: SettingsViewProps) {
     const url = notaryUrl.trim() ? notaryUrl.trim() : null;
 
     const current = loadMarketplaceProvenanceSettings();
-    saveMarketplaceProvenanceSettings({ ...current, notaryUrl: url, trustedAttesters, requireVerified: requireVerifiedAttestation });
+    saveMarketplaceProvenanceSettings({
+      ...current,
+      notaryUrl: url,
+      trustedAttesters,
+      requireVerified: requireVerifiedAttestation,
+    });
 
     setProvenanceSaved("Saved");
     setTimeout(() => setProvenanceSaved(null), 2000);
@@ -255,415 +265,424 @@ export function SettingsView({ scope = "all" }: SettingsViewProps) {
         {/* Connection Status */}
         {showConnectionSections ? (
           <Section title="Connection Status">
-          <div className="flex items-center gap-4 p-4 bg-sdr-bg-secondary rounded-lg border border-sdr-border">
-            <StatusIndicator status={status} />
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <Badge variant={status === "connected" ? "default" : status === "error" ? "destructive" : "secondary"}>
-                  {status}
-                </Badge>
-                {info?.version && (
-                  <span className="text-sm text-sdr-text-muted">v{info.version}</span>
+            <div className="flex items-center gap-4 p-4 bg-sdr-bg-secondary rounded-lg border border-sdr-border">
+              <StatusIndicator status={status} />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant={
+                      status === "connected"
+                        ? "default"
+                        : status === "error"
+                          ? "destructive"
+                          : "secondary"
+                    }
+                  >
+                    {status}
+                  </Badge>
+                  {info?.version && (
+                    <span className="text-sm text-sdr-text-muted">v{info.version}</span>
+                  )}
+                </div>
+                {error && <p className="text-sm text-sdr-accent-red mt-1">{error}</p>}
+                {info && (
+                  <p className="text-sm text-sdr-text-muted mt-1">
+                    Policy: {info.policy_name ?? "default"}
+                    {info.policy_hash && ` (${info.policy_hash.slice(0, 8)}...)`}
+                  </p>
                 )}
               </div>
-              {error && <p className="text-sm text-sdr-accent-red mt-1">{error}</p>}
-              {info && (
-                <p className="text-sm text-sdr-text-muted mt-1">
-                  Policy: {info.policy_name ?? "default"}
-                  {info.policy_hash && ` (${info.policy_hash.slice(0, 8)}...)`}
-                </p>
+              {status === "connected" ? (
+                <GlowButton onClick={disconnect} variant="secondary">
+                  Disconnect
+                </GlowButton>
+              ) : (
+                <GlowButton onClick={connect} disabled={status === "connecting"}>
+                  {status === "connecting" ? "Connecting..." : "Connect"}
+                </GlowButton>
               )}
             </div>
-            {status === "connected" ? (
-              <GlowButton onClick={disconnect} variant="secondary">
-                Disconnect
-              </GlowButton>
-            ) : (
-              <GlowButton
-                onClick={connect}
-                disabled={status === "connecting"}
-              >
-                {status === "connecting" ? "Connecting..." : "Connect"}
-              </GlowButton>
-            )}
-          </div>
           </Section>
         ) : null}
 
         {/* Connection Mode */}
         {showConnectionSections ? (
           <Section title="Connection Mode">
-          <div className="space-y-2">
-            {CONNECTION_MODES.map((m) => (
-              <ModeOption
-                key={m.id}
-                mode={m}
-                selected={mode === m.id}
-                onSelect={() => setMode(m.id)}
-              />
-            ))}
-          </div>
+            <div className="space-y-2">
+              {CONNECTION_MODES.map((m) => (
+                <ModeOption
+                  key={m.id}
+                  mode={m}
+                  selected={mode === m.id}
+                  onSelect={() => setMode(m.id)}
+                />
+              ))}
+            </div>
           </Section>
         ) : null}
 
         {/* Daemon URL */}
         {showConnectionSections ? (
           <Section title="Daemon URL">
-          <div className="space-y-3">
-            <GlowInput
-              type="text"
-              value={urlInput}
-              onChange={(e) => setUrlInput(e.target.value)}
-              placeholder="http://localhost:9876"
-              className="w-full font-mono"
-            />
+            <div className="space-y-3">
+              <GlowInput
+                type="text"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                placeholder="http://localhost:9876"
+                className="w-full font-mono"
+              />
 
-            <div className="flex items-center gap-2">
-              <GlowButton
-                onClick={handleTest}
-                disabled={isTesting || !urlInput}
-                variant="secondary"
-              >
-                {isTesting ? "Testing..." : "Test Connection"}
-              </GlowButton>
-              <GlowButton
-                onClick={handleSave}
-                disabled={urlInput === daemonUrl}
-              >
-                Save & Connect
-              </GlowButton>
-            </div>
-
-            {testResult && (
-              <div
-                className={clsx(
-                  "p-3 rounded-md text-sm",
-                  testResult.success
-                    ? "bg-sdr-accent-green/10 text-sdr-accent-green"
-                    : "bg-sdr-accent-red/10 text-sdr-accent-red"
-                )}
-              >
-                {testResult.message}
+              <div className="flex items-center gap-2">
+                <GlowButton
+                  onClick={handleTest}
+                  disabled={isTesting || !urlInput}
+                  variant="secondary"
+                >
+                  {isTesting ? "Testing..." : "Test Connection"}
+                </GlowButton>
+                <GlowButton onClick={handleSave} disabled={urlInput === daemonUrl}>
+                  Save & Connect
+                </GlowButton>
               </div>
-            )}
-          </div>
+
+              {testResult && (
+                <div
+                  className={clsx(
+                    "p-3 rounded-md text-sm",
+                    testResult.success
+                      ? "bg-sdr-accent-green/10 text-sdr-accent-green"
+                      : "bg-sdr-accent-red/10 text-sdr-accent-red",
+                  )}
+                >
+                  {testResult.message}
+                </div>
+              )}
+            </div>
           </Section>
         ) : null}
 
         {/* Marketplace */}
         {showPreferenceSections ? (
           <Section title="Marketplace">
-          <div className="space-y-3">
-            <p className="text-sm text-sdr-text-muted">
-              Configure signed marketplace feed sources (one per line). Use <code>builtin</code> for the
-              bundled feed, or add <code>https://…</code> / <code>ipfs://…</code>.
-            </p>
-            <textarea
-              value={marketplaceSourcesInput}
-              onChange={(e) => setMarketplaceSourcesInput(e.target.value)}
-              rows={4}
-              className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
-              placeholder="builtin"
-            />
+            <div className="space-y-3">
+              <p className="text-sm text-sdr-text-muted">
+                Configure signed marketplace feed sources (one per line). Use <code>builtin</code>{" "}
+                for the bundled feed, or add <code>https://…</code> / <code>ipfs://…</code>.
+              </p>
+              <textarea
+                value={marketplaceSourcesInput}
+                onChange={(e) => setMarketplaceSourcesInput(e.target.value)}
+                rows={4}
+                className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+                placeholder="builtin"
+              />
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleMarketplaceSave}
-                className="px-3 py-1.5 text-sm bg-sdr-accent-blue text-white rounded-md hover:bg-sdr-accent-blue/90 transition-colors"
-              >
-                Save
-              </button>
-              <button
-                onClick={handleMarketplaceReset}
-                className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors"
-              >
-                Reset
-              </button>
-              {marketplaceSaved && (
-                <span className="text-sm text-sdr-text-muted">{marketplaceSaved}</span>
-              )}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleMarketplaceSave}
+                  className="px-3 py-1.5 text-sm bg-sdr-accent-blue text-white rounded-md hover:bg-sdr-accent-blue/90 transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={handleMarketplaceReset}
+                  className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors"
+                >
+                  Reset
+                </button>
+                {marketplaceSaved && (
+                  <span className="text-sm text-sdr-text-muted">{marketplaceSaved}</span>
+                )}
+              </div>
             </div>
-          </div>
           </Section>
         ) : null}
 
         {/* Marketplace Discovery */}
         {showPreferenceSections ? (
           <Section title="Marketplace Discovery (P2P)">
-          <div className="space-y-3">
-            <p className="text-sm text-sdr-text-muted">
-              Optional P2P gossip for new marketplace feed URIs (e.g. <code>ipfs://…</code>). Discovery is
-              untrusted: the Marketplace still verifies feed and bundle signatures.
-            </p>
+            <div className="space-y-3">
+              <p className="text-sm text-sdr-text-muted">
+                Optional P2P gossip for new marketplace feed URIs (e.g. <code>ipfs://…</code>).
+                Discovery is untrusted: the Marketplace still verifies feed and bundle signatures.
+              </p>
 
-            <div className="flex items-start gap-3">
-              <button
-                onClick={() => setDiscoveryEnabled(!discoveryEnabled)}
-                className={clsx(
-                  "w-10 h-6 rounded-full transition-colors relative shrink-0 mt-0.5",
-                  discoveryEnabled ? "bg-sdr-accent-blue" : "bg-sdr-bg-tertiary"
-                )}
-              >
-                <span
+              <div className="flex items-start gap-3">
+                <button
+                  onClick={() => setDiscoveryEnabled(!discoveryEnabled)}
                   className={clsx(
-                    "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
-                    discoveryEnabled ? "left-5" : "left-1"
+                    "w-10 h-6 rounded-full transition-colors relative shrink-0 mt-0.5",
+                    discoveryEnabled ? "bg-sdr-accent-blue" : "bg-sdr-bg-tertiary",
                   )}
-                />
-              </button>
+                >
+                  <span
+                    className={clsx(
+                      "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
+                      discoveryEnabled ? "left-5" : "left-1",
+                    )}
+                  />
+                </button>
+                <div>
+                  <div className="text-sm font-medium text-sdr-text-primary">Enable discovery</div>
+                  <div className="text-sm text-sdr-text-muted">
+                    Uses libp2p gossipsub + mDNS (local network) and optional bootstrap peers.
+                  </div>
+                </div>
+              </div>
+
+              {discoveryStatus && (
+                <div className="p-3 rounded-md border border-sdr-border bg-sdr-bg-secondary text-xs text-sdr-text-muted space-y-1">
+                  <div>Status: {discoveryStatus.running ? "running" : "stopped"}</div>
+                  {discoveryStatus.peer_id && <div>Peer ID: {discoveryStatus.peer_id}</div>}
+                  {discoveryStatus.listen_addrs?.length ? (
+                    <div>Listen: {discoveryStatus.listen_addrs[0]}</div>
+                  ) : null}
+                  {discoveryStatus.last_error && <div>Error: {discoveryStatus.last_error}</div>}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-sdr-text-primary mb-2">
+                    Listen port (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={discoveryListenPort}
+                    onChange={(e) => setDiscoveryListenPort(e.target.value)}
+                    placeholder="auto"
+                    className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-sdr-text-primary mb-2">
+                    Topic (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={discoveryTopic}
+                    onChange={(e) => setDiscoveryTopic(e.target.value)}
+                    placeholder="clawdstrike/marketplace/v1/discovery"
+                    className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+                  />
+                </div>
+              </div>
+
               <div>
-                <div className="text-sm font-medium text-sdr-text-primary">Enable discovery</div>
-                <div className="text-sm text-sdr-text-muted">
-                  Uses libp2p gossipsub + mDNS (local network) and optional bootstrap peers.
+                <label className="block text-sm font-medium text-sdr-text-primary mb-2">
+                  Bootstrap peers (optional)
+                </label>
+                <textarea
+                  value={discoveryBootstrapInput}
+                  onChange={(e) => setDiscoveryBootstrapInput(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+                  placeholder="/ip4/1.2.3.4/tcp/12345/p2p/12D3KooW…"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDiscoverySave}
+                  className="px-3 py-1.5 text-sm bg-sdr-accent-blue text-white rounded-md hover:bg-sdr-accent-blue/90 transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={handleDiscoveryReset}
+                  className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors"
+                >
+                  Reset
+                </button>
+                {discoverySaved && (
+                  <span className="text-sm text-sdr-text-muted">{discoverySaved}</span>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-sdr-border/50">
+                <label className="block text-sm font-medium text-sdr-text-primary mb-2">
+                  Announce feed URI (testing)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={discoveryAnnounceUri}
+                    onChange={(e) => setDiscoveryAnnounceUri(e.target.value)}
+                    placeholder="ipfs://<CID>"
+                    className="flex-1 px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+                  />
+                  <button
+                    onClick={handleDiscoveryAnnounce}
+                    disabled={!discoveryAnnounceUri.trim()}
+                    className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors disabled:opacity-50"
+                  >
+                    Announce
+                  </button>
                 </div>
               </div>
             </div>
-
-            {discoveryStatus && (
-              <div className="p-3 rounded-md border border-sdr-border bg-sdr-bg-secondary text-xs text-sdr-text-muted space-y-1">
-                <div>Status: {discoveryStatus.running ? "running" : "stopped"}</div>
-                {discoveryStatus.peer_id && <div>Peer ID: {discoveryStatus.peer_id}</div>}
-                {discoveryStatus.listen_addrs?.length ? (
-                  <div>Listen: {discoveryStatus.listen_addrs[0]}</div>
-                ) : null}
-                {discoveryStatus.last_error && <div>Error: {discoveryStatus.last_error}</div>}
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-sdr-text-primary mb-2">
-                  Listen port (optional)
-                </label>
-                <input
-                  type="text"
-                  value={discoveryListenPort}
-                  onChange={(e) => setDiscoveryListenPort(e.target.value)}
-                  placeholder="auto"
-                  className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-sdr-text-primary mb-2">
-                  Topic (optional)
-                </label>
-                <input
-                  type="text"
-                  value={discoveryTopic}
-                  onChange={(e) => setDiscoveryTopic(e.target.value)}
-                  placeholder="clawdstrike/marketplace/v1/discovery"
-                  className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-sdr-text-primary mb-2">
-                Bootstrap peers (optional)
-              </label>
-              <textarea
-                value={discoveryBootstrapInput}
-                onChange={(e) => setDiscoveryBootstrapInput(e.target.value)}
-                rows={3}
-                className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
-                placeholder="/ip4/1.2.3.4/tcp/12345/p2p/12D3KooW…"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleDiscoverySave}
-                className="px-3 py-1.5 text-sm bg-sdr-accent-blue text-white rounded-md hover:bg-sdr-accent-blue/90 transition-colors"
-              >
-                Save
-              </button>
-              <button
-                onClick={handleDiscoveryReset}
-                className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors"
-              >
-                Reset
-              </button>
-              {discoverySaved && (
-                <span className="text-sm text-sdr-text-muted">{discoverySaved}</span>
-              )}
-            </div>
-
-            <div className="pt-2 border-t border-sdr-border/50">
-              <label className="block text-sm font-medium text-sdr-text-primary mb-2">
-                Announce feed URI (testing)
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={discoveryAnnounceUri}
-                  onChange={(e) => setDiscoveryAnnounceUri(e.target.value)}
-                  placeholder="ipfs://<CID>"
-                  className="flex-1 px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
-                />
-                <button
-                  onClick={handleDiscoveryAnnounce}
-                  disabled={!discoveryAnnounceUri.trim()}
-                  className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors disabled:opacity-50"
-                >
-                  Announce
-                </button>
-              </div>
-            </div>
-          </div>
           </Section>
         ) : null}
 
         {/* Marketplace Provenance */}
         {showPreferenceSections ? (
           <Section title="Marketplace Provenance (Notary)">
-          <div className="space-y-3">
-            <p className="text-sm text-sdr-text-muted">
-              Optional provenance verification via a notary service (e.g. for EAS attestations). Policies
-              can include an <code>attestation_uid</code> pointer in the marketplace feed.
-            </p>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-sdr-text-primary">
-                Default notary URL (optional)
-              </label>
-              <input
-                type="text"
-                value={notaryUrl}
-                onChange={(e) => setNotaryUrl(e.target.value)}
-                placeholder="https://notary.example.com"
-                className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-sdr-text-primary mb-2">
-                Trusted attesters (optional)
-              </label>
-              <textarea
-                value={trustedAttestersInput}
-                onChange={(e) => setTrustedAttestersInput(e.target.value)}
-                rows={3}
-                className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
-                placeholder="0x…"
-              />
-              <p className="text-xs text-sdr-text-muted mt-1">
-                If set, the Marketplace can filter to only attestations issued by these attesters.
+            <div className="space-y-3">
+              <p className="text-sm text-sdr-text-muted">
+                Optional provenance verification via a notary service (e.g. for EAS attestations).
+                Policies can include an <code>attestation_uid</code> pointer in the marketplace
+                feed.
               </p>
-            </div>
 
-            <div className="flex items-start gap-3">
-              <button
-                onClick={() => setRequireVerifiedAttestation(!requireVerifiedAttestation)}
-                className={clsx(
-                  "w-10 h-6 rounded-full transition-colors relative shrink-0 mt-0.5",
-                  requireVerifiedAttestation ? "bg-sdr-accent-blue" : "bg-sdr-bg-tertiary"
-                )}
-              >
-                <span
-                  className={clsx(
-                    "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
-                    requireVerifiedAttestation ? "left-5" : "left-1"
-                  )}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-sdr-text-primary">
+                  Default notary URL (optional)
+                </label>
+                <input
+                  type="text"
+                  value={notaryUrl}
+                  onChange={(e) => setNotaryUrl(e.target.value)}
+                  placeholder="https://notary.example.com"
+                  className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
                 />
-              </button>
+              </div>
+
               <div>
-                <div className="text-sm font-medium text-sdr-text-primary">
-                  Require verified attestations by default
-                </div>
-                <div className="text-sm text-sdr-text-muted">
-                  When enabled, Marketplace shows only policies with a valid attestation.
+                <label className="block text-sm font-medium text-sdr-text-primary mb-2">
+                  Trusted attesters (optional)
+                </label>
+                <textarea
+                  value={trustedAttestersInput}
+                  onChange={(e) => setTrustedAttestersInput(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm"
+                  placeholder="0x…"
+                />
+                <p className="text-xs text-sdr-text-muted mt-1">
+                  If set, the Marketplace can filter to only attestations issued by these attesters.
+                </p>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <button
+                  onClick={() => setRequireVerifiedAttestation(!requireVerifiedAttestation)}
+                  className={clsx(
+                    "w-10 h-6 rounded-full transition-colors relative shrink-0 mt-0.5",
+                    requireVerifiedAttestation ? "bg-sdr-accent-blue" : "bg-sdr-bg-tertiary",
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
+                      requireVerifiedAttestation ? "left-5" : "left-1",
+                    )}
+                  />
+                </button>
+                <div>
+                  <div className="text-sm font-medium text-sdr-text-primary">
+                    Require verified attestations by default
+                  </div>
+                  <div className="text-sm text-sdr-text-muted">
+                    When enabled, Marketplace shows only policies with a valid attestation.
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleProvenanceSave}
-                className="px-3 py-1.5 text-sm bg-sdr-accent-blue text-white rounded-md hover:bg-sdr-accent-blue/90 transition-colors"
-              >
-                Save
-              </button>
-              <button
-                onClick={handleProvenanceReset}
-                className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors"
-              >
-                Reset
-              </button>
-              {provenanceSaved && (
-                <span className="text-sm text-sdr-text-muted">{provenanceSaved}</span>
-              )}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleProvenanceSave}
+                  className="px-3 py-1.5 text-sm bg-sdr-accent-blue text-white rounded-md hover:bg-sdr-accent-blue/90 transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={handleProvenanceReset}
+                  className="px-3 py-1.5 text-sm bg-sdr-bg-tertiary text-sdr-text-secondary hover:text-sdr-text-primary rounded-md transition-colors"
+                >
+                  Reset
+                </button>
+                {provenanceSaved && (
+                  <span className="text-sm text-sdr-text-muted">{provenanceSaved}</span>
+                )}
+              </div>
             </div>
-          </div>
           </Section>
         ) : null}
 
         {/* Notifications */}
         {showPreferenceSections ? (
           <Section title="Notifications">
-          <div className="space-y-3">
-            <ToggleSetting
-              label="Desktop notifications for blocked events"
-              description="Show system notifications when an action is blocked"
-              defaultChecked={true}
-            />
-            <ToggleSetting
-              label="Sound alerts"
-              description="Play a sound for critical events"
-              defaultChecked={false}
-            />
-          </div>
+            <div className="space-y-3">
+              <ToggleSetting
+                label="Desktop notifications for blocked events"
+                description="Show system notifications when an action is blocked"
+                defaultChecked={true}
+              />
+              <ToggleSetting
+                label="Sound alerts"
+                description="Play a sound for critical events"
+                defaultChecked={false}
+              />
+            </div>
           </Section>
         ) : null}
 
         {/* Theme */}
         {showPreferenceSections ? (
           <Section title="Appearance">
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium text-sdr-text-primary mb-2">
-                Theme
-              </label>
-              <select className="px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue">
-                <option value="dark">Dark</option>
-                <option value="light" disabled>
-                  Light (coming soon)
-                </option>
-                <option value="system" disabled>
-                  System (coming soon)
-                </option>
-              </select>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-sdr-text-primary mb-2">
+                  Theme
+                </label>
+                <select className="px-3 py-2 bg-sdr-bg-secondary text-sdr-text-primary rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue">
+                  <option value="dark">Dark</option>
+                  <option value="light" disabled>
+                    Light (coming soon)
+                  </option>
+                  <option value="system" disabled>
+                    System (coming soon)
+                  </option>
+                </select>
+              </div>
             </div>
-          </div>
           </Section>
         ) : null}
 
         {/* About */}
         {showPreferenceSections ? (
           <Section title="About">
-          <div className="p-4 bg-sdr-bg-secondary rounded-lg border border-sdr-border">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg bg-sdr-accent-blue/20 flex items-center justify-center">
-                <ShieldIcon className="w-6 h-6 text-sdr-accent-blue" />
+            <div className="p-4 bg-sdr-bg-secondary rounded-lg border border-sdr-border">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-lg bg-sdr-accent-blue/20 flex items-center justify-center">
+                  <ShieldIcon className="w-6 h-6 text-sdr-accent-blue" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-sdr-text-primary">SDR Desktop</h3>
+                  <p className="text-sm text-sdr-text-muted">Swarm Detection Response</p>
+                  <p className="text-xs text-sdr-text-muted mt-1">Version 0.1.0</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-medium text-sdr-text-primary">SDR Desktop</h3>
-                <p className="text-sm text-sdr-text-muted">Swarm Detection Response</p>
-                <p className="text-xs text-sdr-text-muted mt-1">Version 0.1.0</p>
+              <div className="mt-4 pt-4 border-t border-sdr-border text-sm text-sdr-text-muted">
+                <p>A companion app for the clawdstrike-sdr security framework.</p>
+                <p className="mt-2">
+                  <a
+                    href="https://github.com/clawdstrike/sdr"
+                    className="text-sdr-accent-blue hover:underline"
+                  >
+                    GitHub
+                  </a>
+                  {" · "}
+                  <a
+                    href="https://docs.clawdstrike.dev"
+                    className="text-sdr-accent-blue hover:underline"
+                  >
+                    Documentation
+                  </a>
+                </p>
               </div>
             </div>
-            <div className="mt-4 pt-4 border-t border-sdr-border text-sm text-sdr-text-muted">
-              <p>A companion app for the clawdstrike-sdr security framework.</p>
-              <p className="mt-2">
-                <a href="https://github.com/clawdstrike/sdr" className="text-sdr-accent-blue hover:underline">
-                  GitHub
-                </a>
-                {" · "}
-                <a href="https://docs.clawdstrike.dev" className="text-sdr-accent-blue hover:underline">
-                  Documentation
-                </a>
-              </p>
-            </div>
-          </div>
           </Section>
         ) : null}
       </div>
@@ -736,14 +755,14 @@ function ModeOption({ mode, selected, onSelect }: ModeOptionProps) {
         selected
           ? "bg-sdr-accent-blue/10 border-sdr-accent-blue"
           : "bg-sdr-bg-secondary border-sdr-border hover:border-sdr-text-muted",
-        isDisabled && "opacity-50 cursor-not-allowed"
+        isDisabled && "opacity-50 cursor-not-allowed",
       )}
     >
       <div className="flex items-center gap-3">
         <div
           className={clsx(
             "w-4 h-4 rounded-full border-2",
-            selected ? "border-sdr-accent-blue bg-sdr-accent-blue" : "border-sdr-text-muted"
+            selected ? "border-sdr-accent-blue bg-sdr-accent-blue" : "border-sdr-text-muted",
           )}
         >
           {selected && <div className="w-2 h-2 bg-white rounded-full m-0.5" />}
@@ -772,13 +791,13 @@ function ToggleSetting({ label, description, defaultChecked }: ToggleSettingProp
         onClick={() => setChecked(!checked)}
         className={clsx(
           "w-10 h-6 rounded-full transition-colors relative shrink-0 mt-0.5",
-          checked ? "bg-sdr-accent-blue" : "bg-sdr-bg-tertiary"
+          checked ? "bg-sdr-accent-blue" : "bg-sdr-bg-tertiary",
         )}
       >
         <span
           className={clsx(
             "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
-            checked ? "left-5" : "left-1"
+            checked ? "left-5" : "left-1",
           )}
         />
       </button>

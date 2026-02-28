@@ -1,9 +1,9 @@
-export type PolicySchemaVersion = '1.1.0' | '1.2.0';
+export type PolicySchemaVersion = "1.1.0" | "1.2.0";
 
-export type TimeoutBehavior = 'allow' | 'deny' | 'warn' | 'defer';
-export type AsyncExecutionMode = 'parallel' | 'sequential' | 'background';
+export type TimeoutBehavior = "allow" | "deny" | "warn" | "defer";
+export type AsyncExecutionMode = "parallel" | "sequential" | "background";
 
-export type MergeStrategy = 'replace' | 'merge' | 'deep_merge';
+export type MergeStrategy = "replace" | "merge" | "deep_merge";
 
 export interface AsyncCachePolicyConfig {
   enabled?: boolean;
@@ -76,13 +76,13 @@ export interface PolicyCustomGuardSpec {
 }
 
 export type TransitionTrigger =
-  | 'user_approval'
-  | 'user_denial'
-  | 'critical_violation'
-  | 'any_violation'
-  | 'timeout'
-  | 'budget_exhausted'
-  | 'pattern_match';
+  | "user_approval"
+  | "user_denial"
+  | "critical_violation"
+  | "any_violation"
+  | "timeout"
+  | "budget_exhausted"
+  | "pattern_match";
 
 export type TransitionRequirement = { no_violations_in: string };
 

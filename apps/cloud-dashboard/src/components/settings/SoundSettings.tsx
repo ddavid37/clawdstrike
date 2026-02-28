@@ -55,10 +55,7 @@ export function SoundSettings() {
           Sound Effects
         </span>
       </label>
-      <p
-        className="font-body text-xs"
-        style={{ color: "rgba(229,231,235,0.4)" }}
-      >
+      <p className="font-body text-xs" style={{ color: "rgba(229,231,235,0.4)" }}>
         Plays short tones for events: a low buzz for violations, a click for allowed checks, and a
         sweep on status changes. Uses Web Audio (no files loaded).
       </p>

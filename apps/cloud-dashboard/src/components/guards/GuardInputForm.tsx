@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { GlassButton } from "../ui";
 
 interface GuardInputFormProps {
@@ -21,19 +21,39 @@ const GUARD_FIELDS: Record<string, FieldConfig[]> = {
     { name: "domain", label: "Domain", type: "text", placeholder: "api.example.com" },
   ],
   SecretLeakGuard: [
-    { name: "content", label: "File Content", type: "textarea", placeholder: "Paste file content to scan for secrets..." },
+    {
+      name: "content",
+      label: "File Content",
+      type: "textarea",
+      placeholder: "Paste file content to scan for secrets...",
+    },
   ],
   PatchIntegrityGuard: [
-    { name: "patch", label: "Patch Content", type: "textarea", placeholder: "Paste unified diff / patch content..." },
+    {
+      name: "patch",
+      label: "Patch Content",
+      type: "textarea",
+      placeholder: "Paste unified diff / patch content...",
+    },
   ],
   McpToolGuard: [
     { name: "tool_name", label: "Tool Name", type: "text", placeholder: "filesystem.read" },
   ],
   PromptInjectionGuard: [
-    { name: "prompt", label: "Prompt", type: "textarea", placeholder: "Enter prompt text to test..." },
+    {
+      name: "prompt",
+      label: "Prompt",
+      type: "textarea",
+      placeholder: "Enter prompt text to test...",
+    },
   ],
   JailbreakGuard: [
-    { name: "message", label: "Message", type: "textarea", placeholder: "Enter message to test for jailbreak..." },
+    {
+      name: "message",
+      label: "Message",
+      type: "textarea",
+      placeholder: "Enter message to test for jailbreak...",
+    },
   ],
 };
 
@@ -42,7 +62,9 @@ export function GuardInputForm({ guard, onSubmit }: GuardInputFormProps) {
   const [values, setValues] = useState<Record<string, string>>({});
 
   // Reset values when guard changes
-  useEffect(() => { setValues({}); }, [guard]);
+  useEffect(() => {
+    setValues({});
+  }, [guard]);
 
   const handleChange = (name: string, value: string) => {
     setValues((prev) => ({ ...prev, [name]: value }));

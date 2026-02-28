@@ -1,9 +1,9 @@
-import type { Decision, PolicyEngineLike, PolicyEvent } from '@clawdstrike/adapter-core';
-import { failClosed } from '@clawdstrike/adapter-core';
-import { createModeMachine } from './mode-machine.js';
-import { probeRemoteEngine } from './probe.js';
-import { createReceiptQueue } from './receipt-queue.js';
-import type { AdaptiveEngineOptions, EnrichedProvenance } from './types.js';
+import type { Decision, PolicyEngineLike, PolicyEvent } from "@clawdstrike/adapter-core";
+import { failClosed } from "@clawdstrike/adapter-core";
+import { createModeMachine } from "./mode-machine.js";
+import { probeRemoteEngine } from "./probe.js";
+import { createReceiptQueue } from "./receipt-queue.js";
+import type { AdaptiveEngineOptions, EnrichedProvenance } from "./types.js";
 
 export interface AdaptiveEngine extends PolicyEngineLike {
   /** Stop the background health probe and release resources. */
@@ -19,14 +19,14 @@ function isConnectivityError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const msg = error.message.toLowerCase();
   return (
-    msg.includes('econnrefused') ||
-    msg.includes('econnreset') ||
-    msg.includes('enotfound') ||
-    msg.includes('fetch failed') ||
-    msg.includes('network') ||
-    msg.includes('abort') ||
-    msg.includes('timeout') ||
-    msg.includes('etimedout')
+    msg.includes("econnrefused") ||
+    msg.includes("econnreset") ||
+    msg.includes("enotfound") ||
+    msg.includes("fetch failed") ||
+    msg.includes("network") ||
+    msg.includes("abort") ||
+    msg.includes("timeout") ||
+    msg.includes("etimedout")
   );
 }
 
@@ -34,7 +34,7 @@ function enrichDecision(decision: Decision, provenance: EnrichedProvenance): Dec
   return {
     ...decision,
     details: {
-      ...(typeof decision.details === 'object' && decision.details !== null
+      ...(typeof decision.details === "object" && decision.details !== null
         ? (decision.details as Record<string, unknown>)
         : {}),
       provenance,
@@ -44,7 +44,7 @@ function enrichDecision(decision: Decision, provenance: EnrichedProvenance): Dec
 
 export function createAdaptiveEngine(options: AdaptiveEngineOptions): AdaptiveEngine {
   const { local, remote } = options;
-  const initialMode = options.initialMode ?? 'standalone';
+  const initialMode = options.initialMode ?? "standalone";
 
   const machine = createModeMachine(initialMode);
   const queue = createReceiptQueue({
@@ -74,16 +74,16 @@ export function createAdaptiveEngine(options: AdaptiveEngineOptions): AdaptiveEn
     const healthy = await probeRemoteEngine(probeUrl, probeTimeoutMs);
     const current = machine.current();
 
-    if (healthy && (current === 'standalone' || current === 'degraded')) {
+    if (healthy && (current === "standalone" || current === "degraded")) {
       let drainedReceipts: ReturnType<typeof queue.drain> = [];
-      if (current === 'degraded') {
+      if (current === "degraded") {
         drainedReceipts = queue.drain();
       }
 
       const promoted = await machine.transition(
-        'connected',
-        'remote health probe succeeded',
-        drainedReceipts.length > 0 ? { drainedReceipts } : undefined
+        "connected",
+        "remote health probe succeeded",
+        drainedReceipts.length > 0 ? { drainedReceipts } : undefined,
       );
 
       // Transition could be rejected if another concurrent transition already
@@ -93,8 +93,8 @@ export function createAdaptiveEngine(options: AdaptiveEngineOptions): AdaptiveEn
           queue.enqueue(receipt);
         }
       }
-    } else if (!healthy && current === 'connected') {
-      await machine.transition('degraded', 'remote health probe failed');
+    } else if (!healthy && current === "connected") {
+      await machine.transition("degraded", "remote health probe failed");
     }
   }
 
@@ -116,7 +116,7 @@ export function createAdaptiveEngine(options: AdaptiveEngineOptions): AdaptiveEn
     }, probeIntervalMs);
 
     // Prevent the interval from keeping the process alive.
-    if (typeof probeTimer === 'object' && 'unref' in probeTimer) {
+    if (typeof probeTimer === "object" && "unref" in probeTimer) {
       (probeTimer as NodeJS.Timeout).unref();
     }
   }
@@ -133,19 +133,19 @@ export function createAdaptiveEngine(options: AdaptiveEngineOptions): AdaptiveEn
     const mode = machine.current();
 
     // Connected mode: try remote first.
-    if (mode === 'connected' && remote) {
+    if (mode === "connected" && remote) {
       try {
         const decision = await remote.evaluate(event);
         const provenance: EnrichedProvenance = {
-          mode: 'connected',
-          engine: 'remote',
+          mode: "connected",
+          engine: "remote",
           timestamp: new Date().toISOString(),
         };
         return enrichDecision(decision, provenance);
       } catch (error: unknown) {
         if (isConnectivityError(error)) {
           // Transition to degraded and fall through to local evaluation.
-          await machine.transition('degraded', 'remote evaluation connectivity error');
+          await machine.transition("degraded", "remote evaluation connectivity error");
         } else {
           // Non-connectivity error from remote — fail closed.
           return failClosed(error);
@@ -159,13 +159,13 @@ export function createAdaptiveEngine(options: AdaptiveEngineOptions): AdaptiveEn
       const currentMode = machine.current();
       const provenance: EnrichedProvenance = {
         mode: currentMode,
-        engine: 'local',
+        engine: "local",
         timestamp: new Date().toISOString(),
       };
       const enriched = enrichDecision(decision, provenance);
 
       // In degraded mode, queue the receipt for later sync.
-      if (currentMode === 'degraded') {
+      if (currentMode === "degraded") {
         queue.enqueue({
           event,
           decision: enriched,
@@ -184,7 +184,7 @@ export function createAdaptiveEngine(options: AdaptiveEngineOptions): AdaptiveEn
     const mode = machine.current();
 
     // Prefer the currently active engine's redaction.
-    if (mode === 'connected' && remote?.redactSecrets) {
+    if (mode === "connected" && remote?.redactSecrets) {
       return remote.redactSecrets(value);
     }
 

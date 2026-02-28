@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchPolicy, type PolicyResponse } from "../api/client";
-import { useSharedSSE } from "../context/SSEContext";
 import { PolicyDiffViewer } from "../components/policy/PolicyDiffViewer";
+import { GlassButton, NoiseGrain } from "../components/ui";
+import { useSharedSSE } from "../context/SSEContext";
 import { highlightYaml } from "../utils/yamlHighlight";
-import { NoiseGrain, GlassButton } from "../components/ui";
 
 export function Policies(_props: { windowId?: string }) {
   const [policy, setPolicy] = useState<PolicyResponse | null>(null);
@@ -39,7 +39,9 @@ export function Policies(_props: { windowId?: string }) {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   // Re-fetch when we see a policy_updated SSE event
   const lastSeenEventRef = useRef(0);
@@ -56,7 +58,16 @@ export function Policies(_props: { windowId?: string }) {
   const currentYaml = policy?.yaml ?? "";
 
   return (
-    <div className="space-y-5" style={{ padding: 20, color: "rgba(229,231,235,0.92)", overflow: "auto", height: "100%", position: "relative" }}>
+    <div
+      className="space-y-5"
+      style={{
+        padding: 20,
+        color: "rgba(229,231,235,0.92)",
+        overflow: "auto",
+        height: "100%",
+        position: "relative",
+      }}
+    >
       <div className="flex items-center justify-between">
         <div style={{ display: "flex", gap: 8 }}>
           <GlassButton onClick={load}>Reload</GlassButton>
@@ -100,16 +111,23 @@ export function Policies(_props: { windowId?: string }) {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <InfoCard label="Name" value={policy.name ?? "default"} />
             <InfoCard label="Version" value={policy.version ?? "-"} />
-            <InfoCard label="Hash" value={policy.policy_hash ? policy.policy_hash.slice(0, 16) + "..." : "-"} />
-            <InfoCard label="Source" value={policy.source ? `${policy.source.kind}${policy.source.path ? `: ${policy.source.path}` : ""}` : "local"} />
+            <InfoCard
+              label="Hash"
+              value={policy.policy_hash ? policy.policy_hash.slice(0, 16) + "..." : "-"}
+            />
+            <InfoCard
+              label="Source"
+              value={
+                policy.source
+                  ? `${policy.source.kind}${policy.source.path ? `: ${policy.source.path}` : ""}`
+                  : "local"
+              }
+            />
           </div>
 
           {policy.yaml && (
             <div>
-              <h2
-                className="font-display mb-3 text-base tracking-wide"
-                style={{ color: "#fff" }}
-              >
+              <h2 className="font-display mb-3 text-base tracking-wide" style={{ color: "#fff" }}>
                 Policy YAML
               </h2>
               <div className="glass-panel rounded-lg" style={{ background: "rgba(7,8,10,0.88)" }}>
@@ -125,10 +143,7 @@ export function Policies(_props: { windowId?: string }) {
 
           {!!policy.policy && !policy.yaml && (
             <div>
-              <h2
-                className="font-display mb-3 text-base tracking-wide"
-                style={{ color: "#fff" }}
-              >
+              <h2 className="font-display mb-3 text-base tracking-wide" style={{ color: "#fff" }}>
                 Policy Configuration
               </h2>
               <div className="glass-panel rounded-lg" style={{ background: "rgba(7,8,10,0.88)" }}>
@@ -173,10 +188,7 @@ function InfoCard({ label, value }: { label: string; value: string }) {
       >
         {label}
       </p>
-      <p
-        className="font-mono relative z-10 mt-1 text-sm"
-        style={{ color: "#fff" }}
-      >
+      <p className="font-mono relative z-10 mt-1 text-sm" style={{ color: "#fff" }}>
         {value}
       </p>
     </div>

@@ -20,13 +20,7 @@ const VARIANT_STYLES: Record<StampVariant, { bg: string; border: string; color: 
   },
 };
 
-export function Stamp({
-  variant,
-  children,
-}: {
-  variant: StampVariant;
-  children: React.ReactNode;
-}) {
+export function Stamp({ variant, children }: { variant: StampVariant; children: React.ReactNode }) {
   const s = VARIANT_STYLES[variant];
 
   return (

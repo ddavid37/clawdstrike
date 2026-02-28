@@ -1,30 +1,30 @@
-import { Suspense, memo, useEffect, useRef, useMemo, useCallback, useState } from "react";
 import {
-  useDesktopOS,
-  useWindowIds,
-  useWindow,
-  Window,
   Taskbar,
+  useDesktopOS,
+  useWindow,
+  useWindowIds,
+  Window,
   type WindowId,
 } from "@backbay/glia-desktop";
-import { DesktopWallpaper } from "./DesktopWallpaper";
-import { StartMenu } from "./StartMenu";
-import { SSETrayItem } from "./SSETrayItem";
-import { SSENotifier } from "./SSENotifier";
-import { KeyboardShortcuts } from "./KeyboardShortcuts";
-import { CommandPalette } from "./CommandPalette";
-import { NotificationCenter } from "./NotificationCenter";
-import { ContextMenu } from "./ContextMenu";
-import { DesktopWidgets } from "./DesktopWidgets";
-import { LockScreen } from "./LockScreen";
-import { ErrorBoundary } from "./ErrorBoundary";
-import { useNotifications } from "../../hooks/useNotifications";
-import { useLockScreen } from "../../hooks/useLockScreen";
-import { useContextMenu } from "../../hooks/useContextMenu";
-import { useAlertRules } from "../../hooks/useAlertRules";
-import { useSoundEffects } from "../../hooks/useSoundEffects";
+import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSharedSSE } from "../../context/SSEContext";
+import { useAlertRules } from "../../hooks/useAlertRules";
+import { useContextMenu } from "../../hooks/useContextMenu";
+import { useLockScreen } from "../../hooks/useLockScreen";
+import { useNotifications } from "../../hooks/useNotifications";
+import { useSoundEffects } from "../../hooks/useSoundEffects";
 import { desktopIcons, PROCESS_ICONS } from "../../state/processRegistry";
+import { CommandPalette } from "./CommandPalette";
+import { ContextMenu } from "./ContextMenu";
+import { DesktopWallpaper } from "./DesktopWallpaper";
+import { DesktopWidgets } from "./DesktopWidgets";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { KeyboardShortcuts } from "./KeyboardShortcuts";
+import { LockScreen } from "./LockScreen";
+import { NotificationCenter } from "./NotificationCenter";
+import { SSENotifier } from "./SSENotifier";
+import { SSETrayItem } from "./SSETrayItem";
+import { StartMenu } from "./StartMenu";
 
 function LoadingFallback() {
   return (
@@ -327,22 +327,14 @@ function ComposedTaskbar({
                 padding: "4px 12px",
                 borderRadius: "var(--radius-control)",
                 cursor: "pointer",
-                background: isFocused
-                  ? "var(--gold-bloom)"
-                  : "rgba(18,21,27,0.6)",
-                border: isFocused
-                  ? "1px solid var(--gold-edge)"
-                  : "1px solid rgba(27,34,48,0.5)",
+                background: isFocused ? "var(--gold-bloom)" : "rgba(18,21,27,0.6)",
+                border: isFocused ? "1px solid var(--gold-edge)" : "1px solid rgba(27,34,48,0.5)",
                 transition: "all 0.15s ease",
                 whiteSpace: "nowrap",
                 maxWidth: 180,
               }}
             >
-              {sigil && (
-                <span style={{ display: "flex", flexShrink: 0 }}>
-                  {sigil}
-                </span>
-              )}
+              {sigil && <span style={{ display: "flex", flexShrink: 0 }}>{sigil}</span>}
               <span
                 className="font-mono"
                 style={{
@@ -374,8 +366,18 @@ function ComposedTaskbar({
 export function ClawdStrikeDesktop() {
   const { events, connected } = useSharedSSE();
   const { locked, lock, unlock } = useLockScreen();
-  const { notifications, add: addNotification, markAllRead, clear: clearNotifications, unreadCount } = useNotifications();
-  const { state: contextMenuState, show: showContextMenu, hide: hideContextMenu } = useContextMenu();
+  const {
+    notifications,
+    add: addNotification,
+    markAllRead,
+    clear: clearNotifications,
+    unreadCount,
+  } = useNotifications();
+  const {
+    state: contextMenuState,
+    show: showContextMenu,
+    hide: hideContextMenu,
+  } = useContextMenu();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   // Persistent alert evaluation — runs regardless of which windows are open
@@ -402,7 +404,10 @@ export function ClawdStrikeDesktop() {
     for (const evt of events) {
       if (evt._id <= lastNotifiedIdRef.current) break; // already notified
       if (evt.allowed === false || evt.event_type === "violation") {
-        addNotification(`Violation: ${evt.guard || evt.event_type} — ${evt.action_type || "unknown"}`, "error");
+        addNotification(
+          `Violation: ${evt.guard || evt.event_type} — ${evt.action_type || "unknown"}`,
+          "error",
+        );
       } else if (evt.event_type === "policy_updated") {
         addNotification("Policy updated", "warning");
       }
@@ -450,7 +455,11 @@ export function ClawdStrikeDesktop() {
         onToggleCommandPalette={() => setCommandPaletteOpen((v) => !v)}
         onLock={lock}
       />
-      <CommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} onLock={lock} />
+      <CommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onLock={lock}
+      />
       <ContextMenu state={contextMenuState} onClose={hideContextMenu} />
 
       {/* Taskbar */}

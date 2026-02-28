@@ -9,26 +9,26 @@
  * forbidden paths when a read targets a sensitive location.
  */
 
+import {
+  classifyTool,
+  DESTRUCTIVE_EVENT_MAP,
+  NETWORK_TOKENS,
+  tokenize,
+} from "../../classification.js";
+import { getSharedEngine, initializeEngine } from "../../engine-holder.js";
 import type {
-  HookHandler,
-  HookEvent,
-  ToolCallEvent,
   BeforeToolCallHookEvent,
   BeforeToolCallHookResult,
-  OpenClawHookContext,
   ClawdstrikeConfig,
-  PolicyEvent,
   EventType,
-} from '../../types.js';
-import { initializeEngine, getSharedEngine } from '../../engine-holder.js';
-import { peekApproval, recordApproval, type ApprovalResolutionType } from '../approval-state.js';
-import { extractPath, normalizeApprovalResource } from '../approval-utils.js';
-import {
-  tokenize,
-  classifyTool,
-  NETWORK_TOKENS,
-  DESTRUCTIVE_EVENT_MAP,
-} from '../../classification.js';
+  HookEvent,
+  HookHandler,
+  OpenClawHookContext,
+  PolicyEvent,
+  ToolCallEvent,
+} from "../../types.js";
+import { type ApprovalResolutionType, peekApproval, recordApproval } from "../approval-state.js";
+import { extractPath, normalizeApprovalResource } from "../approval-utils.js";
 
 /**
  * Initialize the hook with configuration.
@@ -47,7 +47,7 @@ export function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
 }
 
 // Re-export PolicyEngine type so existing `getEngine` callers can use it.
-import type { PolicyEngine } from '../../policy/engine.js';
+import type { PolicyEngine } from "../../policy/engine.js";
 
 /**
  * Infer the event type for a tool based on its name tokens and parameters.
@@ -59,44 +59,44 @@ function inferPolicyEventType(toolName: string, params: Record<string, unknown>)
   const tokens = tokenize(toolName);
   const classification = classifyTool(tokens);
 
-  if (classification === 'read_only') {
+  if (classification === "read_only") {
     // Read-only tools can still be risky if they touch forbidden paths OR perform network egress.
     // Do not skip preflight egress checks (eg. web_search/http_get) just because the tool name
     // contains a read-only token like "get" or "search".
-    if (tokens.some(t => NETWORK_TOKENS.has(t)) || looksLikeNetworkEgress(params)) {
-      return 'network_egress';
+    if (tokens.some((t) => NETWORK_TOKENS.has(t)) || looksLikeNetworkEgress(params)) {
+      return "network_egress";
     }
 
     // If it looks like a filesystem read, evaluate it as file_read.
     const p = extractPath(params);
-    if (p) return 'file_read';
+    if (p) return "file_read";
     return null;
   }
 
   // Check specific destructive event types
   for (const { tokens: matchTokens, eventType } of DESTRUCTIVE_EVENT_MAP) {
-    if (tokens.some(t => matchTokens.has(t))) {
+    if (tokens.some((t) => matchTokens.has(t))) {
       return eventType;
     }
   }
 
   // Check network tokens
-  if (tokens.some(t => NETWORK_TOKENS.has(t))) {
-    return 'network_egress';
+  if (tokens.some((t) => NETWORK_TOKENS.has(t))) {
+    return "network_egress";
   }
 
   // Unknown/unclassified tools: infer from parameters (do not skip).
-  if (looksLikePatchApply(params)) return 'patch_apply';
-  if (looksLikeCommandExec(params)) return 'command_exec';
-  if (looksLikeNetworkEgress(params)) return 'network_egress';
+  if (looksLikePatchApply(params)) return "patch_apply";
+  if (looksLikeCommandExec(params)) return "command_exec";
+  if (looksLikeNetworkEgress(params)) return "network_egress";
 
   const p = extractPath(params);
   if (p) {
-    return looksLikeFileWrite(params) ? 'file_write' : 'file_read';
+    return looksLikeFileWrite(params) ? "file_write" : "file_read";
   }
 
   // Fall back to tool_call so tool allow/deny lists and defense-in-depth checks can run.
-  return 'tool_call';
+  return "tool_call";
 }
 
 /**
@@ -112,50 +112,55 @@ function buildPolicyEvent(
   const timestamp = new Date().toISOString();
 
   switch (eventType) {
-    case 'file_read': {
-      const path = extractPath(params) ?? '';
+    case "file_read": {
+      const path = extractPath(params) ?? "";
       return {
         eventId,
-        eventType: 'file_read',
+        eventType: "file_read",
         timestamp,
         sessionId,
-        data: { type: 'file', path, operation: 'read' },
+        data: { type: "file", path, operation: "read" },
         metadata: { toolName, preflight: true },
       };
     }
-    case 'file_write': {
-      const path = extractPath(params) ?? '';
+    case "file_write": {
+      const path = extractPath(params) ?? "";
       return {
         eventId,
-        eventType: 'file_write',
+        eventType: "file_write",
         timestamp,
         sessionId,
-        data: { type: 'file', path, operation: 'write', content: typeof params.content === 'string' ? params.content : undefined },
+        data: {
+          type: "file",
+          path,
+          operation: "write",
+          content: typeof params.content === "string" ? params.content : undefined,
+        },
         metadata: { toolName, preflight: true },
       };
     }
-    case 'command_exec': {
+    case "command_exec": {
       const cmdLine =
-        typeof params.command === 'string'
+        typeof params.command === "string"
           ? params.command
-          : typeof params.cmd === 'string'
+          : typeof params.cmd === "string"
             ? params.cmd
-            : '';
+            : "";
 
       // Some tools pass argv-style params (args/argv) instead of a shell command line.
       const argv =
-        Array.isArray(params.argv) && params.argv.every((a) => typeof a === 'string')
+        Array.isArray(params.argv) && params.argv.every((a) => typeof a === "string")
           ? (params.argv as string[])
-          : Array.isArray(params.args) && params.args.every((a) => typeof a === 'string')
+          : Array.isArray(params.args) && params.args.every((a) => typeof a === "string")
             ? (params.args as string[])
             : null;
 
-      let command = '';
+      let command = "";
       let args: string[] = [];
 
       if (cmdLine.trim()) {
         const parts = cmdLine.trim().split(/\s+/).filter(Boolean);
-        command = parts[0] ?? '';
+        command = parts[0] ?? "";
         const inlineArgs = parts.slice(1);
 
         if (inlineArgs.length > 0) {
@@ -170,54 +175,72 @@ function buildPolicyEvent(
       }
       return {
         eventId,
-        eventType: 'command_exec',
+        eventType: "command_exec",
         timestamp,
         sessionId,
-        data: { type: 'command', command, args },
+        data: { type: "command", command, args },
         metadata: { toolName, preflight: true },
       };
     }
-    case 'patch_apply': {
-      const filePath = typeof params.filePath === 'string' ? params.filePath : typeof params.path === 'string' ? params.path : '';
-      const patchContent = typeof params.patch === 'string' ? params.patch : typeof params.content === 'string' ? params.content : '';
+    case "patch_apply": {
+      const filePath =
+        typeof params.filePath === "string"
+          ? params.filePath
+          : typeof params.path === "string"
+            ? params.path
+            : "";
+      const patchContent =
+        typeof params.patch === "string"
+          ? params.patch
+          : typeof params.content === "string"
+            ? params.content
+            : "";
       return {
         eventId,
-        eventType: 'patch_apply',
+        eventType: "patch_apply",
         timestamp,
         sessionId,
-        data: { type: 'patch', filePath, patchContent },
+        data: { type: "patch", filePath, patchContent },
         metadata: { toolName, preflight: true },
       };
     }
-    case 'network_egress': {
+    case "network_egress": {
       const { host, port, url } = extractNetworkInfo(params);
       return {
         eventId,
-        eventType: 'network_egress',
+        eventType: "network_egress",
         timestamp,
         sessionId,
-        data: { type: 'network', host, port, url },
+        data: { type: "network", host, port, url },
         metadata: { toolName, preflight: true },
       };
     }
     default: {
       return {
         eventId,
-        eventType: 'tool_call',
+        eventType: "tool_call",
         timestamp,
         sessionId,
-        data: { type: 'tool', toolName, parameters: params },
+        data: { type: "tool", toolName, parameters: params },
         metadata: { toolName, preflight: true },
       };
     }
   }
 }
 
-function extractNetworkInfo(params: Record<string, unknown>): { host: string; port: number; url?: string } {
-  const url = typeof params.url === 'string' ? params.url
-    : typeof params.endpoint === 'string' ? params.endpoint
-    : typeof params.href === 'string' ? params.href
-    : undefined;
+function extractNetworkInfo(params: Record<string, unknown>): {
+  host: string;
+  port: number;
+  url?: string;
+} {
+  const url =
+    typeof params.url === "string"
+      ? params.url
+      : typeof params.endpoint === "string"
+        ? params.endpoint
+        : typeof params.href === "string"
+          ? params.href
+          : undefined;
   if (url) {
     try {
       const parsed = new URL(url);
@@ -225,7 +248,9 @@ function extractNetworkInfo(params: Record<string, unknown>): { host: string; po
         host: parsed.hostname,
         port: parsed.port
           ? parseInt(parsed.port, 10)
-          : (parsed.protocol === 'https:' || parsed.protocol === 'wss:' ? 443 : 80),
+          : parsed.protocol === "https:" || parsed.protocol === "wss:"
+            ? 443
+            : 80,
         url,
       };
     } catch {
@@ -233,44 +258,58 @@ function extractNetworkInfo(params: Record<string, unknown>): { host: string; po
     }
   }
   const host =
-    typeof params.host === 'string'
+    typeof params.host === "string"
       ? params.host
-      : typeof params.hostname === 'string'
+      : typeof params.hostname === "string"
         ? params.hostname
-        : 'unknown';
-  const port = typeof params.port === 'number' ? params.port : 80;
+        : "unknown";
+  const port = typeof params.port === "number" ? params.port : 80;
   return { host, port, url };
 }
 
 function looksLikePatchApply(params: Record<string, unknown>): boolean {
-  return typeof params.patch === 'string'
-    || typeof params.diff === 'string'
-    || typeof params.patchContent === 'string';
+  return (
+    typeof params.patch === "string" ||
+    typeof params.diff === "string" ||
+    typeof params.patchContent === "string"
+  );
 }
 
 function looksLikeCommandExec(params: Record<string, unknown>): boolean {
-  if (typeof params.command === 'string' || typeof params.cmd === 'string') return true;
-  if (Array.isArray(params.args) && params.args.every((a) => typeof a === 'string')) return true;
-  if (Array.isArray(params.argv) && params.argv.every((a) => typeof a === 'string')) return true;
+  if (typeof params.command === "string" || typeof params.cmd === "string") return true;
+  if (Array.isArray(params.args) && params.args.every((a) => typeof a === "string")) return true;
+  if (Array.isArray(params.argv) && params.argv.every((a) => typeof a === "string")) return true;
   return false;
 }
 
 function looksLikeNetworkEgress(params: Record<string, unknown>): boolean {
-  if (typeof params.url === 'string' || typeof params.endpoint === 'string' || typeof params.href === 'string') return true;
-  if (typeof params.host === 'string' || typeof params.hostname === 'string') return true;
+  if (
+    typeof params.url === "string" ||
+    typeof params.endpoint === "string" ||
+    typeof params.href === "string"
+  )
+    return true;
+  if (typeof params.host === "string" || typeof params.hostname === "string") return true;
   return false;
 }
 
 function looksLikeFileWrite(params: Record<string, unknown>): boolean {
   // Common write payload keys used by various tool APIs.
-  if (typeof params.content === 'string') return true;
-  if (typeof params.text === 'string') return true;
-  if (typeof params.contentBase64 === 'string') return true;
-  if (typeof params.base64 === 'string') return true;
-  if (typeof params.patch === 'string' || typeof params.diff === 'string') return true;
-  if (typeof params.operation === 'string') {
+  if (typeof params.content === "string") return true;
+  if (typeof params.text === "string") return true;
+  if (typeof params.contentBase64 === "string") return true;
+  if (typeof params.base64 === "string") return true;
+  if (typeof params.patch === "string" || typeof params.diff === "string") return true;
+  if (typeof params.operation === "string") {
     const op = params.operation.toLowerCase();
-    if (op === 'write' || op === 'append' || op === 'delete' || op === 'remove' || op === 'truncate') return true;
+    if (
+      op === "write" ||
+      op === "append" ||
+      op === "delete" ||
+      op === "remove" ||
+      op === "truncate"
+    )
+      return true;
   }
   return false;
 }
@@ -290,8 +329,8 @@ const APPROVAL_POLL_TIMEOUT_MS = 60_000;
 
 interface ApprovalStatusResponse {
   id: string;
-  status: 'pending' | 'resolved' | 'expired';
-  resolution: 'allow-once' | 'allow-session' | 'allow-always' | 'deny' | null;
+  status: "pending" | "resolved" | "expired";
+  resolution: "allow-once" | "allow-session" | "allow-always" | "deny" | null;
   tool: string;
   resource: string;
   guard: string;
@@ -318,19 +357,21 @@ async function requestApproval(details: {
 
   const token = process.env.CLAWDSTRIKE_AGENT_TOKEN;
   if (!token) {
-    console.warn('[clawdstrike] CLAWDSTRIKE_APPROVAL_URL is set but CLAWDSTRIKE_AGENT_TOKEN is missing — skipping approval request');
+    console.warn(
+      "[clawdstrike] CLAWDSTRIKE_APPROVAL_URL is set but CLAWDSTRIKE_AGENT_TOKEN is missing — skipping approval request",
+    );
     return null;
   }
 
   const authHeaders = {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer ' + token,
+    "Content-Type": "application/json",
+    Authorization: "Bearer " + token,
   };
 
   let id: string;
   try {
     const submitRes = await fetch(`${approvalUrl}/api/v1/approval/request`, {
-      method: 'POST',
+      method: "POST",
       headers: authHeaders,
       signal: AbortSignal.timeout(10_000),
       body: JSON.stringify({
@@ -357,7 +398,7 @@ async function requestApproval(details: {
 
     try {
       const pollRes = await fetch(`${approvalUrl}/api/v1/approval/${id}/status`, {
-        headers: { 'Authorization': 'Bearer ' + token },
+        headers: { Authorization: "Bearer " + token },
         signal: AbortSignal.timeout(10_000),
       });
       if (!pollRes.ok) {
@@ -365,13 +406,13 @@ async function requestApproval(details: {
       }
       const status = (await pollRes.json()) as ApprovalStatusResponse;
 
-      if (status.status === 'resolved') {
-        if (status.resolution !== null && status.resolution !== 'deny') {
+      if (status.status === "resolved") {
+        if (status.resolution !== null && status.resolution !== "deny") {
           return status;
         }
         return null;
       }
-      if (status.status === 'expired') {
+      if (status.status === "expired") {
         return null;
       }
     } catch {
@@ -395,25 +436,27 @@ const handler: HookHandler = async (
   event: HookEvent | BeforeToolCallHookEvent,
   hookCtx?: OpenClawHookContext,
 ): Promise<void | BeforeToolCallHookResult> => {
-  const isModernBeforeToolCallEvent = (value: HookEvent | BeforeToolCallHookEvent): value is BeforeToolCallHookEvent => {
-    if (value && typeof value === 'object' && 'type' in value) return false;
+  const isModernBeforeToolCallEvent = (
+    value: HookEvent | BeforeToolCallHookEvent,
+  ): value is BeforeToolCallHookEvent => {
+    if (value && typeof value === "object" && "type" in value) return false;
     return Boolean(
       value &&
-      typeof value === 'object' &&
-      typeof (value as { toolName?: unknown }).toolName === 'string' &&
-      typeof (value as { params?: unknown }).params === 'object' &&
-      (value as { params?: unknown }).params !== null,
+        typeof value === "object" &&
+        typeof (value as { toolName?: unknown }).toolName === "string" &&
+        typeof (value as { params?: unknown }).params === "object" &&
+        (value as { params?: unknown }).params !== null,
     );
   };
 
   const isModern = isModernBeforeToolCallEvent(event);
   if (!isModern) {
-    if (event.type !== 'tool_call' && event.type !== 'before_tool_call') {
+    if (event.type !== "tool_call" && event.type !== "before_tool_call") {
       return;
     }
   }
 
-  const legacyToolEvent = isModern ? null : event as ToolCallEvent;
+  const legacyToolEvent = isModern ? null : (event as ToolCallEvent);
 
   // Skip if already handled by another hook registration (e.g. before_tool_call + tool_call dual registration)
   if (!isModern && legacyToolEvent!.preventDefault) return;
@@ -426,7 +469,7 @@ const handler: HookHandler = async (
   const toolName = isModern ? event.toolName : legacyToolEvent!.context.toolCall.toolName;
   const params = isModern ? event.params : legacyToolEvent!.context.toolCall.params;
   const sessionId = isModern
-    ? (hookCtx?.sessionKey ?? hookCtx?.agentId ?? 'openclaw-runtime')
+    ? (hookCtx?.sessionKey ?? hookCtx?.agentId ?? "openclaw-runtime")
     : legacyToolEvent!.context.sessionId;
 
   // Determine if this tool is destructive
@@ -440,14 +483,14 @@ const handler: HookHandler = async (
   const policyEvent = buildPolicyEvent(sessionId, toolName, params, eventType);
   const decision = await policyEngine.evaluate(policyEvent);
 
-  if (decision.status === 'deny') {
+  if (decision.status === "deny") {
     const resource = normalizeApprovalResource(policyEngine, toolName, params);
-    const guard = decision.guard ?? 'unknown';
-    const severity = decision.severity ?? 'high';
+    const guard = decision.guard ?? "unknown";
+    const severity = decision.severity ?? "high";
 
     // If the user previously approved this exact action for this session (or globally),
     // honor it and avoid re-prompting.
-    if (severity !== 'critical') {
+    if (severity !== "critical") {
       const prior = peekApproval(sessionId, toolName, resource);
       if (prior) {
         if (!isModern) {
@@ -461,12 +504,12 @@ const handler: HookHandler = async (
 
     // If the denial is non-critical and the approval API is configured,
     // submit an approval request and wait for user resolution.
-    if (severity !== 'critical' && process.env.CLAWDSTRIKE_APPROVAL_URL) {
+    if (severity !== "critical" && process.env.CLAWDSTRIKE_APPROVAL_URL) {
       const approvalResult = await requestApproval({
         toolName,
         resource,
         guard,
-        reason: decision.reason ?? 'Policy denied',
+        reason: decision.reason ?? "Policy denied",
         severity,
         sessionId,
       });
@@ -482,22 +525,21 @@ const handler: HookHandler = async (
       }
     }
 
-    const blockReason =
-      `blocked ${toolName} on ${resource}${decision.reason ? ` — ${decision.reason}` : ''}`;
+    const blockReason = `blocked ${toolName} on ${resource}${decision.reason ? ` — ${decision.reason}` : ""}`;
     if (isModern) {
       return { block: true, blockReason, params };
     }
     legacyToolEvent!.preventDefault = true;
     legacyToolEvent!.messages.push(`[clawdstrike] Pre-flight check: ${blockReason}`);
-    if (legacyToolEvent!.type === 'before_tool_call') {
+    if (legacyToolEvent!.type === "before_tool_call") {
       return { block: true, blockReason, params };
     }
     return;
   }
 
-  if (!isModern && decision.status === 'warn') {
+  if (!isModern && decision.status === "warn") {
     legacyToolEvent!.messages.push(
-      `[clawdstrike] Pre-flight warning: ${decision.message ?? decision.reason ?? 'Policy warning'} (${toolName})`,
+      `[clawdstrike] Pre-flight warning: ${decision.message ?? decision.reason ?? "Policy warning"} (${toolName})`,
     );
   }
 };

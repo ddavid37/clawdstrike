@@ -1,23 +1,24 @@
 /**
  * SOC Data Service - Transforms hushd audit/stats data into glia 3D component types
  */
-import { useState, useEffect, useCallback, useRef } from "react";
-import { getHushdClient } from "./hushdClient";
-import { useConnection } from "@/context/ConnectionContext";
-import type { AuditEvent } from "@/types/events";
+
 import type {
-  Threat,
-  ThreatType,
-  NetworkNode,
-  NetworkEdge,
   AttackChain,
-  AttackTechnique,
   AttackTactic,
+  AttackTechnique,
+  DashboardAuditEvent,
+  DashboardThreat,
+  NetworkEdge,
+  NetworkNode,
   ShieldConfig,
   ShieldStatus,
-  DashboardThreat,
-  DashboardAuditEvent,
+  Threat,
+  ThreatType,
 } from "@backbay/glia-three/three";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useConnection } from "@/context/ConnectionContext";
+import type { AuditEvent } from "@/types/events";
+import { getHushdClient } from "./hushdClient";
 
 // ---------------------------------------------------------------------------
 // SecurityKPIs
@@ -68,7 +69,7 @@ const GUARD_TO_TACTIC: Record<string, AttackTactic> = {
 };
 
 function auditEventToThreat(event: AuditEvent, index: number): Threat {
-  const angle = ((index * 2.39996) % (Math.PI * 2)); // golden-angle spread
+  const angle = (index * 2.39996) % (Math.PI * 2); // golden-angle spread
   const severity = SEVERITY_MAP[event.severity ?? "info"] ?? 0.3;
   const distance = 0.3 + severity * 0.6; // higher severity = further out
   return {
@@ -134,7 +135,7 @@ export async function getThreats(signal?: AbortSignal): Promise<Threat[]> {
  * Derives nodes from unique agents/targets, edges from communication patterns.
  */
 export async function getNetworkTopology(
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<{ nodes: NetworkNode[]; edges: NetworkEdge[] }> {
   try {
     const client = getHushdClient();
@@ -327,7 +328,9 @@ export async function getSecurityOverview(signal?: AbortSignal): Promise<{
     };
 
     const threats = auditResponse.events
-      .filter((e) => e.decision === "blocked" || e.severity === "critical" || e.severity === "error")
+      .filter(
+        (e) => e.decision === "blocked" || e.severity === "critical" || e.severity === "error",
+      )
       .slice(0, 10)
       .map(auditEventToDashboardThreat);
 
@@ -376,7 +379,12 @@ type SocDataResult<T extends SocDataType> = T extends "threats"
       : T extends "kpis"
         ? SecurityKPIs
         : T extends "overview"
-          ? { shield: ShieldConfig; threats: DashboardThreat[]; auditEvents: DashboardAuditEvent[]; kpis: SecurityKPIs }
+          ? {
+              shield: ShieldConfig;
+              threats: DashboardThreat[];
+              auditEvents: DashboardAuditEvent[];
+              kpis: SecurityKPIs;
+            }
           : never;
 
 interface UseSocDataReturn<T extends SocDataType> {
@@ -396,7 +404,7 @@ const FETCHERS: Record<SocDataType, (signal?: AbortSignal) => Promise<unknown>> 
 
 export function useSocData<T extends SocDataType>(
   type: T,
-  intervalMs: number = 10000
+  intervalMs: number = 10000,
 ): UseSocDataReturn<T> {
   const { status } = useConnection();
   const [data, setData] = useState<SocDataResult<T> | null>(null);
