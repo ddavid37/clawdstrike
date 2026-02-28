@@ -3745,8 +3745,19 @@ mod hunt_cli_parsing {
 
 #[cfg(test)]
 mod hunt_contract {
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use crate::remote_extends::RemoteExtendsConfig;
     use crate::{ExitCode, HuntCommands};
+
+    fn temp_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("hush_hunt_{name}_{nanos}"))
+    }
 
     #[tokio::test]
     async fn correlate_no_rules_returns_invalid_args() {
@@ -3786,7 +3797,10 @@ mod hunt_contract {
         assert_eq!(code, ExitCode::InvalidArgs.as_i32());
         let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
         assert_eq!(v["command"].as_str(), Some("hunt correlate"));
-        assert_eq!(v["exit_code"].as_i64(), Some(ExitCode::InvalidArgs.as_i32() as i64));
+        assert_eq!(
+            v["exit_code"].as_i64(),
+            Some(ExitCode::InvalidArgs.as_i32() as i64)
+        );
         assert!(v["error"]["message"]
             .as_str()
             .unwrap_or("")
@@ -3795,8 +3809,7 @@ mod hunt_contract {
 
     #[tokio::test]
     async fn correlate_with_rules_offline_empty_events_returns_ok() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let rule_path = dir.path().join("rule.yaml");
+        let rule_path = temp_path("rule.yaml");
         std::fs::write(
             &rule_path,
             r#"
@@ -3819,7 +3832,7 @@ output:
         .expect("write rule");
 
         // Create empty local dir for offline mode
-        let local_dir = dir.path().join("events");
+        let local_dir = temp_path("events_dir");
         std::fs::create_dir_all(&local_dir).expect("create events dir");
 
         let mut out = Vec::new();
@@ -3854,6 +3867,9 @@ output:
             &mut err,
         )
         .await;
+
+        let _ = std::fs::remove_file(&rule_path);
+        let _ = std::fs::remove_dir_all(&local_dir);
 
         assert_eq!(code, ExitCode::Ok.as_i32());
         let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
@@ -3907,7 +3923,10 @@ output:
         assert_eq!(code, ExitCode::ConfigError.as_i32());
         let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
         assert_eq!(v["command"].as_str(), Some("hunt correlate"));
-        assert_eq!(v["exit_code"].as_i64(), Some(ExitCode::ConfigError.as_i32() as i64));
+        assert_eq!(
+            v["exit_code"].as_i64(),
+            Some(ExitCode::ConfigError.as_i32() as i64)
+        );
         assert!(v["error"]["message"]
             .as_str()
             .unwrap_or("")
@@ -3945,7 +3964,10 @@ output:
         assert_eq!(code, ExitCode::InvalidArgs.as_i32());
         let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
         assert_eq!(v["command"].as_str(), Some("hunt ioc"));
-        assert_eq!(v["exit_code"].as_i64(), Some(ExitCode::InvalidArgs.as_i32() as i64));
+        assert_eq!(
+            v["exit_code"].as_i64(),
+            Some(ExitCode::InvalidArgs.as_i32() as i64)
+        );
         assert!(v["error"]["message"]
             .as_str()
             .unwrap_or("")
@@ -3954,18 +3976,12 @@ output:
 
     #[tokio::test]
     async fn ioc_with_feed_offline_empty_events_returns_ok() {
-        let dir = tempfile::tempdir().expect("tempdir");
-
         // Create a simple text IOC feed
-        let feed_path = dir.path().join("iocs.txt");
-        std::fs::write(
-            &feed_path,
-            "# IOC feed\nevil.com\n10.0.0.99\n",
-        )
-        .expect("write feed");
+        let feed_path = temp_path("iocs.txt");
+        std::fs::write(&feed_path, "# IOC feed\nevil.com\n10.0.0.99\n").expect("write feed");
 
         // Create empty local dir for offline mode
-        let local_dir = dir.path().join("events");
+        let local_dir = temp_path("ioc_events_dir");
         std::fs::create_dir_all(&local_dir).expect("create events dir");
 
         let mut out = Vec::new();
@@ -3993,6 +4009,9 @@ output:
             &mut err,
         )
         .await;
+
+        let _ = std::fs::remove_file(&feed_path);
+        let _ = std::fs::remove_dir_all(&local_dir);
 
         assert_eq!(code, ExitCode::Ok.as_i32());
         let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
@@ -4047,8 +4066,6 @@ output:
 
     #[tokio::test]
     async fn ioc_stix_bundle_offline_returns_ok() {
-        let dir = tempfile::tempdir().expect("tempdir");
-
         let sha = "a".repeat(64);
         let bundle = serde_json::json!({
             "type": "bundle",
@@ -4064,10 +4081,10 @@ output:
                 }
             ]
         });
-        let stix_path = dir.path().join("stix.json");
+        let stix_path = temp_path("stix.json");
         std::fs::write(&stix_path, serde_json::to_string(&bundle).unwrap()).expect("write stix");
 
-        let local_dir = dir.path().join("events");
+        let local_dir = temp_path("stix_events_dir");
         std::fs::create_dir_all(&local_dir).expect("create events dir");
 
         let mut out = Vec::new();
@@ -4095,6 +4112,9 @@ output:
             &mut err,
         )
         .await;
+
+        let _ = std::fs::remove_file(&stix_path);
+        let _ = std::fs::remove_dir_all(&local_dir);
 
         assert_eq!(code, ExitCode::Ok.as_i32());
         let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
@@ -4135,8 +4155,7 @@ output:
 
     #[tokio::test]
     async fn watch_bad_max_window_returns_invalid_args() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let rule_path = dir.path().join("rule.yaml");
+        let rule_path = temp_path("watch_rule.yaml");
         std::fs::write(
             &rule_path,
             r#"
@@ -4175,6 +4194,8 @@ output:
             &mut err,
         )
         .await;
+
+        let _ = std::fs::remove_file(&rule_path);
 
         assert_eq!(code, ExitCode::InvalidArgs.as_i32());
         let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
