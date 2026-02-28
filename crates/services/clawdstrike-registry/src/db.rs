@@ -30,6 +30,12 @@ pub struct VersionRow {
     pub dependencies_json: String,
     pub yanked: bool,
     pub published_at: String,
+    /// SHA-256 hash of the publish attestation (if created).
+    #[serde(default)]
+    pub attestation_hash: Option<String>,
+    /// Key ID of the registry key that counter-signed this version.
+    #[serde(default)]
+    pub key_id: Option<String>,
 }
 
 /// A row from the `api_keys` table.
@@ -106,8 +112,27 @@ impl RegistryDb {
             CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
                 name, description, keywords
             );
+
+            CREATE TABLE IF NOT EXISTS registry_keys (
+                key_id TEXT PRIMARY KEY,
+                public_key TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                valid_until TEXT,
+                status TEXT NOT NULL DEFAULT 'active'
+            );
             ",
         )?;
+
+        // Add columns that may not exist in older databases.
+        // SQLite does not support ADD COLUMN IF NOT EXISTS, so we
+        // swallow the "duplicate column" error.
+        let _ = self
+            .conn
+            .execute("ALTER TABLE versions ADD COLUMN attestation_hash TEXT", []);
+        let _ = self
+            .conn
+            .execute("ALTER TABLE versions ADD COLUMN key_id TEXT", []);
+
         Ok(())
     }
 
@@ -194,7 +219,7 @@ impl RegistryDb {
         }
 
         self.conn.execute(
-            "INSERT INTO versions (name, version, pkg_type, checksum, manifest_toml, publisher_key, publisher_sig, registry_sig, dependencies_json, yanked, published_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO versions (name, version, pkg_type, checksum, manifest_toml, publisher_key, publisher_sig, registry_sig, dependencies_json, yanked, published_at, attestation_hash, key_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 v.name,
                 v.version,
@@ -207,6 +232,8 @@ impl RegistryDb {
                 v.dependencies_json,
                 v.yanked as i32,
                 v.published_at,
+                v.attestation_hash,
+                v.key_id,
             ],
         )?;
         Ok(())
@@ -215,7 +242,7 @@ impl RegistryDb {
     /// List all versions for a package.
     pub fn list_versions(&self, name: &str) -> Result<Vec<VersionRow>, RegistryError> {
         let mut stmt = self.conn.prepare(
-            "SELECT name, version, pkg_type, checksum, manifest_toml, publisher_key, publisher_sig, registry_sig, dependencies_json, yanked, published_at FROM versions WHERE name = ?1 ORDER BY published_at ASC",
+            "SELECT name, version, pkg_type, checksum, manifest_toml, publisher_key, publisher_sig, registry_sig, dependencies_json, yanked, published_at, attestation_hash, key_id FROM versions WHERE name = ?1 ORDER BY published_at ASC",
         )?;
         let rows = stmt
             .query_map(params![name], |row| {
@@ -231,6 +258,8 @@ impl RegistryDb {
                     dependencies_json: row.get(8)?,
                     yanked: row.get::<_, i32>(9)? != 0,
                     published_at: row.get(10)?,
+                    attestation_hash: row.get(11)?,
+                    key_id: row.get(12)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -246,7 +275,7 @@ impl RegistryDb {
         let row = self
             .conn
             .query_row(
-                "SELECT name, version, pkg_type, checksum, manifest_toml, publisher_key, publisher_sig, registry_sig, dependencies_json, yanked, published_at FROM versions WHERE name = ?1 AND version = ?2",
+                "SELECT name, version, pkg_type, checksum, manifest_toml, publisher_key, publisher_sig, registry_sig, dependencies_json, yanked, published_at, attestation_hash, key_id FROM versions WHERE name = ?1 AND version = ?2",
                 params![name, version],
                 |row| {
                     Ok(VersionRow {
@@ -261,6 +290,8 @@ impl RegistryDb {
                         dependencies_json: row.get(8)?,
                         yanked: row.get::<_, i32>(9)? != 0,
                         published_at: row.get(10)?,
+                        attestation_hash: row.get(11)?,
+                        key_id: row.get(12)?,
                     })
                 },
             )
@@ -275,6 +306,44 @@ impl RegistryDb {
             params![name, version],
         )?;
         Ok(count > 0)
+    }
+
+    // -----------------------------------------------------------------------
+    // Registry Keys
+    // -----------------------------------------------------------------------
+
+    /// Insert or update a registry key record.
+    pub fn upsert_registry_key(
+        &self,
+        key_info: &crate::keys::RegistryKeyInfo,
+    ) -> Result<(), RegistryError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO registry_keys (key_id, public_key, created_at, valid_until, status) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                key_info.key_id,
+                key_info.public_key,
+                key_info.created_at,
+                key_info.valid_until,
+                key_info.status.to_string(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Update the attestation hash for a specific version.
+    #[allow(dead_code)]
+    pub fn set_attestation_hash(
+        &self,
+        name: &str,
+        version: &str,
+        attestation_hash: &str,
+        key_id: &str,
+    ) -> Result<(), RegistryError> {
+        self.conn.execute(
+            "UPDATE versions SET attestation_hash = ?1, key_id = ?2 WHERE name = ?3 AND version = ?4",
+            params![attestation_hash, key_id, name, version],
+        )?;
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -421,6 +490,8 @@ mod tests {
             dependencies_json: "{}".into(),
             yanked: false,
             published_at: "2025-01-01T00:00:00Z".into(),
+            attestation_hash: None,
+            key_id: None,
         };
         db.insert_version(&v).unwrap();
 
@@ -447,6 +518,8 @@ mod tests {
             dependencies_json: "{}".into(),
             yanked: false,
             published_at: "2025-01-01T00:00:00Z".into(),
+            attestation_hash: None,
+            key_id: None,
         };
         db.insert_version(&v).unwrap();
 
@@ -472,6 +545,8 @@ mod tests {
             dependencies_json: "{}".into(),
             yanked: false,
             published_at: "2025-01-01T00:00:00Z".into(),
+            attestation_hash: None,
+            key_id: None,
         };
         db.insert_version(&v).unwrap();
 

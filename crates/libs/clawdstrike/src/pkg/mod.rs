@@ -8,11 +8,13 @@ pub mod index;
 pub mod integrity;
 pub mod lockfile;
 pub mod manifest;
+pub mod merkle;
 pub mod resolver;
 pub mod resolver_deps;
 pub mod store;
 #[cfg(feature = "wasm-plugin-runtime")]
 pub mod test_runner;
+pub mod trust;
 pub mod version;
 
 pub use archive::{content_hash, pack, unpack};
@@ -32,4 +34,5 @@ pub use test_runner::{
     parse_guard_test_file, parse_guard_test_suite, run_guard_tests, GuardTestFixture,
     GuardTestResult, GuardTestSuite,
 };
+pub use trust::{check_trust, compute_trust_level, TrustError, TrustLevel, TrustRequirement};
 pub use version::{parse_version, parse_version_req, VersionReq};

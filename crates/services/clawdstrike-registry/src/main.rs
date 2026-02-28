@@ -5,11 +5,13 @@ use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod api;
+mod attestation;
 mod auth;
 mod config;
 mod db;
 mod error;
 mod index;
+mod keys;
 mod state;
 mod storage;
 

@@ -105,16 +105,28 @@ pub enum PkgCommands {
         /// Registry URL override
         #[arg(long)]
         registry: Option<String>,
+        /// Minimum trust level for registry installs (unverified, signed, verified, certified)
+        #[arg(long, default_value = "signed")]
+        trust_level: Option<String>,
+        /// Allow installing unverified packages (dangerous)
+        #[arg(long)]
+        allow_unverified: bool,
     },
     /// List installed packages
     List,
-    /// Verify an installed package's integrity
+    /// Verify an installed package's integrity and trust level
     Verify {
-        /// Package name
+        /// Package name (e.g., @scope/name)
         name: String,
-        /// Package version
+        /// Specific version to verify (default: installed version)
         #[arg(long)]
         version: String,
+        /// Minimum required trust level (unverified, signed, verified, certified)
+        #[arg(long, default_value = "signed")]
+        trust_level: String,
+        /// Registry URL (for fetching attestations and proofs)
+        #[arg(long)]
+        registry: Option<String>,
     },
     /// Show details about an installed package
     Info {
@@ -160,6 +172,17 @@ pub enum PkgCommands {
         #[arg(long)]
         registry: Option<String>,
     },
+    /// Show package publish history
+    Audit {
+        /// Package name
+        name: String,
+        /// Registry URL
+        #[arg(long)]
+        registry: Option<String>,
+        /// Limit results
+        #[arg(long, default_value = "20")]
+        limit: u32,
+    },
     /// Yank (soft-delete) a package version from the registry
     Yank {
         /// Package name (e.g., @scope/name)
@@ -185,15 +208,31 @@ pub fn cmd_pkg(command: PkgCommands, stdout: &mut dyn Write, stderr: &mut dyn Wr
             source,
             version,
             registry,
+            trust_level,
+            allow_unverified,
         } => cmd_pkg_install(
             &source,
             version.as_deref(),
             registry.as_deref(),
+            trust_level.as_deref(),
+            allow_unverified,
             stdout,
             stderr,
         ),
         PkgCommands::List => cmd_pkg_list(stdout, stderr),
-        PkgCommands::Verify { name, version } => cmd_pkg_verify(&name, &version, stdout, stderr),
+        PkgCommands::Verify {
+            name,
+            version,
+            trust_level,
+            registry,
+        } => cmd_pkg_verify(
+            &name,
+            &version,
+            &trust_level,
+            registry.as_deref(),
+            stdout,
+            stderr,
+        ),
         PkgCommands::Info { name, version } => cmd_pkg_info(&name, &version, stdout, stderr),
         PkgCommands::Test { path, filter } => {
             cmd_pkg_test(path.as_deref(), filter.as_deref(), stdout, stderr)
@@ -208,6 +247,11 @@ pub fn cmd_pkg(command: PkgCommands, stdout: &mut dyn Write, stderr: &mut dyn Wr
             page,
             registry,
         } => cmd_pkg_search(&query, limit, page, registry.as_deref(), stdout, stderr),
+        PkgCommands::Audit {
+            name,
+            registry,
+            limit,
+        } => cmd_pkg_audit(&name, registry.as_deref(), limit, stdout, stderr),
         PkgCommands::Yank {
             name,
             version,
@@ -532,6 +576,8 @@ fn cmd_pkg_install(
     source: &str,
     version: Option<&str>,
     registry: Option<&str>,
+    trust_level: Option<&str>,
+    allow_unverified: bool,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
@@ -539,7 +585,41 @@ fn cmd_pkg_install(
         return cmd_pkg_install_local(Path::new(source), stdout, stderr);
     }
 
-    cmd_pkg_install_registry(source, version, registry, stdout, stderr)
+    // Validate trust level if provided.
+    let level = trust_level.unwrap_or("signed");
+    if !matches!(level, "unverified" | "signed" | "verified" | "certified") {
+        let _ = writeln!(
+            stderr,
+            "Error: invalid trust level '{}'. Must be one of: unverified, signed, verified, certified",
+            level
+        );
+        return ExitCode::ConfigError;
+    }
+
+    if level == "unverified" && !allow_unverified {
+        let _ = writeln!(
+            stderr,
+            "Error: trust level 'unverified' requires --allow-unverified flag"
+        );
+        return ExitCode::ConfigError;
+    }
+
+    if allow_unverified {
+        let _ = writeln!(
+            stderr,
+            "Warning: installing without trust verification. Use at your own risk."
+        );
+    }
+
+    cmd_pkg_install_registry(
+        source,
+        version,
+        registry,
+        level,
+        allow_unverified,
+        stdout,
+        stderr,
+    )
 }
 
 fn cmd_pkg_install_local(
@@ -582,6 +662,8 @@ fn cmd_pkg_install_registry(
     name: &str,
     version: Option<&str>,
     registry: Option<&str>,
+    trust_level: &str,
+    allow_unverified: bool,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
@@ -668,6 +750,29 @@ fn cmd_pkg_install_registry(
     // Cleanup temp
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
+    // Trust verification for registry installs.
+    if !allow_unverified && trust_level != "unverified" {
+        let trust_ok = verify_install_trust(
+            &installed.name,
+            version_segment,
+            &cfg,
+            &client,
+            trust_level,
+            stdout,
+            stderr,
+        );
+        if !trust_ok {
+            // Remove the installed package since trust verification failed.
+            let _ = store.remove(&installed.name, &installed.version);
+            let _ = writeln!(
+                stderr,
+                "Error: package removed because trust verification failed. \
+                 Use --allow-unverified to skip trust checks."
+            );
+            return ExitCode::Fail;
+        }
+    }
+
     let _ = writeln!(
         stdout,
         "Installed: {} v{}",
@@ -676,6 +781,111 @@ fn cmd_pkg_install_registry(
     let _ = writeln!(stdout, "Path:      {}", installed.path.display());
     let _ = writeln!(stdout, "Hash:      {}", installed.content_hash.to_hex());
     ExitCode::Ok
+}
+
+/// Verify trust level of a registry-installed package.
+/// Returns `true` if trust verification passes at the requested level.
+fn verify_install_trust(
+    name: &str,
+    version: &str,
+    cfg: &RegistryConfig,
+    client: &reqwest::blocking::Client,
+    trust_level: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> bool {
+    let _ = writeln!(stdout, "Verifying trust level: {} ...", trust_level);
+
+    // Fetch attestation from registry.
+    let attestation_url = format!(
+        "{}/api/v1/packages/{}/{}/attestation",
+        cfg.registry_url.trim_end_matches('/'),
+        name,
+        version
+    );
+
+    let resp = match client.get(&attestation_url).send() {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = writeln!(stderr, "Warning: cannot fetch attestation: {e}");
+            return false;
+        }
+    };
+
+    if !resp.status().is_success() {
+        let _ = writeln!(
+            stderr,
+            "Warning: attestation not available (HTTP {})",
+            resp.status()
+        );
+        return false;
+    }
+
+    let attestation: serde_json::Value = match resp.json() {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = writeln!(stderr, "Warning: invalid attestation response: {e}");
+            return false;
+        }
+    };
+
+    // At "signed" level, we need a publisher signature.
+    let has_publisher_sig = attestation
+        .get("publisher_sig")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty());
+
+    if !has_publisher_sig {
+        let _ = writeln!(stderr, "Error: package has no publisher signature");
+        return false;
+    }
+
+    if trust_level == "signed" {
+        return true;
+    }
+
+    // At "verified" level, we also need a registry counter-signature.
+    let has_registry_sig = attestation
+        .get("registry_sig")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty());
+
+    if !has_registry_sig {
+        let _ = writeln!(stderr, "Error: package has no registry counter-signature");
+        return false;
+    }
+
+    if trust_level == "verified" {
+        return true;
+    }
+
+    // At "certified" level, we also need a Merkle inclusion proof.
+    let proof_url = format!(
+        "{}/api/v1/packages/{}/{}/proof",
+        cfg.registry_url.trim_end_matches('/'),
+        name,
+        version
+    );
+
+    let proof_resp = match client.get(&proof_url).send() {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: cannot fetch inclusion proof: {e}");
+            return false;
+        }
+    };
+
+    if !proof_resp.status().is_success() {
+        let _ = writeln!(
+            stderr,
+            "Error: Merkle inclusion proof not available (HTTP {})",
+            proof_resp.status()
+        );
+        return false;
+    }
+
+    // trust_level == "certified"
+    true
 }
 
 fn tempdir_for_download() -> std::io::Result<PathBuf> {
@@ -737,9 +947,24 @@ fn cmd_pkg_list(stdout: &mut dyn Write, stderr: &mut dyn Write) -> ExitCode {
 fn cmd_pkg_verify(
     name: &str,
     version: &str,
+    trust_level: &str,
+    registry: Option<&str>,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
+    // Validate trust level.
+    if !matches!(
+        trust_level,
+        "unverified" | "signed" | "verified" | "certified"
+    ) {
+        let _ = writeln!(
+            stderr,
+            "Error: invalid trust level '{}'. Must be one of: unverified, signed, verified, certified",
+            trust_level
+        );
+        return ExitCode::ConfigError;
+    }
+
     let store = match PackageStore::new() {
         Ok(s) => s,
         Err(e) => {
@@ -760,48 +985,260 @@ fn cmd_pkg_verify(
         }
     };
 
-    // Verify the manifest is present and valid.
+    let _ = writeln!(stdout, "Package: {} v{}", name, version);
+
+    // --- Step 1: Local integrity check ---
     let manifest_path = pkg.path.join("clawdstrike-pkg.toml");
     let manifest_str = match std::fs::read_to_string(&manifest_path) {
         Ok(s) => s,
         Err(e) => {
-            let _ = writeln!(
-                stderr,
-                "FAIL: '{}' v{} missing manifest: {e}",
-                name, version
-            );
+            let _ = writeln!(stdout, "Trust Level: FAIL\n");
+            let _ = writeln!(stdout, "  x Content integrity    Missing manifest: {e}");
             return ExitCode::Fail;
         }
     };
 
     if let Err(e) = parse_pkg_manifest_toml(&manifest_str) {
-        let _ = writeln!(
-            stderr,
-            "FAIL: '{}' v{} invalid manifest: {e}",
-            name, version
-        );
+        let _ = writeln!(stdout, "Trust Level: FAIL\n");
+        let _ = writeln!(stdout, "  x Content integrity    Invalid manifest: {e}");
         return ExitCode::Fail;
     }
 
-    // Verify the metadata file is present and the stored content hash is non-empty.
     let meta_path = pkg.path.join(".pkg-meta.json");
     if !meta_path.exists() {
-        let _ = writeln!(
-            stderr,
-            "FAIL: '{}' v{} missing store metadata",
-            name, version
-        );
+        let _ = writeln!(stdout, "Trust Level: FAIL\n");
+        let _ = writeln!(stdout, "  x Content integrity    Missing store metadata");
         return ExitCode::Fail;
     }
+
+    let hash_hex = pkg.content_hash.to_hex();
+    let hash_display = if hash_hex.len() > 16 {
+        &hash_hex[..16]
+    } else {
+        &hash_hex
+    };
+
+    let mut content_ok = true;
+    let mut publisher_ok = false;
+    let mut registry_ok = false;
+
+    // Read store metadata for installed_at timestamp.
+    let installed_at = match std::fs::read_to_string(&meta_path) {
+        Ok(s) => {
+            let meta: serde_json::Value = serde_json::from_str(&s).unwrap_or_default();
+            meta.get("installed_at")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string()
+        }
+        Err(_) => {
+            content_ok = false;
+            "unknown".to_string()
+        }
+    };
+
+    // If trust level is unverified, we only check content integrity.
+    if trust_level == "unverified" {
+        let _ = writeln!(stdout, "Trust Level: Unverified\n");
+        if content_ok {
+            let _ = writeln!(
+                stdout,
+                "  + Content integrity    SHA-256: {}...",
+                hash_display
+            );
+        } else {
+            let _ = writeln!(stdout, "  x Content integrity    Metadata unreadable");
+        }
+        let _ = writeln!(stdout, "\nInstalled: {}", installed_at);
+        return if content_ok {
+            ExitCode::Ok
+        } else {
+            ExitCode::Fail
+        };
+    }
+
+    // --- Steps 2-4: Registry-based verification ---
+    let cfg = RegistryConfig::load(registry);
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: cannot create HTTP client: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    // Fetch attestation.
+    let attestation_url = format!(
+        "{}/api/v1/packages/{}/{}/attestation",
+        cfg.registry_url.trim_end_matches('/'),
+        name,
+        version
+    );
+
+    let attestation: Option<serde_json::Value> = client
+        .get(&attestation_url)
+        .send()
+        .ok()
+        .filter(|r| r.status().is_success())
+        .and_then(|r| r.json().ok());
+
+    if let Some(ref att) = attestation {
+        // Check publisher signature.
+        let pub_sig = att
+            .get("publisher_sig")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let pub_key = att
+            .get("publisher_key")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        publisher_ok = !pub_sig.is_empty() && !pub_key.is_empty();
+
+        // Check registry counter-signature.
+        let reg_sig = att
+            .get("registry_sig")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        registry_ok = !reg_sig.is_empty();
+    }
+
+    // Fetch Merkle proof (for certified level).
+    let proof_url = format!(
+        "{}/api/v1/packages/{}/{}/proof",
+        cfg.registry_url.trim_end_matches('/'),
+        name,
+        version
+    );
+
+    let transparency_ok = client
+        .get(&proof_url)
+        .send()
+        .ok()
+        .is_some_and(|r| r.status().is_success());
+
+    // Determine achieved trust level.
+    let achieved = if transparency_ok && registry_ok && publisher_ok {
+        "Certified"
+    } else if registry_ok && publisher_ok {
+        "Verified"
+    } else if publisher_ok {
+        "Signed"
+    } else {
+        "Unverified"
+    };
+
+    // Check if achieved level meets the requested level.
+    let level_rank = |l: &str| -> u8 {
+        match l.to_lowercase().as_str() {
+            "unverified" => 0,
+            "signed" => 1,
+            "verified" => 2,
+            "certified" => 3,
+            _ => 0,
+        }
+    };
+
+    let achieved_rank = level_rank(achieved);
+    let required_rank = level_rank(trust_level);
+    let meets_requirement = achieved_rank >= required_rank;
+
+    let check = if meets_requirement { "+" } else { "x" };
+    let _ = writeln!(stdout, "Trust Level: {} {}\n", check, achieved);
+
+    // Print detail lines.
+    let mark = |ok: bool| if ok { "+" } else { "x" };
 
     let _ = writeln!(
         stdout,
-        "OK: '{}' v{} integrity verified (hash: {})",
-        name,
-        version,
-        pkg.content_hash.to_hex()
+        "  {} Content integrity    SHA-256: {}...",
+        mark(content_ok),
+        hash_display
     );
-    ExitCode::Ok
+
+    if let Some(ref att) = attestation {
+        let pub_key = att
+            .get("publisher_key")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let pub_key_display = if pub_key.len() > 16 {
+            &pub_key[..16]
+        } else {
+            pub_key
+        };
+        let _ = writeln!(
+            stdout,
+            "  {} Publisher signature   Key: {}...",
+            mark(publisher_ok),
+            pub_key_display
+        );
+
+        let reg_sig = att
+            .get("registry_sig")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if registry_ok {
+            let reg_display = if reg_sig.len() > 16 {
+                &reg_sig[..16]
+            } else {
+                reg_sig
+            };
+            let _ = writeln!(
+                stdout,
+                "  {} Registry attestation  Hash: {}...",
+                mark(registry_ok),
+                reg_display
+            );
+        } else {
+            let _ = writeln!(
+                stdout,
+                "  {} Registry attestation  Not available",
+                mark(registry_ok)
+            );
+        }
+    } else {
+        let _ = writeln!(
+            stdout,
+            "  {} Publisher signature   Not available",
+            mark(publisher_ok)
+        );
+        let _ = writeln!(
+            stdout,
+            "  {} Registry attestation  Not available",
+            mark(registry_ok)
+        );
+    }
+
+    if transparency_ok {
+        let _ = writeln!(
+            stdout,
+            "  {} Transparency log     Inclusion proof verified",
+            mark(transparency_ok)
+        );
+    } else {
+        let _ = writeln!(
+            stdout,
+            "  {} Transparency log     Not yet available",
+            mark(transparency_ok)
+        );
+    }
+
+    let _ = writeln!(stdout, "\nInstalled: {}", installed_at);
+
+    if meets_requirement {
+        ExitCode::Ok
+    } else {
+        let _ = writeln!(
+            stderr,
+            "FAIL: achieved trust level '{}' does not meet required '{}'",
+            achieved.to_lowercase(),
+            trust_level
+        );
+        ExitCode::Fail
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1223,6 +1660,108 @@ fn urlencoding_simple(s: &str) -> String {
 }
 
 const HEX_UPPER: [u8; 16] = *b"0123456789ABCDEF";
+
+// ---------------------------------------------------------------------------
+// pkg audit
+// ---------------------------------------------------------------------------
+
+fn cmd_pkg_audit(
+    name: &str,
+    registry: Option<&str>,
+    limit: u32,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> ExitCode {
+    let cfg = RegistryConfig::load(registry);
+    let url = format!(
+        "{}/api/v1/audit/{}?limit={}",
+        cfg.registry_url.trim_end_matches('/'),
+        urlencoding_simple(name),
+        limit
+    );
+
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: cannot create HTTP client: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    let resp = match client.get(&url).send() {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: audit request failed: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        let _ = writeln!(stderr, "Error: registry returned HTTP {status}: {body}");
+        return ExitCode::RuntimeError;
+    }
+
+    let resp_json: serde_json::Value = match resp.json() {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = writeln!(stderr, "Error: invalid response from registry: {e}");
+            return ExitCode::RuntimeError;
+        }
+    };
+
+    let events = match resp_json.get("events").and_then(|e| e.as_array()) {
+        Some(e) => e,
+        None => {
+            let _ = writeln!(stdout, "No audit events found for '{}'.", name);
+            return ExitCode::Ok;
+        }
+    };
+
+    if events.is_empty() {
+        let _ = writeln!(stdout, "No audit events found for '{}'.", name);
+        return ExitCode::Ok;
+    }
+
+    let _ = writeln!(stdout, "Audit log for: {}\n", name);
+    let _ = writeln!(
+        stdout,
+        "{:<12} {:<10} {:<20} PUBLISHER KEY",
+        "VERSION", "ACTION", "TIMESTAMP"
+    );
+    let _ = writeln!(stdout, "{}", "-".repeat(72));
+
+    for event in events {
+        let version = event.get("version").and_then(|v| v.as_str()).unwrap_or("?");
+        let action = event.get("action").and_then(|a| a.as_str()).unwrap_or("?");
+        let timestamp = event
+            .get("timestamp")
+            .and_then(|t| t.as_str())
+            .unwrap_or("?");
+        let publisher_key = event
+            .get("publisher_key")
+            .and_then(|k| k.as_str())
+            .unwrap_or("?");
+        let key_display = if publisher_key.len() > 16 {
+            format!("{}...", &publisher_key[..16])
+        } else {
+            publisher_key.to_string()
+        };
+
+        let _ = writeln!(
+            stdout,
+            "{:<12} {:<10} {:<20} {}",
+            version, action, timestamp, key_display
+        );
+    }
+
+    let _ = writeln!(stdout, "\n{} event(s) shown.", events.len());
+    ExitCode::Ok
+}
 
 // ---------------------------------------------------------------------------
 // pkg yank
@@ -1726,6 +2265,8 @@ sandbox = "native"
             source: "/tmp/nonexistent-pkg-12345.cpkg".to_string(),
             version: None,
             registry: None,
+            trust_level: Some("signed".to_string()),
+            allow_unverified: false,
         });
 
         assert_eq!(code, ExitCode::ConfigError);

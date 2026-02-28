@@ -7,6 +7,7 @@ use hush_core::Keypair;
 use crate::config::Config;
 use crate::db::RegistryDb;
 use crate::error::RegistryError;
+use crate::keys::RegistryKeyManager;
 use crate::storage::BlobStorage;
 
 /// Shared application state, cheaply cloneable via `Arc`.
@@ -16,6 +17,7 @@ pub struct AppState {
     pub db: Arc<Mutex<RegistryDb>>,
     pub blobs: Arc<BlobStorage>,
     pub registry_keypair: Arc<Keypair>,
+    pub key_manager: Arc<Mutex<RegistryKeyManager>>,
 }
 
 impl AppState {
@@ -42,11 +44,19 @@ impl AppState {
             "Registry keypair loaded"
         );
 
+        // Initialize key manager with the loaded keypair.
+        let key_manager = RegistryKeyManager::new(keypair.clone());
+
+        // Ensure the initial key is recorded in the database.
+        let key_info = key_manager.current_key();
+        db.upsert_registry_key(key_info)?;
+
         Ok(Self {
             config: Arc::new(config),
             db: Arc::new(Mutex::new(db)),
             blobs: Arc::new(blobs),
             registry_keypair: Arc::new(keypair),
+            key_manager: Arc::new(Mutex::new(key_manager)),
         })
     }
 }

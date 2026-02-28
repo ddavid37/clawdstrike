@@ -1,9 +1,13 @@
 //! HTTP API for the package registry.
 
+pub mod attestation;
+pub mod audit;
+pub mod checkpoint;
 pub mod download;
 pub mod health;
 pub mod index;
 pub mod info;
+pub mod proof;
 pub mod publish;
 pub mod search;
 pub mod yank;
@@ -39,7 +43,20 @@ pub fn create_router(state: AppState) -> Router {
             get(download::download),
         )
         .route("/api/v1/search", get(search::search))
-        .route("/api/v1/index/{name}", get(index::sparse_index));
+        .route("/api/v1/index/{name}", get(index::sparse_index))
+        .route(
+            "/api/v1/packages/{name}/{version}/attestation",
+            get(attestation::get_attestation),
+        )
+        .route(
+            "/api/v1/packages/{name}/{version}/proof",
+            get(proof::get_proof),
+        )
+        .route(
+            "/api/v1/transparency/checkpoint",
+            get(checkpoint::get_checkpoint),
+        )
+        .route("/api/v1/audit/{name}", get(audit::get_audit));
 
     // Authenticated routes (publish, yank).
     let auth_routes = Router::new()

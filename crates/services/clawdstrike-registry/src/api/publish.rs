@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use hush_core::{PublicKey, Signature};
 
+use crate::attestation;
 use crate::db::VersionRow;
 use crate::error::RegistryError;
 use crate::index;
@@ -30,6 +31,8 @@ pub struct PublishResponse {
     pub checksum: String,
     pub registry_sig: String,
     pub registry_key: String,
+    pub attestation_hash: Option<String>,
+    pub key_id: Option<String>,
 }
 
 /// POST /api/v1/packages
@@ -80,7 +83,34 @@ pub async fn publish(
 
     let now = chrono::Utc::now().to_rfc3339();
 
-    // 8. Upsert package + insert version (under lock).
+    // 8. Create publish attestation using the key manager.
+    let (attestation_hash, key_id) = {
+        let key_mgr = state
+            .key_manager
+            .lock()
+            .map_err(|e| RegistryError::Internal(format!("key_manager lock poisoned: {e}")))?;
+
+        let current = key_mgr.current_key();
+        let current_keypair = key_mgr.current_keypair();
+        let kid = current.key_id.clone();
+
+        let att = attestation::create_publish_attestation(&attestation::AttestationInput {
+            package_name: &name,
+            version: &version,
+            publisher_key: &req.publisher_key,
+            publisher_signature: &req.publisher_sig,
+            content_hash: &checksum,
+            registry_signature: &registry_sig_hex,
+            leaf_index: None, // populated by transparency log in a later phase
+            timestamp: &now,
+        });
+
+        let signed = attestation::sign_attestation(&att, current_keypair, &kid)?;
+        let att_hash = signed.attestation.hash()?;
+        (att_hash, kid)
+    };
+
+    // 9. Upsert package + insert version (under lock).
     {
         let db = state
             .db
@@ -101,9 +131,11 @@ pub async fn publish(
             dependencies_json: deps_json,
             yanked: false,
             published_at: now,
+            attestation_hash: Some(attestation_hash.clone()),
+            key_id: Some(key_id.clone()),
         })?;
 
-        // 9. Update sparse index.
+        // 10. Update sparse index.
         index::update_index(&db, &state.config.index_dir(), &name)?;
     }
 
@@ -115,5 +147,7 @@ pub async fn publish(
         checksum,
         registry_sig: registry_sig_hex,
         registry_key: registry_key_hex,
+        attestation_hash: Some(attestation_hash),
+        key_id: Some(key_id),
     }))
 }

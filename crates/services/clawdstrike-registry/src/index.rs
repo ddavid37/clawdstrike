@@ -138,6 +138,8 @@ mod tests {
             dependencies_json: r#"{"dep-a": "^1.0"}"#.into(),
             yanked: false,
             published_at: "2025-01-01T00:00:00Z".into(),
+            attestation_hash: None,
+            key_id: None,
         })
         .unwrap();
 
