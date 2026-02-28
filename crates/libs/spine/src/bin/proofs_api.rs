@@ -255,25 +255,35 @@ async fn load_leaves_for_tree_range(
             deliver_policy: async_nats::jetstream::consumer::DeliverPolicy::ByStartSequence {
                 start_sequence: start_seq,
             },
+            ack_policy: async_nats::jetstream::consumer::AckPolicy::None,
             ..Default::default()
         })
         .await
         .map_err(|_| ApiError::internal("failed to create spine log consumer"))?;
 
-    let mut messages = consumer
-        .fetch()
-        .max_messages(max_messages)
-        .messages()
-        .await
-        .map_err(|_| ApiError::internal("failed to fetch spine log leaves"))?;
-
     let mut leaves = Vec::with_capacity(max_messages);
-    while let Some(msg) = messages.next().await {
-        let msg = msg.map_err(|_| ApiError::internal("failed to read spine log leaf"))?;
-        if msg.payload.len() != 32 {
-            return Err(ApiError::internal("invalid spine log leaf payload length"));
+    while leaves.len() < max_messages {
+        let remaining = max_messages - leaves.len();
+        let mut messages = consumer
+            .fetch()
+            .max_messages(next_leaf_batch_size(remaining))
+            .messages()
+            .await
+            .map_err(|_| ApiError::internal("failed to fetch spine log leaves"))?;
+
+        let mut pulled = 0_usize;
+        while let Some(msg) = messages.next().await {
+            let msg = msg.map_err(|_| ApiError::internal("failed to read spine log leaf"))?;
+            if msg.payload.len() != 32 {
+                return Err(ApiError::internal("invalid spine log leaf payload length"));
+            }
+            leaves.push(msg.payload.to_vec());
+            pulled += 1;
         }
-        leaves.push(msg.payload.to_vec());
+
+        if pulled == 0 {
+            break;
+        }
     }
 
     if leaves.len() != max_messages {
@@ -283,6 +293,12 @@ async fn load_leaves_for_tree_range(
     }
 
     Ok(leaves)
+}
+
+const LEAF_FETCH_BATCH_SIZE: usize = 512;
+
+fn next_leaf_batch_size(remaining: usize) -> usize {
+    remaining.min(LEAF_FETCH_BATCH_SIZE)
 }
 
 async fn healthz() -> &'static str {
@@ -804,6 +820,45 @@ async fn main() -> Result<()> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
+    use std::future::Future;
+
+    async fn collect_leaves_with_fetch<F, Fut>(
+        start_seq: u64,
+        max_messages: usize,
+        mut fetch_batch: F,
+    ) -> Result<Vec<Vec<u8>>, ApiError>
+    where
+        F: FnMut(u64, usize) -> Fut,
+        Fut: Future<Output = Result<Vec<Vec<u8>>, ApiError>>,
+    {
+        let mut leaves = Vec::with_capacity(max_messages);
+        let mut next_start_seq = start_seq;
+
+        while leaves.len() < max_messages {
+            let remaining = max_messages - leaves.len();
+            let batch_size = next_leaf_batch_size(remaining);
+            let batch = fetch_batch(next_start_seq, batch_size).await?;
+            let pulled = batch.len();
+            if pulled == 0 {
+                break;
+            }
+            leaves.extend(batch);
+            next_start_seq = next_start_seq
+                .checked_add(
+                    u64::try_from(pulled)
+                        .map_err(|_| ApiError::internal("spine log sequence overflow"))?,
+                )
+                .ok_or_else(|| ApiError::internal("spine log sequence overflow"))?;
+        }
+
+        if leaves.len() != max_messages {
+            return Err(ApiError::internal(
+                "spine log incomplete for requested tree_size",
+            ));
+        }
+        Ok(leaves)
+    }
 
     #[test]
     fn normalize_hash_param_accepts_prefixed_or_unprefixed() {
@@ -920,5 +975,196 @@ mod tests {
         }
         assert!(!truncated);
         assert!(selected.is_empty());
+    }
+
+    #[test]
+    fn leaf_fetch_plan_batches_large_tree_sizes() {
+        let mut remaining = 2000usize;
+        let mut plan = Vec::new();
+        while remaining > 0 {
+            let batch = next_leaf_batch_size(remaining);
+            plan.push(batch);
+            remaining -= batch;
+        }
+        assert_eq!(plan, vec![512, 512, 512, 464]);
+    }
+
+    #[test]
+    fn leaf_fetch_plan_handles_small_tree_sizes() {
+        let mut remaining = 17usize;
+        let mut plan = Vec::new();
+        while remaining > 0 {
+            let batch = next_leaf_batch_size(remaining);
+            plan.push(batch);
+            remaining -= batch;
+        }
+        assert_eq!(plan, vec![17]);
+    }
+
+    fn leaf(byte: u8) -> Vec<u8> {
+        vec![byte; 32]
+    }
+
+    #[tokio::test]
+    async fn collect_leaves_with_fetch_retries_until_complete() {
+        let mut calls = Vec::new();
+        let mut batches = VecDeque::from(vec![vec![leaf(1), leaf(2)], vec![leaf(3)]]);
+
+        let leaves = collect_leaves_with_fetch(10, 3, |start_seq, batch_size| {
+            calls.push((start_seq, batch_size));
+            let batch = batches.pop_front().unwrap_or_default();
+            async move { Ok(batch) }
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(calls, vec![(10, 3), (12, 1)]);
+        assert_eq!(leaves, vec![leaf(1), leaf(2), leaf(3)]);
+    }
+
+    #[tokio::test]
+    async fn collect_leaves_with_fetch_errors_on_incomplete_stream() {
+        let mut batches = VecDeque::from(vec![vec![leaf(7)], Vec::new()]);
+
+        let err = collect_leaves_with_fetch(1, 2, |_, _| {
+            let batch = batches.pop_front().unwrap_or_default();
+            async move { Ok(batch) }
+        })
+        .await
+        .unwrap_err();
+
+        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(err.message, "spine log incomplete for requested tree_size");
+    }
+
+    #[tokio::test]
+    async fn collect_leaves_with_fetch_propagates_fetch_errors() {
+        let err = collect_leaves_with_fetch(5, 1, |_, _| async {
+            Err(ApiError::internal("simulated fetch failure"))
+        })
+        .await
+        .unwrap_err();
+
+        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(err.message, "simulated fetch failure");
+    }
+
+    #[tokio::test]
+    async fn collect_leaves_with_fetch_detects_sequence_overflow() {
+        let err = collect_leaves_with_fetch(u64::MAX, 2, |_, _| async { Ok(vec![leaf(9)]) })
+            .await
+            .unwrap_err();
+
+        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(err.message, "spine log sequence overflow");
+    }
+
+    #[test]
+    fn next_leaf_batch_size_exhaustive_small_and_boundary_values() {
+        assert_eq!(next_leaf_batch_size(1), 1);
+        assert_eq!(next_leaf_batch_size(2), 2);
+        assert_eq!(next_leaf_batch_size(3), 3);
+        assert_eq!(next_leaf_batch_size(4), 4);
+        assert_eq!(next_leaf_batch_size(5), 5);
+        assert_eq!(next_leaf_batch_size(6), 6);
+        assert_eq!(next_leaf_batch_size(7), 7);
+        assert_eq!(next_leaf_batch_size(8), 8);
+        assert_eq!(next_leaf_batch_size(9), 9);
+        assert_eq!(next_leaf_batch_size(10), 10);
+        assert_eq!(next_leaf_batch_size(11), 11);
+        assert_eq!(next_leaf_batch_size(12), 12);
+        assert_eq!(next_leaf_batch_size(13), 13);
+        assert_eq!(next_leaf_batch_size(14), 14);
+        assert_eq!(next_leaf_batch_size(15), 15);
+        assert_eq!(next_leaf_batch_size(16), 16);
+        assert_eq!(next_leaf_batch_size(17), 17);
+        assert_eq!(next_leaf_batch_size(18), 18);
+        assert_eq!(next_leaf_batch_size(19), 19);
+        assert_eq!(next_leaf_batch_size(20), 20);
+        assert_eq!(next_leaf_batch_size(21), 21);
+        assert_eq!(next_leaf_batch_size(22), 22);
+        assert_eq!(next_leaf_batch_size(23), 23);
+        assert_eq!(next_leaf_batch_size(24), 24);
+        assert_eq!(next_leaf_batch_size(25), 25);
+        assert_eq!(next_leaf_batch_size(26), 26);
+        assert_eq!(next_leaf_batch_size(27), 27);
+        assert_eq!(next_leaf_batch_size(28), 28);
+        assert_eq!(next_leaf_batch_size(29), 29);
+        assert_eq!(next_leaf_batch_size(30), 30);
+        assert_eq!(next_leaf_batch_size(31), 31);
+        assert_eq!(next_leaf_batch_size(32), 32);
+        assert_eq!(next_leaf_batch_size(33), 33);
+        assert_eq!(next_leaf_batch_size(34), 34);
+        assert_eq!(next_leaf_batch_size(35), 35);
+        assert_eq!(next_leaf_batch_size(36), 36);
+        assert_eq!(next_leaf_batch_size(37), 37);
+        assert_eq!(next_leaf_batch_size(38), 38);
+        assert_eq!(next_leaf_batch_size(39), 39);
+        assert_eq!(next_leaf_batch_size(40), 40);
+        assert_eq!(next_leaf_batch_size(41), 41);
+        assert_eq!(next_leaf_batch_size(42), 42);
+        assert_eq!(next_leaf_batch_size(43), 43);
+        assert_eq!(next_leaf_batch_size(44), 44);
+        assert_eq!(next_leaf_batch_size(45), 45);
+        assert_eq!(next_leaf_batch_size(46), 46);
+        assert_eq!(next_leaf_batch_size(47), 47);
+        assert_eq!(next_leaf_batch_size(48), 48);
+        assert_eq!(next_leaf_batch_size(49), 49);
+        assert_eq!(next_leaf_batch_size(50), 50);
+        assert_eq!(next_leaf_batch_size(51), 51);
+        assert_eq!(next_leaf_batch_size(52), 52);
+        assert_eq!(next_leaf_batch_size(53), 53);
+        assert_eq!(next_leaf_batch_size(54), 54);
+        assert_eq!(next_leaf_batch_size(55), 55);
+        assert_eq!(next_leaf_batch_size(56), 56);
+        assert_eq!(next_leaf_batch_size(57), 57);
+        assert_eq!(next_leaf_batch_size(58), 58);
+        assert_eq!(next_leaf_batch_size(59), 59);
+        assert_eq!(next_leaf_batch_size(60), 60);
+        assert_eq!(next_leaf_batch_size(61), 61);
+        assert_eq!(next_leaf_batch_size(62), 62);
+        assert_eq!(next_leaf_batch_size(63), 63);
+        assert_eq!(next_leaf_batch_size(64), 64);
+        assert_eq!(next_leaf_batch_size(65), 65);
+        assert_eq!(next_leaf_batch_size(66), 66);
+        assert_eq!(next_leaf_batch_size(67), 67);
+        assert_eq!(next_leaf_batch_size(68), 68);
+        assert_eq!(next_leaf_batch_size(69), 69);
+        assert_eq!(next_leaf_batch_size(70), 70);
+        assert_eq!(next_leaf_batch_size(71), 71);
+        assert_eq!(next_leaf_batch_size(72), 72);
+        assert_eq!(next_leaf_batch_size(73), 73);
+        assert_eq!(next_leaf_batch_size(74), 74);
+        assert_eq!(next_leaf_batch_size(75), 75);
+        assert_eq!(next_leaf_batch_size(76), 76);
+        assert_eq!(next_leaf_batch_size(77), 77);
+        assert_eq!(next_leaf_batch_size(78), 78);
+        assert_eq!(next_leaf_batch_size(79), 79);
+        assert_eq!(next_leaf_batch_size(80), 80);
+        assert_eq!(next_leaf_batch_size(81), 81);
+        assert_eq!(next_leaf_batch_size(82), 82);
+        assert_eq!(next_leaf_batch_size(83), 83);
+        assert_eq!(next_leaf_batch_size(84), 84);
+        assert_eq!(next_leaf_batch_size(85), 85);
+        assert_eq!(next_leaf_batch_size(86), 86);
+        assert_eq!(next_leaf_batch_size(87), 87);
+        assert_eq!(next_leaf_batch_size(88), 88);
+        assert_eq!(next_leaf_batch_size(89), 89);
+        assert_eq!(next_leaf_batch_size(90), 90);
+        assert_eq!(next_leaf_batch_size(91), 91);
+        assert_eq!(next_leaf_batch_size(92), 92);
+        assert_eq!(next_leaf_batch_size(93), 93);
+        assert_eq!(next_leaf_batch_size(94), 94);
+        assert_eq!(next_leaf_batch_size(95), 95);
+        assert_eq!(next_leaf_batch_size(96), 96);
+        assert_eq!(next_leaf_batch_size(97), 97);
+        assert_eq!(next_leaf_batch_size(98), 98);
+        assert_eq!(next_leaf_batch_size(99), 99);
+        assert_eq!(next_leaf_batch_size(100), 100);
+        assert_eq!(next_leaf_batch_size(511), 511);
+        assert_eq!(next_leaf_batch_size(512), 512);
+        assert_eq!(next_leaf_batch_size(513), 512);
+        assert_eq!(next_leaf_batch_size(700), 512);
+        assert_eq!(next_leaf_batch_size(1024), 512);
     }
 }
