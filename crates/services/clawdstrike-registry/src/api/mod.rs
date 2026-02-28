@@ -186,6 +186,22 @@ mod tests {
         std::fs::read(&archive).unwrap()
     }
 
+    async fn create_org_owned_by(state: AppState, org_name: &str, owner: &Keypair) {
+        let owner_key = owner.public_key().to_hex();
+        let payload = format!("org:create:{org_name}:{owner_key}:{org_name}");
+        let _created = org::create_org(
+            State(state),
+            signed_headers(owner, &payload),
+            Json(org::CreateOrgRequest {
+                name: org_name.to_string(),
+                display_name: Some(org_name.to_string()),
+                publisher_key: owner_key,
+            }),
+        )
+        .await
+        .unwrap();
+    }
+
     #[tokio::test]
     async fn api_end_to_end_handlers_cover_core_paths() {
         let (state, _tmp) = test_state();
@@ -520,5 +536,251 @@ mod tests {
         .await
         .unwrap_err();
         assert!(err.to_string().contains("not authorized"));
+    }
+
+    #[tokio::test]
+    async fn create_org_rejects_empty_name() {
+        let (state, _tmp) = test_state();
+        let owner = Keypair::from_seed(&[39u8; 32]);
+        let owner_key = owner.public_key().to_hex();
+        let payload = format!("org:create::{owner_key}:");
+
+        let err = org::create_org(
+            State(state),
+            signed_headers(&owner, &payload),
+            Json(org::CreateOrgRequest {
+                name: "".to_string(),
+                display_name: None,
+                publisher_key: owner_key,
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("organization name must be 1-64 characters"));
+    }
+
+    #[tokio::test]
+    async fn create_org_rejects_invalid_name_characters() {
+        let (state, _tmp) = test_state();
+        let owner = Keypair::from_seed(&[40u8; 32]);
+        let owner_key = owner.public_key().to_hex();
+        let payload = format!("org:create:acme invalid:{owner_key}:ACME");
+
+        let err = org::create_org(
+            State(state),
+            signed_headers(&owner, &payload),
+            Json(org::CreateOrgRequest {
+                name: "acme invalid".to_string(),
+                display_name: Some("ACME".to_string()),
+                publisher_key: owner_key,
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("must contain only alphanumeric characters"));
+    }
+
+    #[tokio::test]
+    async fn list_members_returns_not_found_for_unknown_org() {
+        let (state, _tmp) = test_state();
+        let err = match org::list_members(State(state), Path("missing-org".to_string())).await {
+            Ok(_) => panic!("expected missing org to return not found"),
+            Err(e) => e,
+        };
+        assert!(err
+            .to_string()
+            .contains("organization 'missing-org' not found"));
+    }
+
+    #[tokio::test]
+    async fn list_org_packages_returns_not_found_for_unknown_org() {
+        let (state, _tmp) = test_state();
+        let err = match org::list_org_packages(State(state), Path("missing-org".to_string())).await
+        {
+            Ok(_) => panic!("expected missing org to return not found"),
+            Err(e) => e,
+        };
+        assert!(err
+            .to_string()
+            .contains("organization 'missing-org' not found"));
+    }
+
+    #[tokio::test]
+    async fn invite_member_rejects_invalid_role() {
+        let (state, _tmp) = test_state();
+        let owner = Keypair::from_seed(&[41u8; 32]);
+        create_org_owned_by(state.clone(), "acme", &owner).await;
+
+        let owner_key = owner.public_key().to_hex();
+        let payload = format!("org:invite:acme:{owner_key}:admin");
+        let err = org::invite_member(
+            State(state),
+            Path("acme".to_string()),
+            signed_headers(&owner, &payload),
+            Json(org::InviteMemberRequest {
+                publisher_key: owner_key,
+                role: "admin".to_string(),
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("invalid role 'admin'"));
+    }
+
+    #[tokio::test]
+    async fn invite_member_requires_caller_membership() {
+        let (state, _tmp) = test_state();
+        let owner = Keypair::from_seed(&[42u8; 32]);
+        let stranger = Keypair::from_seed(&[43u8; 32]);
+        let invitee = Keypair::from_seed(&[44u8; 32]);
+        create_org_owned_by(state.clone(), "acme", &owner).await;
+
+        let invitee_key = invitee.public_key().to_hex();
+        let payload = format!("org:invite:acme:{invitee_key}:member");
+        let err = org::invite_member(
+            State(state),
+            Path("acme".to_string()),
+            signed_headers(&stranger, &payload),
+            Json(org::InviteMemberRequest {
+                publisher_key: invitee_key,
+                role: "member".to_string(),
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("caller is not a member of @acme"));
+    }
+
+    #[tokio::test]
+    async fn maintainer_cannot_remove_owner() {
+        let (state, _tmp) = test_state();
+        let owner = Keypair::from_seed(&[45u8; 32]);
+        let maintainer = Keypair::from_seed(&[46u8; 32]);
+        create_org_owned_by(state.clone(), "acme", &owner).await;
+
+        let maintainer_key = maintainer.public_key().to_hex();
+        let invite_payload = format!("org:invite:acme:{maintainer_key}:maintainer");
+        let created = org::invite_member(
+            State(state.clone()),
+            Path("acme".to_string()),
+            signed_headers(&owner, &invite_payload),
+            Json(org::InviteMemberRequest {
+                publisher_key: maintainer_key,
+                role: "maintainer".to_string(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(created.0, StatusCode::CREATED);
+
+        let owner_key = owner.public_key().to_hex();
+        let remove_payload = format!("org:remove:acme:{owner_key}");
+        let err = org::remove_member(
+            State(state),
+            Path(("acme".to_string(), owner_key)),
+            signed_headers(&maintainer, &remove_payload),
+        )
+        .await
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("maintainers cannot remove organization owners"));
+    }
+
+    #[tokio::test]
+    async fn publish_rejects_invalid_base64_archive() {
+        let (state, _tmp) = test_state();
+        let req = publish::PublishRequest {
+            archive_base64: "not-base64!!!".to_string(),
+            publisher_key: "deadbeef".to_string(),
+            publisher_sig: "deadbeef".to_string(),
+            manifest_toml:
+                "[package]\nname = \"demo\"\nversion = \"1.0.0\"\npkg_type = \"guard\"\n"
+                    .to_string(),
+        };
+
+        let err = publish::publish(State(state), HeaderMap::new(), Json(req))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid base64 archive"));
+    }
+
+    #[tokio::test]
+    async fn publish_rejects_non_archive_payload_bytes() {
+        let (state, _tmp) = test_state();
+        let publisher = Keypair::from_seed(&[47u8; 32]);
+        let archive_bytes = b"this-is-not-a-cpkg-archive".to_vec();
+        let hash = hush_core::sha256(&archive_bytes);
+        let req = publish::PublishRequest {
+            archive_base64: base64::engine::general_purpose::STANDARD.encode(&archive_bytes),
+            publisher_key: publisher.public_key().to_hex(),
+            publisher_sig: publisher.sign(hash.as_bytes()).to_hex(),
+            manifest_toml:
+                "[package]\nname = \"demo\"\nversion = \"1.0.0\"\npkg_type = \"guard\"\n"
+                    .to_string(),
+        };
+
+        let err = publish::publish(State(state), HeaderMap::new(), Json(req))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid .cpkg archive payload"));
+    }
+
+    #[tokio::test]
+    async fn publish_rejects_invalid_publisher_key_hex() {
+        let (state, _tmp) = test_state();
+        let publisher = Keypair::from_seed(&[48u8; 32]);
+        let (mut req, _bytes) = publish_request("demo", "1.0.0", &publisher);
+        req.publisher_key = "not-hex".to_string();
+
+        let err = publish::publish(State(state), HeaderMap::new(), Json(req))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid publisher key"));
+    }
+
+    #[tokio::test]
+    async fn publish_rejects_invalid_publisher_signature_hex() {
+        let (state, _tmp) = test_state();
+        let publisher = Keypair::from_seed(&[49u8; 32]);
+        let (mut req, _bytes) = publish_request("demo", "1.0.0", &publisher);
+        req.publisher_sig = "not-hex".to_string();
+
+        let err = publish::publish(State(state), HeaderMap::new(), Json(req))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid publisher signature"));
+    }
+
+    #[tokio::test]
+    async fn publish_rejects_incorrect_publisher_signature() {
+        let (state, _tmp) = test_state();
+        let publisher = Keypair::from_seed(&[50u8; 32]);
+        let (mut req, _bytes) = publish_request("demo", "1.0.0", &publisher);
+        let wrong_hash = hush_core::sha256(b"not-the-archive");
+        req.publisher_sig = publisher.sign(wrong_hash.as_bytes()).to_hex();
+
+        let err = publish::publish(State(state), HeaderMap::new(), Json(req))
+            .await
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("publisher signature verification failed"));
+    }
+
+    #[tokio::test]
+    async fn publish_scoped_package_requires_existing_org_scope() {
+        let (state, _tmp) = test_state();
+        let publisher = Keypair::from_seed(&[51u8; 32]);
+        let (req, _bytes) = publish_request("@missing/demo", "1.0.0", &publisher);
+
+        let err = publish::publish(State(state), HeaderMap::new(), Json(req))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("organization 'missing' not found"));
     }
 }
