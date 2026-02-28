@@ -76,7 +76,7 @@ export class ForbiddenPathGuard implements Guard {
       return GuardResult.block(
         this.name,
         Severity.CRITICAL,
-        `Access to forbidden path: ${path}`
+        `Access to forbidden path: ${path}`,
       ).withDetails({
         path,
         pattern: matchedPattern,

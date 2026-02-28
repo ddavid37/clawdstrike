@@ -17,13 +17,17 @@ describe("gatewayProtocol", () => {
     it("parses request frames", () => {
       expect(
         safeParseGatewayFrame(
-          JSON.stringify({ type: "req", id: "1", method: "system-presence", params: { a: 1 } })
-        )
+          JSON.stringify({ type: "req", id: "1", method: "system-presence", params: { a: 1 } }),
+        ),
       ).toEqual({ type: "req", id: "1", method: "system-presence", params: { a: 1 } });
     });
 
     it("parses response frames", () => {
-      expect(safeParseGatewayFrame(JSON.stringify({ type: "res", id: "1", ok: true, payload: { ok: true } }))).toEqual({
+      expect(
+        safeParseGatewayFrame(
+          JSON.stringify({ type: "res", id: "1", ok: true, payload: { ok: true } }),
+        ),
+      ).toEqual({
         type: "res",
         id: "1",
         ok: true,
@@ -32,7 +36,9 @@ describe("gatewayProtocol", () => {
     });
 
     it("parses event frames", () => {
-      expect(safeParseGatewayFrame(JSON.stringify({ type: "event", event: "presence", payload: [] }))).toEqual({
+      expect(
+        safeParseGatewayFrame(JSON.stringify({ type: "event", event: "presence", payload: [] })),
+      ).toEqual({
         type: "event",
         event: "presence",
         payload: [],
@@ -45,7 +51,9 @@ describe("gatewayProtocol", () => {
 
     it("returns null for missing required fields", () => {
       expect(safeParseGatewayFrame(JSON.stringify({ type: "req", id: 1, method: "x" }))).toBeNull();
-      expect(safeParseGatewayFrame(JSON.stringify({ type: "res", id: "1", ok: "true" }))).toBeNull();
+      expect(
+        safeParseGatewayFrame(JSON.stringify({ type: "res", id: "1", ok: "true" })),
+      ).toBeNull();
       expect(safeParseGatewayFrame(JSON.stringify({ type: "event", event: 123 }))).toBeNull();
     });
   });

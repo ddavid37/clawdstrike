@@ -77,5 +77,7 @@ export function setNexusOperationMode(mode: NexusOperationMode) {
     // Ignore storage access errors.
   }
 
-  window.dispatchEvent(new CustomEvent<NexusOperationMode>(CYBER_NEXUS_MODE_EVENT, { detail: mode }));
+  window.dispatchEvent(
+    new CustomEvent<NexusOperationMode>(CYBER_NEXUS_MODE_EVENT, { detail: mode }),
+  );
 }

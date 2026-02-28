@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { isTauri } from "@/services/tauri";
 import type { ConnectionStatus } from "@/context/ConnectionContext";
+import { isTauri } from "@/services/tauri";
 
 function statusText(status: ConnectionStatus) {
   switch (status) {

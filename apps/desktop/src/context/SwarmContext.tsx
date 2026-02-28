@@ -1,7 +1,7 @@
 /**
  * SwarmContext - Agent swarm state management
  */
-import { createContext, useContext, useCallback, useState, useEffect, type ReactNode } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import type { AgentNode, DelegationEdge } from "@/types/agents";
 import { useConnection } from "./ConnectionContext";
 
@@ -58,14 +58,14 @@ export function SwarmProvider({ children }: { children: ReactNode }) {
     (agentId: string): AgentNode | undefined => {
       return state.agents.find((a) => a.id === agentId);
     },
-    [state.agents]
+    [state.agents],
   );
 
   const getAgentDelegations = useCallback(
     (agentId: string): DelegationEdge[] => {
       return state.delegations.filter((d) => d.from === agentId || d.to === agentId);
     },
-    [state.delegations]
+    [state.delegations],
   );
 
   // Fetch swarm when connected

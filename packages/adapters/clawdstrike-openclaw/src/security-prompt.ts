@@ -1,4 +1,4 @@
-import type { Policy } from './types.js';
+import type { Policy } from "./types.js";
 
 export function generateSecurityPrompt(policy: Policy): string {
   const sections: string[] = [];
@@ -11,11 +11,11 @@ Your tool use is subject to clawdstrike guardrails at the tool boundary (not an 
   sections.push(`
 ## Network Access`);
 
-  if (policy.egress?.mode === 'allowlist' && policy.egress.allowed_domains?.length) {
-    sections.push(`- Only these domains are allowed: ${policy.egress.allowed_domains.join(', ')}`);
-  } else if (policy.egress?.mode === 'denylist' && policy.egress.denied_domains?.length) {
-    sections.push(`- These domains are blocked: ${policy.egress.denied_domains.join(', ')}`);
-  } else if (policy.egress?.mode === 'deny_all') {
+  if (policy.egress?.mode === "allowlist" && policy.egress.allowed_domains?.length) {
+    sections.push(`- Only these domains are allowed: ${policy.egress.allowed_domains.join(", ")}`);
+  } else if (policy.egress?.mode === "denylist" && policy.egress.denied_domains?.length) {
+    sections.push(`- These domains are blocked: ${policy.egress.denied_domains.join(", ")}`);
+  } else if (policy.egress?.mode === "deny_all") {
     sections.push(`- All network access is BLOCKED`);
   } else {
     sections.push(`- Network access follows default policy`);
@@ -35,7 +35,9 @@ Your tool use is subject to clawdstrike guardrails at the tool boundary (not an 
   }
 
   if (policy.filesystem?.allowed_write_roots?.length) {
-    sections.push(`- Writes are only allowed in: ${policy.filesystem.allowed_write_roots.join(', ')}`);
+    sections.push(
+      `- Writes are only allowed in: ${policy.filesystem.allowed_write_roots.join(", ")}`,
+    );
   }
 
   // Security Tools section
@@ -54,11 +56,15 @@ policy_check({ action: "file_write", resource: "/etc/passwd" })
 
   // Violation Handling section
   const blockAction =
-    policy.on_violation === 'cancel' ? 'BLOCKED' :
-      policy.on_violation === 'warn' ? 'logged with a warning' :
-        policy.on_violation === 'isolate' ? 'ISOLATED' :
-          policy.on_violation === 'escalate' ? 'ESCALATED' :
-            'logged';
+    policy.on_violation === "cancel"
+      ? "BLOCKED"
+      : policy.on_violation === "warn"
+        ? "logged with a warning"
+        : policy.on_violation === "isolate"
+          ? "ISOLATED"
+          : policy.on_violation === "escalate"
+            ? "ESCALATED"
+            : "logged";
 
   sections.push(`
 ## Violation Handling
@@ -75,5 +81,5 @@ When a security violation occurs:
 - Never attempt to access credentials or keys
 - When unsure, use \`policy_check\` first`);
 
-  return sections.join('\n');
+  return sections.join("\n");
 }

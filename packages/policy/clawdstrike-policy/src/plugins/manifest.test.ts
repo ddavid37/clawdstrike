@@ -1,14 +1,14 @@
-import { parsePluginManifest } from './manifest.js';
+import { parsePluginManifest } from "./manifest.js";
 
-test('parses minimal manifest and applies safe defaults', () => {
+test("parses minimal manifest and applies safe defaults", () => {
   const manifest = parsePluginManifest({
-    version: '1.0.0',
-    name: 'acme-guard',
-    guards: [{ name: 'acme.deny', entrypoint: './dist/guard.js' }],
-    trust: { level: 'trusted' },
+    version: "1.0.0",
+    name: "acme-guard",
+    guards: [{ name: "acme.deny", entrypoint: "./dist/guard.js" }],
+    trust: { level: "trusted" },
   });
 
-  expect(manifest.trust.sandbox).toBe('node');
+  expect(manifest.trust.sandbox).toBe("node");
   expect(manifest.capabilities.network).toBe(false);
   expect(manifest.capabilities.subprocess).toBe(false);
   expect(manifest.capabilities.filesystem.write).toBe(false);
@@ -19,47 +19,47 @@ test('parses minimal manifest and applies safe defaults', () => {
   expect(manifest.resources.maxTimeoutMs).toBe(5000);
 });
 
-test('rejects duplicate guard names', () => {
+test("rejects duplicate guard names", () => {
   expect(() =>
     parsePluginManifest({
-      version: '1.0.0',
-      name: 'acme-guard',
+      version: "1.0.0",
+      name: "acme-guard",
       guards: [
-        { name: 'acme.deny', entrypoint: './dist/a.js' },
-        { name: 'acme.deny', entrypoint: './dist/b.js' },
+        { name: "acme.deny", entrypoint: "./dist/a.js" },
+        { name: "acme.deny", entrypoint: "./dist/b.js" },
       ],
-      trust: { level: 'trusted' },
+      trust: { level: "trusted" },
     }),
   ).toThrow(/duplicates guard/i);
 });
 
-test('rejects invalid compatibility semver', () => {
+test("rejects invalid compatibility semver", () => {
   expect(() =>
     parsePluginManifest({
-      version: '1.0.0',
-      name: 'acme-guard',
-      clawdstrike: { minVersion: '1.x' },
-      guards: [{ name: 'acme.deny', entrypoint: './dist/guard.js' }],
-      trust: { level: 'trusted' },
+      version: "1.0.0",
+      name: "acme-guard",
+      clawdstrike: { minVersion: "1.x" },
+      guards: [{ name: "acme.deny", entrypoint: "./dist/guard.js" }],
+      trust: { level: "trusted" },
     }),
   ).toThrow(/minVersion must be strict semver/i);
 });
 
-test('accepts extended capability structure', () => {
+test("accepts extended capability structure", () => {
   const manifest = parsePluginManifest({
-    version: '1.0.0',
-    name: 'acme-guard',
+    version: "1.0.0",
+    name: "acme-guard",
     guards: [
       {
-        name: 'acme.deny',
-        entrypoint: './dist/guard.js',
-        handles: ['tool_call', 'file_write'],
+        name: "acme.deny",
+        entrypoint: "./dist/guard.js",
+        handles: ["tool_call", "file_write"],
       },
     ],
     capabilities: {
       network: true,
       filesystem: {
-        read: ['**/*.md'],
+        read: ["**/*.md"],
         write: false,
       },
       secrets: { access: false },
@@ -70,12 +70,11 @@ test('accepts extended capability structure', () => {
       maxCpuMs: 50,
       maxTimeoutMs: 1000,
     },
-    trust: { level: 'trusted', sandbox: 'node' },
+    trust: { level: "trusted", sandbox: "node" },
   });
 
-  expect(manifest.guards[0]?.handles).toEqual(['tool_call', 'file_write']);
+  expect(manifest.guards[0]?.handles).toEqual(["tool_call", "file_write"]);
   expect(manifest.capabilities.network).toBe(true);
-  expect(manifest.capabilities.filesystem.read).toEqual(['**/*.md']);
+  expect(manifest.capabilities.filesystem.read).toEqual(["**/*.md"]);
   expect(manifest.resources.maxMemoryMb).toBe(32);
 });
-

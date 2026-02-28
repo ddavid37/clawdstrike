@@ -1,7 +1,10 @@
 import * as React from "react";
-import type { GatewayEventFrame } from "@/services/openclaw/gatewayProtocol";
-import { OpenClawGatewayClient, type GatewayConnectionStatus } from "@/services/openclaw/gatewayClient";
 import { DEFAULT_GATEWAY_URL } from "@/features/openclaw/openclawFleetUtils";
+import {
+  type GatewayConnectionStatus,
+  OpenClawGatewayClient,
+} from "@/services/openclaw/gatewayClient";
+import type { GatewayEventFrame } from "@/services/openclaw/gatewayProtocol";
 
 export type OpenClawGatewayConfig = {
   id: string;
@@ -87,7 +90,9 @@ export type OpenClawContextValue = {
     }>;
     connected: number;
   };
-  addGateway: (partial?: Partial<Pick<OpenClawGatewayConfig, "label" | "gatewayUrl" | "token">>) => void;
+  addGateway: (
+    partial?: Partial<Pick<OpenClawGatewayConfig, "label" | "gatewayUrl" | "token">>,
+  ) => void;
   updateGateway: (id: string, patch: Partial<Omit<OpenClawGatewayConfig, "id">>) => void;
   removeGateway: (id: string) => void;
   setActiveGatewayId: (id: string) => void;
@@ -97,11 +102,19 @@ export type OpenClawContextValue = {
   disconnectGateway: (id: string) => void;
   connectAll: () => Promise<void>;
   disconnectAll: () => void;
-  request: <TPayload = unknown>(method: string, params?: unknown, opts?: { timeoutMs?: number }) => Promise<TPayload>;
+  request: <TPayload = unknown>(
+    method: string,
+    params?: unknown,
+    opts?: { timeoutMs?: number },
+  ) => Promise<TPayload>;
   refreshPresence: (gatewayId?: string) => Promise<void>;
   refreshNodes: (gatewayId?: string) => Promise<void>;
   refreshDevices: (gatewayId?: string, opts?: { quiet?: boolean }) => Promise<void>;
-  resolveExecApproval: (approvalId: string, decision: ExecApprovalDecision, gatewayId?: string) => Promise<void>;
+  resolveExecApproval: (
+    approvalId: string,
+    decision: ExecApprovalDecision,
+    gatewayId?: string,
+  ) => Promise<void>;
   approveDevicePairing: (requestId: string, gatewayId?: string) => Promise<void>;
   rejectDevicePairing: (requestId: string, gatewayId?: string) => Promise<void>;
 };
@@ -184,7 +197,7 @@ function createEmptyRuntime(): OpenClawGatewayRuntime {
 
 export function applyGatewayEventFrame(
   current: OpenClawGatewayRuntime,
-  frame: GatewayEventFrame
+  frame: GatewayEventFrame,
 ): OpenClawGatewayRuntime {
   // Presence updates may be deltas; for now keep the last payload on a best-effort basis.
   if (frame.event === "presence") {
@@ -195,7 +208,8 @@ export function applyGatewayEventFrame(
 
   if (frame.event === "exec.approval.requested") {
     const payload = frame.payload as Partial<ExecApprovalQueueItem> | undefined;
-    if (!payload?.id || !payload.request?.command || typeof payload.expiresAtMs !== "number") return current;
+    if (!payload?.id || !payload.request?.command || typeof payload.expiresAtMs !== "number")
+      return current;
 
     const deduped = current.execApprovalQueue.filter((a) => a.id !== payload.id);
     return {
@@ -205,11 +219,12 @@ export function applyGatewayEventFrame(
   }
 
   if (frame.event === "exec.approval.resolved" || frame.event === "exec.approval.rejected") {
-    const approvalId = typeof (frame.payload as Record<string, unknown>)?.approvalId === "string"
-      ? (frame.payload as Record<string, unknown>).approvalId as string
-      : typeof (frame.payload as Record<string, unknown>)?.id === "string"
-        ? (frame.payload as Record<string, unknown>).id as string
-        : null;
+    const approvalId =
+      typeof (frame.payload as Record<string, unknown>)?.approvalId === "string"
+        ? ((frame.payload as Record<string, unknown>).approvalId as string)
+        : typeof (frame.payload as Record<string, unknown>)?.id === "string"
+          ? ((frame.payload as Record<string, unknown>).id as string)
+          : null;
     if (approvalId && current.execApprovalQueue) {
       return {
         ...current,
@@ -223,7 +238,12 @@ export function applyGatewayEventFrame(
     const payload = frame.payload;
     if (payload && typeof payload === "object") {
       const raw = payload as Record<string, unknown>;
-      const nodeId = typeof raw.nodeId === "string" ? raw.nodeId : typeof raw.id === "string" ? raw.id : undefined;
+      const nodeId =
+        typeof raw.nodeId === "string"
+          ? raw.nodeId
+          : typeof raw.id === "string"
+            ? raw.id
+            : undefined;
       if (nodeId) {
         const node: OpenClawNode = { ...(raw as OpenClawNode), nodeId };
         const nodes = [...(current.nodes ?? [])];
@@ -242,7 +262,12 @@ export function applyGatewayEventFrame(
     const payload = frame.payload;
     if (payload && typeof payload === "object") {
       const raw = payload as Record<string, unknown>;
-      const nodeId = typeof raw.nodeId === "string" ? raw.nodeId : typeof raw.id === "string" ? raw.id : undefined;
+      const nodeId =
+        typeof raw.nodeId === "string"
+          ? raw.nodeId
+          : typeof raw.id === "string"
+            ? raw.id
+            : undefined;
       if (nodeId) {
         const nodes = (current.nodes ?? []).filter((n) => n.nodeId !== nodeId);
         return { ...current, nodes };
@@ -260,8 +285,12 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
 
   const [gateways, setGateways] = React.useState<OpenClawGatewayConfig[]>(initialGateways);
   const gatewaysRef = React.useRef<OpenClawGatewayConfig[]>(initialGateways);
-  const [activeGatewayId, setActiveGatewayIdState] = React.useState(() => loadActiveGatewayId(initialGateways));
-  const [runtimeByGatewayId, setRuntimeByGatewayId] = React.useState<Record<string, OpenClawGatewayRuntime>>(() => {
+  const [activeGatewayId, setActiveGatewayIdState] = React.useState(() =>
+    loadActiveGatewayId(initialGateways),
+  );
+  const [runtimeByGatewayId, setRuntimeByGatewayId] = React.useState<
+    Record<string, OpenClawGatewayRuntime>
+  >(() => {
     const initial: Record<string, OpenClawGatewayRuntime> = {};
     for (const g of initialGateways) initial[g.id] = createEmptyRuntime();
     return initial;
@@ -320,25 +349,28 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
         return updated;
       });
     },
-    []
+    [],
   );
 
-  const updateGateway = React.useCallback((id: string, patch: Partial<Omit<OpenClawGatewayConfig, "id">>) => {
-    setGateways((prev) => {
-      const updated = prev.map((g) => {
-        if (g.id !== id) return g;
-        return {
-          ...g,
-          ...patch,
-          label: typeof patch.label === "string" ? patch.label : g.label,
-          gatewayUrl: typeof patch.gatewayUrl === "string" ? patch.gatewayUrl : g.gatewayUrl,
-          token: typeof patch.token === "string" ? patch.token : g.token,
-        };
+  const updateGateway = React.useCallback(
+    (id: string, patch: Partial<Omit<OpenClawGatewayConfig, "id">>) => {
+      setGateways((prev) => {
+        const updated = prev.map((g) => {
+          if (g.id !== id) return g;
+          return {
+            ...g,
+            ...patch,
+            label: typeof patch.label === "string" ? patch.label : g.label,
+            gatewayUrl: typeof patch.gatewayUrl === "string" ? patch.gatewayUrl : g.gatewayUrl,
+            token: typeof patch.token === "string" ? patch.token : g.token,
+          };
+        });
+        gatewaysRef.current = updated;
+        return updated;
       });
-      gatewaysRef.current = updated;
-      return updated;
-    });
-  }, []);
+    },
+    [],
+  );
 
   const removeGateway = React.useCallback((id: string) => {
     disconnectGatewayInternal(id, clientsRef, setRuntimeByGatewayId);
@@ -355,45 +387,65 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
       if (!client) throw new Error("Not connected");
       return client.request<TPayload>(method, params, opts);
     },
-    [active.id]
+    [active.id],
   );
 
   const requestForGateway = React.useCallback(
-    async <TPayload,>(gatewayId: string, method: string, params?: unknown, opts?: { timeoutMs?: number }) => {
+    async <TPayload,>(
+      gatewayId: string,
+      method: string,
+      params?: unknown,
+      opts?: { timeoutMs?: number },
+    ) => {
       const client = clientsRef.current[gatewayId];
       if (!client) throw new Error("Not connected");
       return client.request<TPayload>(method, params, opts);
     },
-    []
+    [],
   );
 
   const refreshPresence = React.useCallback(
     async (gatewayId = active.id) => {
-      const presence = await requestForGateway<unknown[]>(gatewayId, "system-presence", undefined, { timeoutMs: 8_000 });
+      const presence = await requestForGateway<unknown[]>(gatewayId, "system-presence", undefined, {
+        timeoutMs: 8_000,
+      });
       setRuntimeByGatewayId((prev) => ({
         ...prev,
-        [gatewayId]: { ...(prev[gatewayId] ?? createEmptyRuntime()), presence: Array.isArray(presence) ? presence : [] },
+        [gatewayId]: {
+          ...(prev[gatewayId] ?? createEmptyRuntime()),
+          presence: Array.isArray(presence) ? presence : [],
+        },
       }));
     },
-    [active.id, requestForGateway]
+    [active.id, requestForGateway],
   );
 
   const refreshNodes = React.useCallback(
     async (gatewayId = active.id) => {
-      const result = await requestForGateway<{ nodes?: OpenClawNode[] }>(gatewayId, "node.list", undefined, { timeoutMs: 10_000 });
+      const result = await requestForGateway<{ nodes?: OpenClawNode[] }>(
+        gatewayId,
+        "node.list",
+        undefined,
+        { timeoutMs: 10_000 },
+      );
       const nodes = Array.isArray(result?.nodes) ? result.nodes : [];
       setRuntimeByGatewayId((prev) => ({
         ...prev,
         [gatewayId]: { ...(prev[gatewayId] ?? createEmptyRuntime()), nodes },
       }));
     },
-    [active.id, requestForGateway]
+    [active.id, requestForGateway],
   );
 
   const refreshDevices = React.useCallback(
     async (gatewayId = active.id, opts?: { quiet?: boolean }) => {
       try {
-        const snapshot = await requestForGateway<OpenClawDevicePairingSnapshot>(gatewayId, "device.pair.list", undefined, { timeoutMs: 10_000 });
+        const snapshot = await requestForGateway<OpenClawDevicePairingSnapshot>(
+          gatewayId,
+          "device.pair.list",
+          undefined,
+          { timeoutMs: 10_000 },
+        );
         setRuntimeByGatewayId((prev) => ({
           ...prev,
           [gatewayId]: { ...(prev[gatewayId] ?? createEmptyRuntime()), devices: snapshot ?? null },
@@ -402,7 +454,7 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
         if (!opts?.quiet) throw err;
       }
     },
-    [active.id, requestForGateway]
+    [active.id, requestForGateway],
   );
 
   const connectGateway = React.useCallback(
@@ -419,7 +471,13 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
         instanceId: `sdr:${id}`,
         autoReconnect: true,
         reconnectOnCleanClose: true,
-        reconnect: { maxAttempts: 20, initialDelayMs: 400, maxDelayMs: 12_000, backoffFactor: 1.6, jitterRatio: 0.15 },
+        reconnect: {
+          maxAttempts: 20,
+          initialDelayMs: 400,
+          maxDelayMs: 12_000,
+          backoffFactor: 1.6,
+          jitterRatio: 0.15,
+        },
       });
       clientsRef.current[id] = client;
 
@@ -439,7 +497,11 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
         }));
 
         if (snap.status === "connected" && previousStatus !== "connected") {
-          void Promise.all([refreshPresence(id), refreshNodes(id), refreshDevices(id, { quiet: true })]).catch(() => {});
+          void Promise.all([
+            refreshPresence(id),
+            refreshNodes(id),
+            refreshDevices(id, { quiet: true }),
+          ]).catch(() => {});
         }
       });
 
@@ -465,16 +527,22 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
         throw err;
       }
     },
-    [refreshDevices, refreshNodes, refreshPresence]
+    [refreshDevices, refreshNodes, refreshPresence],
   );
 
-  const connect = React.useCallback(async () => connectGateway(active.id), [active.id, connectGateway]);
+  const connect = React.useCallback(
+    async () => connectGateway(active.id),
+    [active.id, connectGateway],
+  );
 
   const disconnectGateway = React.useCallback((id: string) => {
     disconnectGatewayInternal(id, clientsRef, setRuntimeByGatewayId);
   }, []);
 
-  const disconnect = React.useCallback(() => disconnectGateway(active.id), [active.id, disconnectGateway]);
+  const disconnect = React.useCallback(
+    () => disconnectGateway(active.id),
+    [active.id, disconnectGateway],
+  );
 
   const connectAll = React.useCallback(async () => {
     const current = gatewaysRef.current;
@@ -482,12 +550,18 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
   }, [connectGateway]);
 
   const disconnectAll = React.useCallback(() => {
-    for (const g of gatewaysRef.current) disconnectGatewayInternal(g.id, clientsRef, setRuntimeByGatewayId);
+    for (const g of gatewaysRef.current)
+      disconnectGatewayInternal(g.id, clientsRef, setRuntimeByGatewayId);
   }, []);
 
   const resolveExecApproval = React.useCallback(
     async (approvalId: string, decision: ExecApprovalDecision, gatewayId = active.id) => {
-      await requestForGateway(gatewayId, "exec.approval.resolve", { id: approvalId, decision }, { timeoutMs: 10_000 });
+      await requestForGateway(
+        gatewayId,
+        "exec.approval.resolve",
+        { id: approvalId, decision },
+        { timeoutMs: 10_000 },
+      );
       setRuntimeByGatewayId((prev) => {
         const current = prev[gatewayId] ?? createEmptyRuntime();
         return {
@@ -499,23 +573,33 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
         };
       });
     },
-    [active.id, requestForGateway]
+    [active.id, requestForGateway],
   );
 
   const approveDevicePairing = React.useCallback(
     async (requestId: string, gatewayId = active.id) => {
-      await requestForGateway(gatewayId, "device.pair.approve", { requestId }, { timeoutMs: 12_000 });
+      await requestForGateway(
+        gatewayId,
+        "device.pair.approve",
+        { requestId },
+        { timeoutMs: 12_000 },
+      );
       await refreshDevices(gatewayId, { quiet: true });
     },
-    [active.id, refreshDevices, requestForGateway]
+    [active.id, refreshDevices, requestForGateway],
   );
 
   const rejectDevicePairing = React.useCallback(
     async (requestId: string, gatewayId = active.id) => {
-      await requestForGateway(gatewayId, "device.pair.reject", { requestId }, { timeoutMs: 12_000 });
+      await requestForGateway(
+        gatewayId,
+        "device.pair.reject",
+        { requestId },
+        { timeoutMs: 12_000 },
+      );
       await refreshDevices(gatewayId, { quiet: true });
     },
-    [active.id, refreshDevices, requestForGateway]
+    [active.id, refreshDevices, requestForGateway],
   );
 
   const summary = React.useMemo(() => {
@@ -565,7 +649,7 @@ export function OpenClawProvider({ children }: { children: React.ReactNode }) {
 function disconnectGatewayInternal(
   gatewayId: string,
   clientsRef: React.RefObject<Record<string, OpenClawGatewayClient>>,
-  setRuntime: React.Dispatch<React.SetStateAction<Record<string, OpenClawGatewayRuntime>>>
+  setRuntime: React.Dispatch<React.SetStateAction<Record<string, OpenClawGatewayRuntime>>>,
 ) {
   const client = clientsRef.current[gatewayId];
   if (client) client.disconnect();
@@ -579,7 +663,7 @@ function disconnectGatewayInternal(
 function handleGatewayEvent(
   gatewayId: string,
   frame: GatewayEventFrame,
-  setRuntime: React.Dispatch<React.SetStateAction<Record<string, OpenClawGatewayRuntime>>>
+  setRuntime: React.Dispatch<React.SetStateAction<Record<string, OpenClawGatewayRuntime>>>,
 ) {
   setRuntime((prev) => {
     const current = prev[gatewayId] ?? createEmptyRuntime();

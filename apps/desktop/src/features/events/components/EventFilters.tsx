@@ -1,10 +1,9 @@
 /**
  * EventFilters - Filter bar for event stream
  */
-import { GlowButton } from "@backbay/glia/primitives";
-import { GlowInput } from "@backbay/glia/primitives";
-import type { EventFilter } from "../EventStreamView";
+import { GlowButton, GlowInput } from "@backbay/glia/primitives";
 import type { ActionType, Decision, Severity } from "@/types/events";
+import type { EventFilter } from "../EventStreamView";
 
 interface EventFiltersProps {
   filter: EventFilter;
@@ -83,11 +82,12 @@ export function EventFilters({ filter, onFilterChange, guards }: EventFiltersPro
       )}
 
       {/* Clear filters */}
-      {(filter.actionType || filter.decision || filter.severity || filter.guard || filter.search) && (
-        <GlowButton
-          onClick={() => onFilterChange({})}
-          variant="secondary"
-        >
+      {(filter.actionType ||
+        filter.decision ||
+        filter.severity ||
+        filter.guard ||
+        filter.search) && (
+        <GlowButton onClick={() => onFilterChange({})} variant="secondary">
           Clear
         </GlowButton>
       )}
@@ -121,7 +121,13 @@ function FilterSelect({ value, onChange, options, placeholder }: FilterSelectPro
 
 function SearchIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <circle cx="11" cy="11" r="8" />
       <path d="M21 21l-4.35-4.35" />
     </svg>

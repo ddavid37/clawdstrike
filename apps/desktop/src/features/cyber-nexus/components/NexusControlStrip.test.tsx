@@ -1,17 +1,18 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-
-import { NexusControlStrip } from "./NexusControlStrip";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Strikecell } from "../types";
+import { NexusControlStrip } from "./NexusControlStrip";
 
 vi.mock("@/services/tauri", () => ({
   isTauri: () => false,
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const STRIKECELL: Strikecell = {
   id: "forensics-river",
@@ -58,18 +59,20 @@ describe("NexusControlStrip", () => {
           onSelectLayout={vi.fn()}
           onOpenOperations={onOpenOperations}
           onOpenConnectionSettings={vi.fn()}
-        />
+        />,
       );
     });
 
     expect(container.textContent).toContain("BETA");
 
-    const input = container.querySelector("input[placeholder*='Search strikecells']") as HTMLInputElement;
+    const input = container.querySelector(
+      "input[placeholder*='Search strikecells']",
+    ) as HTMLInputElement;
     expect(input).toBeTruthy();
     expect(input.className.includes("font-mono")).toBe(true);
 
-    const profileButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Ops")
+    const profileButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Ops"),
     ) as HTMLButtonElement;
 
     act(() => {
@@ -77,7 +80,7 @@ describe("NexusControlStrip", () => {
     });
 
     const operationsMenuButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Open Operations"
+      (button) => button.textContent?.trim() === "Open Operations",
     ) as HTMLButtonElement;
 
     act(() => {

@@ -2,26 +2,26 @@
  * ShellLayout - Main application layout with navigation
  */
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { Outlet, useBlocker, useLocation, useNavigate } from "react-router-dom";
 import type { BlockerFunction } from "react-router-dom";
-import { NavRail } from "./components/NavRail";
-import { CommandPalette } from "./components/CommandPalette";
-import { SOCBackground } from "./SOCBackground";
-import { getPlugins, getVisiblePlugins } from "./plugins";
-import { useActiveApp, useSessionActions } from "./sessions";
-import { useShellShortcuts } from "./keyboard";
-import type { AppId } from "./plugins/types";
-import { shouldBlockDirtyPolicyDraftExit } from "./policyDraftGuard";
+import { Outlet, useBlocker, useLocation, useNavigate } from "react-router-dom";
+import { useConnection } from "@/context/ConnectionContext";
 import { dispatchCyberNexusCommand } from "@/features/cyber-nexus/events";
-import { SHELL_OPEN_COMMAND_PALETTE_EVENT } from "./events";
-import { DockProvider, DockSystem } from "./dock";
+import { ChronicleWorkbenchShelf } from "@/features/forensics/policy-workbench/ChronicleWorkbenchShelf";
 import {
   POLICY_WORKBENCH_DIRTY_EVENT,
   type PolicyWorkbenchDirtyEventDetail,
 } from "@/features/forensics/policy-workbench/events";
-import { ChronicleWorkbenchShelf } from "@/features/forensics/policy-workbench/ChronicleWorkbenchShelf";
 import { isPolicyWorkbenchEnabled } from "@/features/forensics/policy-workbench/featureFlags";
-import { useConnection } from "@/context/ConnectionContext";
+import { CommandPalette } from "./components/CommandPalette";
+import { NavRail } from "./components/NavRail";
+import { DockProvider, DockSystem } from "./dock";
+import { SHELL_OPEN_COMMAND_PALETTE_EVENT } from "./events";
+import { useShellShortcuts } from "./keyboard";
+import { getPlugins, getVisiblePlugins } from "./plugins";
+import type { AppId } from "./plugins/types";
+import { shouldBlockDirtyPolicyDraftExit } from "./policyDraftGuard";
+import { SOCBackground } from "./SOCBackground";
+import { useActiveApp, useSessionActions } from "./sessions";
 
 export function ShellLayout() {
   const navigate = useNavigate();
@@ -67,7 +67,7 @@ export function ShellLayout() {
     return () =>
       window.removeEventListener(
         POLICY_WORKBENCH_DIRTY_EVENT,
-        onDirtyEvent as (event: Event) => void
+        onDirtyEvent as (event: Event) => void,
       );
   }, []);
 
@@ -79,7 +79,7 @@ export function ShellLayout() {
         nextPathname: nextLocation.pathname,
       });
     },
-    [hasPolicyWorkbenchDirtyDraft]
+    [hasPolicyWorkbenchDirtyDraft],
   );
   const blocker = useBlocker(shouldBlockForDirtyPolicyExit);
 
@@ -95,7 +95,14 @@ export function ShellLayout() {
 
   const showAmbientBackground = useMemo(() => {
     const appId = location.pathname.split("/").filter(Boolean)[0] ?? "";
-    return !new Set(["nexus", "swarm", "threat-radar", "attack-graph", "network-map", "security-overview"]).has(appId);
+    return !new Set([
+      "nexus",
+      "swarm",
+      "threat-radar",
+      "attack-graph",
+      "network-map",
+      "security-overview",
+    ]).has(appId);
   }, [location.pathname]);
   const cyberNexusCommands = useMemo(() => {
     if (activeAppId !== "nexus") return [];
@@ -140,8 +147,7 @@ export function ShellLayout() {
         id: "nexus:layout-lanes",
         group: "View",
         title: "Set layout: Typed Lanes",
-        action: () =>
-          dispatchCyberNexusCommand({ type: "set-layout", layoutMode: "typed-lanes" }),
+        action: () => dispatchCyberNexusCommand({ type: "set-layout", layoutMode: "typed-lanes" }),
       },
       {
         id: "nexus:layout-force",
@@ -257,7 +263,7 @@ export function ShellLayout() {
     (appId: AppId) => {
       navigate(`/${appId}`);
     },
-    [navigate]
+    [navigate],
   );
 
   const handleNewSession = useCallback(() => {
@@ -307,7 +313,7 @@ export function ShellLayout() {
         />
       );
     },
-    [daemonStatus, daemonUrl, policyWorkbenchEnabled]
+    [daemonStatus, daemonUrl, policyWorkbenchEnabled],
   );
 
   return (

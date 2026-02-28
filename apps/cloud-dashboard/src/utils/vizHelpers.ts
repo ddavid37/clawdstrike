@@ -1,6 +1,10 @@
 import type { SSEEvent } from "../hooks/useSSE";
 
-export function bucketByTime(events: SSEEvent[], bucketMinutes: number, totalBuckets: number): number[] {
+export function bucketByTime(
+  events: SSEEvent[],
+  bucketMinutes: number,
+  totalBuckets: number,
+): number[] {
   const now = Date.now();
   const windowMs = bucketMinutes * 60_000;
   const buckets = new Array(totalBuckets).fill(0);
@@ -20,8 +24,14 @@ export function computeGuardFrequency(events: SSEEvent[]): Record<string, number
   return freq;
 }
 
-export function computeDecisionRatio(events: SSEEvent[]): { allowed: number; blocked: number; warn: number } {
-  let allowed = 0, blocked = 0, warn = 0;
+export function computeDecisionRatio(events: SSEEvent[]): {
+  allowed: number;
+  blocked: number;
+  warn: number;
+} {
+  let allowed = 0,
+    blocked = 0,
+    warn = 0;
   for (const e of events) {
     if (e.allowed === true) allowed++;
     else if (e.allowed === false) blocked++;

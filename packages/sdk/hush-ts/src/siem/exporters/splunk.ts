@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import os from "node:os";
 import { gzipSync } from "node:zlib";
 
-import type { ExportResult, ExporterConfig } from "../framework";
+import type { ExporterConfig, ExportResult } from "../framework";
 import { BaseExporter, SchemaFormat } from "../framework";
 import { HttpClient, readResponseBody } from "../http";
 import type { SecurityEvent } from "../types";
@@ -148,7 +148,7 @@ export class SplunkExporter extends BaseExporter {
       return { exported: 0, failed: 0, errors: [] };
     }
 
-    const body = events.map(e => JSON.stringify(this.toSplunkEvent(e))).join("\n");
+    const body = events.map((e) => JSON.stringify(this.toSplunkEvent(e))).join("\n");
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -190,7 +190,7 @@ export class SplunkExporter extends BaseExporter {
       const response = await this.client.post(
         "/services/collector/ack",
         { acks: [ackId] },
-        { headers: { "X-Splunk-Request-Channel": this.channel } }
+        { headers: { "X-Splunk-Request-Channel": this.channel } },
       );
 
       if (!response.ok) {

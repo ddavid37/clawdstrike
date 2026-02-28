@@ -1,13 +1,18 @@
-import type { Decision, DecisionStatus, PolicyEngineLike, PolicyEvent } from '@clawdstrike/adapter-core';
+import type {
+  Decision,
+  DecisionStatus,
+  PolicyEngineLike,
+  PolicyEvent,
+} from "@clawdstrike/adapter-core";
 
-import { AsyncGuardRuntime } from './async/runtime.js';
-import type { GuardResult, Severity } from './async/types.js';
-import type { CustomGuard, CustomGuardRegistry } from './custom-registry.js';
-import { resolvePlaceholders } from './policy/placeholders.js';
-import type { Policy } from './policy/schema.js';
-import { loadPolicyFromFile } from './policy/loader.js';
-import { validatePolicy } from './policy/validator.js';
-import { buildAsyncGuards } from './guards/registry.js';
+import { AsyncGuardRuntime } from "./async/runtime.js";
+import type { GuardResult, Severity } from "./async/types.js";
+import type { CustomGuard, CustomGuardRegistry } from "./custom-registry.js";
+import { buildAsyncGuards } from "./guards/registry.js";
+import { loadPolicyFromFile } from "./policy/loader.js";
+import { resolvePlaceholders } from "./policy/placeholders.js";
+import type { Policy } from "./policy/schema.js";
+import { validatePolicy } from "./policy/validator.js";
 
 export interface PolicyEngineOptions {
   policyRef: string;
@@ -30,7 +35,7 @@ export function createPolicyEngineFromPolicy(
 ): PolicyEngineLike {
   const lint = validatePolicy(policy);
   if (!lint.valid) {
-    const msg = lint.errors.join('; ') || 'policy validation failed';
+    const msg = lint.errors.join("; ") || "policy validation failed";
     throw new Error(msg);
   }
 
@@ -67,22 +72,31 @@ function createEngineInstance(
   };
 }
 
-function buildCustomGuardsFromPolicy(policy: Policy, registry: CustomGuardRegistry | undefined): CustomGuard[] {
-  const specs = Array.isArray((policy as any).custom_guards) ? ((policy as any).custom_guards as unknown[]) : [];
+function buildCustomGuardsFromPolicy(
+  policy: Policy,
+  registry: CustomGuardRegistry | undefined,
+): CustomGuard[] {
+  const specs = Array.isArray((policy as any).custom_guards)
+    ? ((policy as any).custom_guards as unknown[])
+    : [];
   if (specs.length === 0) return [];
 
   if (!registry) {
-    const firstId = isPlainObject(specs[0]) ? String((specs[0] as any).id ?? '') : '';
-    const suffix = firstId ? ` ${firstId}` : '';
-    throw new Error(`Policy requires custom guard${suffix} but no CustomGuardRegistry was provided`);
+    const firstId = isPlainObject(specs[0]) ? String((specs[0] as any).id ?? "") : "";
+    const suffix = firstId ? ` ${firstId}` : "";
+    throw new Error(
+      `Policy requires custom guard${suffix} but no CustomGuardRegistry was provided`,
+    );
   }
 
   const out: CustomGuard[] = [];
   for (const spec of specs) {
     if (!isPlainObject(spec)) continue;
     if ((spec as any).enabled === false) continue;
-    const id = String((spec as any).id ?? '');
-    const rawConfig = isPlainObject((spec as any).config) ? ((spec as any).config as Record<string, unknown>) : {};
+    const id = String((spec as any).id ?? "");
+    const rawConfig = isPlainObject((spec as any).config)
+      ? ((spec as any).config as Record<string, unknown>)
+      : {};
     const config = resolvePlaceholders(rawConfig) as Record<string, unknown>;
     out.push(registry.build(id, config));
   }
@@ -90,7 +104,11 @@ function buildCustomGuardsFromPolicy(policy: Policy, registry: CustomGuardRegist
   return out;
 }
 
-async function evaluateCustomGuards(guards: CustomGuard[], event: PolicyEvent, failFast: boolean): Promise<GuardResult[]> {
+async function evaluateCustomGuards(
+  guards: CustomGuard[],
+  event: PolicyEvent,
+  failFast: boolean,
+): Promise<GuardResult[]> {
   const out: GuardResult[] = [];
 
   for (const guard of guards) {
@@ -125,8 +143,8 @@ function normalizeCustomGuardResult(guardName: string, value: unknown): GuardRes
     return {
       allowed: false,
       guard: guardName,
-      severity: 'high',
-      message: 'Invalid custom guard result (expected object)',
+      severity: "high",
+      message: "Invalid custom guard result (expected object)",
     };
   }
 
@@ -135,12 +153,18 @@ function normalizeCustomGuardResult(guardName: string, value: unknown): GuardRes
   const message = (value as any).message;
   const details = (value as any).details;
 
-  if (typeof allowed !== 'boolean') {
-    return { allowed: false, guard: guardName, severity: 'high', message: 'Invalid custom guard result (allowed)' };
+  if (typeof allowed !== "boolean") {
+    return {
+      allowed: false,
+      guard: guardName,
+      severity: "high",
+      message: "Invalid custom guard result (allowed)",
+    };
   }
 
-  const sev = isSeverity(severity) ? severity : allowed ? 'low' : 'high';
-  const msg = typeof message === 'string' && message.trim() !== '' ? message : allowed ? 'Allowed' : 'Denied';
+  const sev = isSeverity(severity) ? severity : allowed ? "low" : "high";
+  const msg =
+    typeof message === "string" && message.trim() !== "" ? message : allowed ? "Allowed" : "Denied";
 
   const out: GuardResult = { allowed, guard: guardName, severity: sev, message: msg };
   if (isPlainObject(details)) {
@@ -152,27 +176,32 @@ function normalizeCustomGuardResult(guardName: string, value: unknown): GuardRes
 
 function customGuardError(guardName: string, err: unknown): GuardResult {
   const message = err instanceof Error ? err.message : String(err);
-  return { allowed: false, guard: guardName, severity: 'high', message: `Custom guard error: ${message}` };
+  return {
+    allowed: false,
+    guard: guardName,
+    severity: "high",
+    message: `Custom guard error: ${message}`,
+  };
 }
 
 function decisionFromOverall(overall: GuardResult): Decision {
   const status: DecisionStatus = overall.allowed
-    ? overall.severity === 'medium'
-      ? 'warn'
-      : 'allow'
-    : 'deny';
+    ? overall.severity === "medium"
+      ? "warn"
+      : "allow"
+    : "deny";
 
-  if (status === 'allow') {
+  if (status === "allow") {
     return {
-      status: 'allow',
-      reason_code: 'ADC_POLICY_ALLOW',
+      status: "allow",
+      reason_code: "ADC_POLICY_ALLOW",
       message: overall.message,
     };
   }
 
   return {
     status,
-    reason_code: status === 'warn' ? 'ADC_POLICY_WARN' : 'ADC_POLICY_DENY',
+    reason_code: status === "warn" ? "ADC_POLICY_WARN" : "ADC_POLICY_DENY",
     guard: overall.guard,
     severity: overall.severity as any,
     message: overall.message,
@@ -181,7 +210,7 @@ function decisionFromOverall(overall: GuardResult): Decision {
 
 function aggregateOverall(results: GuardResult[]): GuardResult {
   if (results.length === 0) {
-    return { allowed: true, guard: 'engine', severity: 'low', message: 'Allowed' };
+    return { allowed: true, guard: "engine", severity: "low", message: "Allowed" };
   }
 
   let best = results[0]!;
@@ -206,21 +235,21 @@ function aggregateOverall(results: GuardResult[]): GuardResult {
 
 function severityOrd(s: Severity): number {
   switch (s) {
-    case 'low':
+    case "low":
       return 0;
-    case 'medium':
+    case "medium":
       return 1;
-    case 'high':
+    case "high":
       return 2;
-    case 'critical':
+    case "critical":
       return 3;
   }
 }
 
 function isSeverity(value: unknown): value is Severity {
-  return value === 'low' || value === 'medium' || value === 'high' || value === 'critical';
+  return value === "low" || value === "medium" || value === "high" || value === "critical";
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

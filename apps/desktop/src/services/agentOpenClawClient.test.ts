@@ -54,7 +54,7 @@ describe("AgentOpenClawClient", () => {
     expect(openclawAgentRequestMock).toHaveBeenLastCalledWith(
       "GET",
       "/api/v1/openclaw/gateways",
-      undefined
+      undefined,
     );
   });
 
@@ -91,7 +91,7 @@ describe("AgentOpenClawClient", () => {
             device_token: "devtok",
           },
         ],
-      }
+      },
     );
   });
 
@@ -107,7 +107,7 @@ describe("AgentOpenClawClient", () => {
       "/api/v1/openclaw/active-gateway",
       {
         active_gateway_id: "gw-2",
-      }
+      },
     );
   });
 

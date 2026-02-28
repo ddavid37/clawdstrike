@@ -1,15 +1,19 @@
 /**
  * WorkflowsView - Automated response chains
  */
-import { useState, useEffect } from "react";
-import type { ReactNode } from "react";
+
+import { Badge, GlassHeader, GlassPanel, GlowButton, GlowInput } from "@backbay/glia/primitives";
 import { clsx } from "clsx";
-import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
-import { GlowButton } from "@backbay/glia/primitives";
-import { GlowInput } from "@backbay/glia/primitives";
-import { Badge } from "@backbay/glia/primitives";
-import type { Workflow, WorkflowTrigger, WorkflowAction } from "@/services/tauri";
-import { listWorkflows, saveWorkflow, deleteWorkflow, testWorkflow, isTauri } from "@/services/tauri";
+import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import type { Workflow, WorkflowAction, WorkflowTrigger } from "@/services/tauri";
+import {
+  deleteWorkflow,
+  isTauri,
+  listWorkflows,
+  saveWorkflow,
+  testWorkflow,
+} from "@/services/tauri";
 
 // Mock workflows for browser testing
 const MOCK_WORKFLOWS: Workflow[] = [
@@ -25,7 +29,12 @@ const MOCK_WORKFLOWS: Workflow[] = [
       ],
     },
     actions: [
-      { type: "slack_webhook", url: "https://hooks.slack.com/...", channel: "#security-alerts", template: "Critical block: {{target}}" },
+      {
+        type: "slack_webhook",
+        url: "https://hooks.slack.com/...",
+        channel: "#security-alerts",
+        template: "Critical block: {{target}}",
+      },
     ],
     last_run: "2025-02-04T10:30:00Z",
     run_count: 42,
@@ -40,7 +49,12 @@ const MOCK_WORKFLOWS: Workflow[] = [
       cron: "0 9 * * *",
     },
     actions: [
-      { type: "email", to: ["security@example.com"], subject: "Daily SDR Summary", template: "Events: {{total_events}}, Blocked: {{blocked_count}}" },
+      {
+        type: "email",
+        to: ["security@example.com"],
+        subject: "Daily SDR Summary",
+        template: "Events: {{total_events}}, Blocked: {{blocked_count}}",
+      },
     ],
     run_count: 30,
     created_at: "2025-01-10T00:00:00Z",
@@ -55,9 +69,7 @@ const MOCK_WORKFLOWS: Workflow[] = [
       threshold: 10,
       window: "5m",
     },
-    actions: [
-      { type: "pagerduty", routing_key: "...", severity: "critical" },
-    ],
+    actions: [{ type: "pagerduty", routing_key: "...", severity: "critical" }],
     run_count: 0,
     created_at: "2025-02-01T00:00:00Z",
   },
@@ -152,9 +164,7 @@ export function WorkflowsView() {
               Automated response chains for policy events
             </p>
           </div>
-          <GlowButton onClick={handleNewWorkflow}>
-            New Workflow
-          </GlowButton>
+          <GlowButton onClick={handleNewWorkflow}>New Workflow</GlowButton>
         </GlassHeader>
 
         {/* Workflow list */}
@@ -201,7 +211,7 @@ export function WorkflowsView() {
             setWorkflows((prev) =>
               prev.some((w) => w.id === updated.id)
                 ? prev.map((w) => (w.id === updated.id ? updated : w))
-                : [...prev, updated]
+                : [...prev, updated],
             );
             setSelectedWorkflow(updated);
             setIsEditing(false);
@@ -226,7 +236,7 @@ function WorkflowRow({ workflow, isSelected, onSelect, onToggle }: WorkflowRowPr
     <div
       className={clsx(
         "flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors",
-        isSelected ? "bg-sdr-accent-blue/10" : "hover:bg-sdr-bg-tertiary"
+        isSelected ? "bg-sdr-accent-blue/10" : "hover:bg-sdr-bg-tertiary",
       )}
       onClick={onSelect}
     >
@@ -238,13 +248,13 @@ function WorkflowRow({ workflow, isSelected, onSelect, onToggle }: WorkflowRowPr
         }}
         className={clsx(
           "w-10 h-6 rounded-full transition-colors relative",
-          workflow.enabled ? "bg-sdr-accent-green" : "bg-sdr-bg-tertiary"
+          workflow.enabled ? "bg-sdr-accent-green" : "bg-sdr-bg-tertiary",
         )}
       >
         <span
           className={clsx(
             "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
-            workflow.enabled ? "left-5" : "left-1"
+            workflow.enabled ? "left-5" : "left-1",
           )}
         />
       </button>
@@ -258,9 +268,7 @@ function WorkflowRow({ workflow, isSelected, onSelect, onToggle }: WorkflowRowPr
         <div className="text-xs text-sdr-text-muted mt-0.5">
           {workflow.actions.length} action{workflow.actions.length !== 1 ? "s" : ""} ·{" "}
           {workflow.run_count} runs
-          {workflow.last_run && (
-            <> · Last: {new Date(workflow.last_run).toLocaleString()}</>
-          )}
+          {workflow.last_run && <> · Last: {new Date(workflow.last_run).toLocaleString()}</>}
         </div>
       </div>
 
@@ -268,7 +276,7 @@ function WorkflowRow({ workflow, isSelected, onSelect, onToggle }: WorkflowRowPr
       <div
         className={clsx(
           "w-2 h-2 rounded-full",
-          workflow.enabled ? "bg-sdr-accent-green" : "bg-sdr-text-muted"
+          workflow.enabled ? "bg-sdr-accent-green" : "bg-sdr-text-muted",
         )}
       />
     </div>
@@ -282,11 +290,7 @@ function TriggerBadge({ trigger }: { trigger: WorkflowTrigger }) {
     aggregation: "Aggregation",
   };
 
-  return (
-    <Badge variant="outline">
-      {labels[trigger.type] ?? trigger.type}
-    </Badge>
-  );
+  return <Badge variant="outline">{labels[trigger.type] ?? trigger.type}</Badge>;
 }
 
 interface WorkflowDetailPanelProps {
@@ -346,9 +350,7 @@ function WorkflowDetailPanel({
           <>
             {/* Name */}
             <div>
-              <label className="block text-sm font-medium text-sdr-text-primary mb-1">
-                Name
-              </label>
+              <label className="block text-sm font-medium text-sdr-text-primary mb-1">Name</label>
               <GlowInput
                 type="text"
                 value={draft.name}
@@ -367,7 +369,10 @@ function WorkflowDetailPanel({
                 onChange={(e) =>
                   setDraft({
                     ...draft,
-                    trigger: { type: e.target.value as "event_match" | "schedule" | "aggregation", conditions: [] } as WorkflowTrigger,
+                    trigger: {
+                      type: e.target.value as "event_match" | "schedule" | "aggregation",
+                      conditions: [],
+                    } as WorkflowTrigger,
                   })
                 }
                 className="w-full px-3 py-2 bg-sdr-bg-tertiary text-sdr-text-primary rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue"
@@ -511,9 +516,7 @@ function ActionDisplay({ action }: { action: WorkflowAction }) {
 
   return (
     <div className="flex items-center gap-2 text-sm">
-      <Badge variant="outline">
-        {labels[action.type] ?? action.type}
-      </Badge>
+      <Badge variant="outline">{labels[action.type] ?? action.type}</Badge>
       <span className="text-sdr-text-secondary truncate">
         {action.type === "slack_webhook" && action.channel}
         {action.type === "email" && action.to.join(", ")}
@@ -527,7 +530,14 @@ function ActionDisplay({ action }: { action: WorkflowAction }) {
 
 function CloseIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   );

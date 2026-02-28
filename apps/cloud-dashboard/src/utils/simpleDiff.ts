@@ -26,7 +26,13 @@ export function diffLines(oldText: string, newText: string): DiffResult {
   let li = 0;
 
   while (oi < oldLines.length || ni < newLines.length) {
-    if (li < lcs.length && oi < oldLines.length && ni < newLines.length && oldLines[oi] === lcs[li] && newLines[ni] === lcs[li]) {
+    if (
+      li < lcs.length &&
+      oi < oldLines.length &&
+      ni < newLines.length &&
+      oldLines[oi] === lcs[li] &&
+      newLines[ni] === lcs[li]
+    ) {
       left.push({ type: "unchanged", content: oldLines[oi], lineNumber: oi + 1 });
       right.push({ type: "unchanged", content: newLines[ni], lineNumber: ni + 1 });
       oi++;

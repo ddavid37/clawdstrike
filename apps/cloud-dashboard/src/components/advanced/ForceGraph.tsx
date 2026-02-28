@@ -1,6 +1,12 @@
-import { useRef, useEffect, useMemo } from "react";
-import { createSimulation, tickSimulation, type ForceNode, type ForceEdge, type ForceSimulation } from "../../utils/forceLayout";
+import { useEffect, useMemo, useRef } from "react";
 import type { SSEEvent } from "../../hooks/useSSE";
+import {
+  createSimulation,
+  type ForceEdge,
+  type ForceNode,
+  type ForceSimulation,
+  tickSimulation,
+} from "../../utils/forceLayout";
 
 function hashPos(id: string, range: number): number {
   let h = 0;
@@ -15,7 +21,15 @@ function getPostureColor(events: SSEEvent[]): string {
   return "#c23b3b";
 }
 
-export function ForceGraph({ events, width, height }: { events: SSEEvent[]; width: number; height: number }) {
+export function ForceGraph({
+  events,
+  width,
+  height,
+}: {
+  events: SSEEvent[];
+  width: number;
+  height: number;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simRef = useRef<ForceSimulation | null>(null);
   const animRef = useRef<number>(0);
@@ -41,9 +55,15 @@ export function ForceGraph({ events, width, height }: { events: SSEEvent[]; widt
     const nodeList: ForceNode[] = [];
     for (const [id, evts] of agentMap) {
       nodeList.push({
-        id, x: hashPos(id, width), y: hashPos(id + "_y", height),
-        vx: 0, vy: 0, color: getPostureColor(evts),
-        label: id.slice(0, 8), radius: 16, type: "agent",
+        id,
+        x: hashPos(id, width),
+        y: hashPos(id + "_y", height),
+        vx: 0,
+        vy: 0,
+        color: getPostureColor(evts),
+        label: id.slice(0, 8),
+        radius: 16,
+        type: "agent",
       });
     }
 
@@ -52,9 +72,15 @@ export function ForceGraph({ events, width, height }: { events: SSEEvent[]; widt
       if (e.session_id && !sessionIds.has(e.session_id)) {
         sessionIds.add(e.session_id);
         nodeList.push({
-          id: e.session_id, x: hashPos(e.session_id, width), y: hashPos(e.session_id + "_y", height),
-          vx: 0, vy: 0, color: "rgba(154,167,181,0.4)",
-          label: "", radius: 6, type: "session",
+          id: e.session_id,
+          x: hashPos(e.session_id, width),
+          y: hashPos(e.session_id + "_y", height),
+          vx: 0,
+          vy: 0,
+          color: "rgba(154,167,181,0.4)",
+          label: "",
+          radius: 6,
+          type: "session",
         });
       }
     }
@@ -82,7 +108,8 @@ export function ForceGraph({ events, width, height }: { events: SSEEvent[]; widt
       ctx.strokeStyle = "rgba(154,167,181,0.15)";
       ctx.lineWidth = 1;
       for (const edge of sim.edges) {
-        const a = nodeMap.get(edge.source), b = nodeMap.get(edge.target);
+        const a = nodeMap.get(edge.source),
+          b = nodeMap.get(edge.target);
         if (!a || !b) continue;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);

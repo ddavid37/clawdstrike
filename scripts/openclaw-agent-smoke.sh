@@ -102,7 +102,15 @@ if [[ "$START_LOCAL_GATEWAY" -eq 1 ]]; then
   fi
 fi
 
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/clawdstrike"
+CONFIG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}"
+CONFIG_DIR="${CONFIG_ROOT}/clawdstrike"
+# macOS default config_dir() differs from XDG (~/.config). Auto-detect when unset.
+if [[ -z "${XDG_CONFIG_HOME:-}" ]]; then
+  MAC_CONFIG_DIR="$HOME/Library/Application Support/clawdstrike"
+  if [[ ! -f "${CONFIG_DIR}/agent-local-token" ]] && [[ -f "${MAC_CONFIG_DIR}/agent-local-token" ]]; then
+    CONFIG_DIR="${MAC_CONFIG_DIR}"
+  fi
+fi
 AGENT_SETTINGS="${CONFIG_DIR}/agent.json"
 AGENT_TOKEN_FILE="${CONFIG_DIR}/agent-local-token"
 AGENT_PORT=9878
@@ -110,6 +118,7 @@ AGENT_TOKEN=""
 API_BASE=""
 GATEWAY_PID=""
 GATEWAY_LOG=""
+GATEWAY_PROFILE=""
 ORIGINAL_ENFORCED=""
 
 if [[ -f "$AGENT_SETTINGS" ]]; then
@@ -186,9 +195,33 @@ wait_for_gateway_status() {
 }
 
 start_local_gateway() {
+  GATEWAY_PROFILE="smoke-$(date +%s)"
+  local profile_dir="${HOME}/.openclaw-${GATEWAY_PROFILE}"
+
+  # Use an isolated OpenClaw profile for deterministic smoke behavior.
+  "${OPENCLAW_BIN}" --profile "${GATEWAY_PROFILE}" doctor --generate-gateway-token --yes --non-interactive >/dev/null 2>&1 || true
+  "${OPENCLAW_BIN}" --profile "${GATEWAY_PROFILE}" config set gateway.mode local >/dev/null 2>&1 || true
+
+  # If a token is supplied, force it into the isolated profile; otherwise use generated token.
+  if [[ -n "${GATEWAY_TOKEN}" ]]; then
+    "${OPENCLAW_BIN}" --profile "${GATEWAY_PROFILE}" config set --strict-json gateway.auth.token "\"${GATEWAY_TOKEN}\"" >/dev/null 2>&1 || true
+  fi
+  local profile_token
+  profile_token="$("${OPENCLAW_BIN}" --profile "${GATEWAY_PROFILE}" config get --json gateway.auth.token 2>/dev/null | jq -r '. // empty' || true)"
+  if [[ -z "${profile_token}" && -f "${profile_dir}/openclaw.json" ]]; then
+    profile_token="$(jq -r '.gateway.auth.token // empty' "${profile_dir}/openclaw.json" 2>/dev/null || true)"
+  fi
+  if [[ -n "${profile_token}" ]]; then
+    GATEWAY_TOKEN="${profile_token}"
+  fi
+  if [[ -z "${GATEWAY_TOKEN}" ]]; then
+    GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-smoke-token}"
+  fi
+
   GATEWAY_LOG="$(mktemp -t openclaw-gateway-smoke.XXXXXX.log)"
-  log "Starting local gateway with ${OPENCLAW_BIN}; logs: ${GATEWAY_LOG}"
-  OPENCLAW_GATEWAY_TOKEN="${GATEWAY_TOKEN}" "${OPENCLAW_BIN}" gateway run --force >"${GATEWAY_LOG}" 2>&1 &
+  log "Starting local gateway with ${OPENCLAW_BIN} profile=${GATEWAY_PROFILE}; logs: ${GATEWAY_LOG}"
+  OPENCLAW_GATEWAY_TOKEN="${GATEWAY_TOKEN}" \
+    "${OPENCLAW_BIN}" --profile "${GATEWAY_PROFILE}" gateway run --force --allow-unconfigured --port 18789 --token "${GATEWAY_TOKEN}" >"${GATEWAY_LOG}" 2>&1 &
   GATEWAY_PID="$!"
   sleep 2
 }
@@ -210,6 +243,10 @@ cleanup() {
   api_delete "/api/v1/openclaw/gateways/${GATEWAY_ID}" || true
 
   stop_local_gateway
+  if [[ -n "${GATEWAY_PROFILE}" ]]; then
+    rm -rf "${HOME}/.openclaw-${GATEWAY_PROFILE}" >/dev/null 2>&1 || true
+    GATEWAY_PROFILE=""
+  fi
 }
 
 trap cleanup EXIT INT TERM

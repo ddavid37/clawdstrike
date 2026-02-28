@@ -1,8 +1,8 @@
-export type Severity = 'low' | 'medium' | 'high' | 'critical';
+export type Severity = "low" | "medium" | "high" | "critical";
 
-export type EvaluationMode = 'deterministic' | 'advisory' | 'audit';
+export type EvaluationMode = "deterministic" | "advisory" | "audit";
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export interface GuardToggles {
   forbidden_path?: boolean;
@@ -22,24 +22,24 @@ export interface ClawdstrikeConfig {
 export type Policy = Record<string, unknown>;
 
 export type EventType =
-  | 'file_read'
-  | 'file_write'
-  | 'command_exec'
-  | 'network_egress'
-  | 'tool_call'
-  | 'patch_apply'
-  | 'secret_access'
-  | 'custom'
-  | 'remote.session.connect'
-  | 'remote.session.disconnect'
-  | 'remote.session.reconnect'
-  | 'input.inject'
-  | 'remote.clipboard'
-  | 'remote.file_transfer'
-  | 'remote.audio'
-  | 'remote.drive_mapping'
-  | 'remote.printing'
-  | 'remote.session_share';
+  | "file_read"
+  | "file_write"
+  | "command_exec"
+  | "network_egress"
+  | "tool_call"
+  | "patch_apply"
+  | "secret_access"
+  | "custom"
+  | "remote.session.connect"
+  | "remote.session.disconnect"
+  | "remote.session.reconnect"
+  | "input.inject"
+  | "remote.clipboard"
+  | "remote.file_transfer"
+  | "remote.audio"
+  | "remote.drive_mapping"
+  | "remote.printing"
+  | "remote.session_share";
 
 export interface PolicyEvent {
   eventId: string;
@@ -61,23 +61,23 @@ export type EventData =
   | CuaEventData;
 
 export interface FileEventData {
-  type: 'file';
+  type: "file";
   path: string;
   content?: string;
   contentBase64?: string;
   contentHash?: string;
-  operation: 'read' | 'write';
+  operation: "read" | "write";
 }
 
 export interface CommandEventData {
-  type: 'command';
+  type: "command";
   command: string;
   args: string[];
   workingDir?: string;
 }
 
 export interface NetworkEventData {
-  type: 'network';
+  type: "network";
   host: string;
   port: number;
   protocol?: string;
@@ -85,35 +85,35 @@ export interface NetworkEventData {
 }
 
 export interface ToolEventData {
-  type: 'tool';
+  type: "tool";
   toolName: string;
   parameters: Record<string, unknown>;
   result?: string;
 }
 
 export interface PatchEventData {
-  type: 'patch';
+  type: "patch";
   filePath: string;
   patchContent: string;
   patchHash?: string;
 }
 
 export interface SecretEventData {
-  type: 'secret';
+  type: "secret";
   secretName: string;
   scope: string;
 }
 
 export interface CustomEventData {
-  type: 'custom';
+  type: "custom";
   customType: string;
   [key: string]: unknown;
 }
 
 export interface CuaEventData {
-  type: 'cua';
+  type: "cua";
   cuaAction: string;
-  direction?: 'read' | 'write' | 'upload' | 'download' | 'inbound' | 'outbound';
+  direction?: "read" | "write" | "upload" | "download" | "inbound" | "outbound";
   continuityPrevSessionHash?: string;
   postconditionProbeHash?: string;
   [key: string]: unknown;
@@ -129,7 +129,7 @@ export interface CuaEventData {
  * - 'warn': Operation is permitted but flagged for review
  * - 'deny': Operation is blocked
  */
-export type DecisionStatus = 'allow' | 'warn' | 'deny' | 'sanitize';
+export type DecisionStatus = "allow" | "warn" | "deny" | "sanitize";
 
 export type DecisionReasonCode = string;
 
@@ -157,19 +157,19 @@ interface DecisionBase {
 export type Decision =
   | (DecisionBase & {
       /** The decision status: 'allow' */
-      status: 'allow';
+      status: "allow";
       /** Optional machine-readable code for allow results */
       reason_code?: DecisionReasonCode;
     })
   | (DecisionBase & {
       /** The decision status: 'warn' or 'deny' */
-      status: 'warn' | 'deny';
+      status: "warn" | "deny";
       /** Required machine-readable code for non-allow results */
       reason_code: DecisionReasonCode;
     })
   | (DecisionBase & {
       /** The decision status: 'sanitize' */
-      status: 'sanitize';
+      status: "sanitize";
       /** Required machine-readable code for sanitize results */
       reason_code: DecisionReasonCode;
       /** Original content before sanitization */
@@ -182,7 +182,7 @@ export type Decision =
  * Create a Decision.
  */
 export function createDecision(
-  status: 'allow',
+  status: "allow",
   options?: {
     reason_code?: DecisionReasonCode;
     guard?: string;
@@ -193,7 +193,7 @@ export function createDecision(
   },
 ): Decision;
 export function createDecision(
-  status: 'warn' | 'deny',
+  status: "warn" | "deny",
   options: {
     reason_code: DecisionReasonCode;
     guard?: string;
@@ -204,7 +204,7 @@ export function createDecision(
   },
 ): Decision;
 export function createDecision(
-  status: 'sanitize',
+  status: "sanitize",
   options: {
     reason_code: DecisionReasonCode;
     original?: string;
@@ -229,12 +229,12 @@ export function createDecision(
     details?: unknown;
   } = {},
 ): Decision {
-  if (status !== 'allow' && (!options.reason_code || options.reason_code.trim().length === 0)) {
+  if (status !== "allow" && (!options.reason_code || options.reason_code.trim().length === 0)) {
     throw new Error(`Decision reason_code is required for status '${status}'`);
   }
-  if (status === 'allow') {
+  if (status === "allow") {
     return {
-      status: 'allow',
+      status: "allow",
       ...(options.reason_code !== undefined && { reason_code: options.reason_code }),
       guard: options.guard,
       severity: options.severity,
@@ -251,8 +251,9 @@ export function createDecision(
     message: options.message,
     reason: options.reason,
     details: options.details,
-    ...(status === 'sanitize' && options.original !== undefined && { original: options.original }),
-    ...(status === 'sanitize' && options.sanitized !== undefined && { sanitized: options.sanitized }),
+    ...(status === "sanitize" && options.original !== undefined && { original: options.original }),
+    ...(status === "sanitize" &&
+      options.sanitized !== undefined && { sanitized: options.sanitized }),
   } as Decision;
 }
 
@@ -260,7 +261,7 @@ export function createDecision(
  * Helper to create an allow decision.
  */
 export function allowDecision(options: { guard?: string; message?: string } = {}): Decision {
-  return createDecision('allow', { severity: 'low', ...options });
+  return createDecision("allow", { severity: "low", ...options });
 }
 
 /**
@@ -274,7 +275,7 @@ export function denyDecision(options: {
   reason?: string;
   details?: unknown;
 }): Decision {
-  return createDecision('deny', { severity: 'high', ...options });
+  return createDecision("deny", { severity: "high", ...options });
 }
 
 /**
@@ -288,7 +289,7 @@ export function warnDecision(options: {
   reason?: string;
   details?: unknown;
 }): Decision {
-  return createDecision('warn', { severity: 'medium', ...options });
+  return createDecision("warn", { severity: "medium", ...options });
 }
 
 /**
@@ -304,5 +305,5 @@ export function sanitizeDecision(options: {
   reason?: string;
   details?: unknown;
 }): Decision {
-  return createDecision('sanitize', { severity: 'medium', ...options });
+  return createDecision("sanitize", { severity: "medium", ...options });
 }

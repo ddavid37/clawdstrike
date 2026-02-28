@@ -1,1 +1,1 @@
-export { ClawdstrikeBlockedError } from '@clawdstrike/adapter-core';
+export { ClawdstrikeBlockedError } from "@clawdstrike/adapter-core";

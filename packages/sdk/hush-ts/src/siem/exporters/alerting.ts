@@ -1,4 +1,4 @@
-import type { ExportError, ExportResult, ExporterConfig } from "../framework";
+import type { ExportError, ExporterConfig, ExportResult } from "../framework";
 import { BaseExporter, SchemaFormat } from "../framework";
 import { HttpClient } from "../http";
 import type { SecurityEvent, SecuritySeverity } from "../types";
@@ -132,7 +132,7 @@ class PagerDutyClient {
       this.autoResolveTimer = setInterval(() => {
         void this.checkAutoResolve();
       }, 60_000);
-      if (typeof this.autoResolveTimer === 'object' && 'unref' in this.autoResolveTimer) {
+      if (typeof this.autoResolveTimer === "object" && "unref" in this.autoResolveTimer) {
         this.autoResolveTimer.unref();
       }
     }
@@ -269,7 +269,11 @@ class OpsGenieClient {
     const alias = renderDedupeKey(undefined, event);
     const priority = mapOpsGeniePriority(event.decision.severity, this.config.priorityMapping);
 
-    const tags = [...this.config.tags, `guard:${event.decision.guard}`, `severity:${event.decision.severity}`];
+    const tags = [
+      ...this.config.tags,
+      `guard:${event.decision.guard}`,
+      `severity:${event.decision.severity}`,
+    ];
     const body: OpsGenieAlert = {
       message: `Clawdstrike violation: ${event.decision.guard}`,
       alias,
@@ -307,7 +311,7 @@ class OpsGenieClient {
     this.heartbeatTimer = setInterval(() => {
       void this.pingHeartbeat();
     }, intervalMs);
-    if (typeof this.heartbeatTimer === 'object' && 'unref' in this.heartbeatTimer) {
+    if (typeof this.heartbeatTimer === "object" && "unref" in this.heartbeatTimer) {
       this.heartbeatTimer.unref();
     }
     void this.pingHeartbeat();
@@ -341,7 +345,13 @@ export class AlertingExporter extends BaseExporter {
   private readonly pagerduty?: PagerDutyClient;
   private readonly opsgenie?: OpsGenieClient;
 
-  private readonly severityOrder: SecuritySeverity[] = ["info", "low", "medium", "high", "critical"];
+  private readonly severityOrder: SecuritySeverity[] = [
+    "info",
+    "low",
+    "medium",
+    "high",
+    "critical",
+  ];
 
   constructor(config: AlertingConfig) {
     super(config);
@@ -383,7 +393,7 @@ export class AlertingExporter extends BaseExporter {
   }
 
   async export(events: SecurityEvent[]): Promise<ExportResult> {
-    const alertEvents = events.filter(e => this.shouldAlert(e));
+    const alertEvents = events.filter((e) => this.shouldAlert(e));
     const filtered = events.length - alertEvents.length;
     if (alertEvents.length === 0) {
       return { exported: 0, failed: 0, filtered, errors: [] };
@@ -435,7 +445,7 @@ export class AlertingExporter extends BaseExporter {
 
 function mapPagerDutySeverity(
   sev: SecuritySeverity,
-  mapping: Record<SecuritySeverity, AlertSeverity>
+  mapping: Record<SecuritySeverity, AlertSeverity>,
 ): AlertSeverity {
   switch (sev) {
     case "critical":
@@ -457,7 +467,7 @@ function mapPagerDutySeverity(
 
 function mapOpsGeniePriority(
   sev: SecuritySeverity,
-  mapping: Record<SecuritySeverity, string>
+  mapping: Record<SecuritySeverity, string>,
 ): string {
   switch (sev) {
     case "critical":
@@ -478,7 +488,7 @@ function mapOpsGeniePriority(
 }
 
 function normalizePagerDutySeverityMapping(
-  input: PagerDutyConfig["severityMapping"]
+  input: PagerDutyConfig["severityMapping"],
 ): Record<SecuritySeverity, AlertSeverity> {
   return {
     critical: input?.critical ?? "critical",
@@ -490,7 +500,7 @@ function normalizePagerDutySeverityMapping(
 }
 
 function normalizeOpsGeniePriorityMapping(
-  input: OpsGenieConfig["priorityMapping"]
+  input: OpsGenieConfig["priorityMapping"],
 ): Record<SecuritySeverity, string> {
   return {
     critical: input?.critical ?? "P1",

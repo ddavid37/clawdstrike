@@ -8,14 +8,14 @@
  * before it can be connected end-to-end. See docs/audits/2026-02-25-openclaw-correctness-findings.md#C6.
  */
 
+import { mergeConfig } from "../../config.js";
 import type {
-  HookHandler,
-  HookEvent,
-  ToolResultPersistEvent,
   ClawdstrikeConfig,
+  HookEvent,
+  HookHandler,
   Logger,
-} from '../../types.js';
-import { mergeConfig } from '../../config.js';
+  ToolResultPersistEvent,
+} from "../../types.js";
 
 /** Logger instance */
 let logger: Logger | null = null;
@@ -32,16 +32,16 @@ export function initialize(config: ClawdstrikeConfig): void {
  * Hook handler for audit logging
  */
 const handler: HookHandler = async (event: HookEvent): Promise<void> => {
-  if (event.type !== 'tool_result_persist') {
+  if (event.type !== "tool_result_persist") {
     return;
   }
 
   const toolEvent = event as ToolResultPersistEvent;
-  const log = logger ?? createAuditLogger('info');
+  const log = logger ?? createAuditLogger("info");
 
   const auditEntry = {
     timestamp: new Date().toISOString(),
-    eventType: 'tool_result_persist',
+    eventType: "tool_result_persist",
     sessionId: toolEvent.context.sessionId,
     toolName: toolEvent.context.toolResult.toolName,
     hasError: !!toolEvent.context.toolResult.error,
@@ -50,11 +50,11 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
 
   // Log based on outcome
   if (toolEvent.context.toolResult.error) {
-    log.warn('[AUDIT] Tool blocked', auditEntry);
-  } else if (toolEvent.messages.some((m) => m.includes('Warning'))) {
-    log.info('[AUDIT] Tool executed with warnings', auditEntry);
+    log.warn("[AUDIT] Tool blocked", auditEntry);
+  } else if (toolEvent.messages.some((m) => m.includes("Warning"))) {
+    log.info("[AUDIT] Tool executed with warnings", auditEntry);
   } else {
-    log.debug('[AUDIT] Tool executed', auditEntry);
+    log.debug("[AUDIT] Tool executed", auditEntry);
   }
 };
 
@@ -62,7 +62,7 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
  * Create audit logger with appropriate level filtering
  */
 function createAuditLogger(level: string): Logger {
-  const levels = ['debug', 'info', 'warn', 'error'];
+  const levels = ["debug", "info", "warn", "error"];
   const minLevel = levels.indexOf(level);
 
   return {

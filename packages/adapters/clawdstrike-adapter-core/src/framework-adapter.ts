@@ -1,16 +1,16 @@
-import { BaseToolInterceptor } from './base-tool-interceptor.js';
-import { createSecurityContext, type SecurityContext } from './context.js';
-import type { PolicyEngineLike } from './engine.js';
-import type { ProcessedOutput } from './interceptor.js';
 import type {
   AdapterConfig,
   FrameworkAdapter,
   FrameworkHooks,
   GenericToolCall,
   SessionSummary,
-} from './adapter.js';
-import { createSessionSummary } from './finalize-context.js';
-import { FrameworkToolBoundary } from './framework-tool-boundary.js';
+} from "./adapter.js";
+import { BaseToolInterceptor } from "./base-tool-interceptor.js";
+import { createSecurityContext, type SecurityContext } from "./context.js";
+import type { PolicyEngineLike } from "./engine.js";
+import { createSessionSummary } from "./finalize-context.js";
+import { FrameworkToolBoundary } from "./framework-tool-boundary.js";
+import type { ProcessedOutput } from "./interceptor.js";
 
 export function createFrameworkAdapter(
   framework: string,
@@ -22,7 +22,7 @@ export function createFrameworkAdapter(
 
   return {
     name: framework,
-    version: '0.1.1', // TODO: derive from package.json at build time
+    version: "0.1.1", // TODO: derive from package.json at build time
 
     async initialize(newConfig: AdapterConfig): Promise<void> {
       currentConfig = newConfig;
@@ -59,8 +59,8 @@ export function createFrameworkAdapter(
       return {
         createCallbackHandler: () =>
           new FrameworkToolBoundary(framework, { interceptor, config: currentConfig }),
-        wrapTool: tool => tool,
-        injectIntoContext: ctx => ctx,
+        wrapTool: (tool) => tool,
+        injectIntoContext: (ctx) => ctx,
         extractFromContext: () => ({}),
       };
     },

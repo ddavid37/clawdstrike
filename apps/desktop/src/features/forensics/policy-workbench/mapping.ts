@@ -217,7 +217,7 @@ function safeJsonObject(input?: string): Record<string, unknown> {
 
 export function buildPolicyTestEvent(
   form: PolicyTestForm,
-  options?: { eventId?: string; timestamp?: string }
+  options?: { eventId?: string; timestamp?: string },
 ): Record<string, unknown> {
   const eventId = options?.eventId ?? `evt-${Date.now()}`;
   const timestamp = options?.timestamp ?? new Date().toISOString();
@@ -231,7 +231,8 @@ export function buildPolicyTestEvent(
   };
 
   if (form.sessionId?.trim()) event.sessionId = form.sessionId.trim();
-  if (form.agentId?.trim()) (event.metadata as Record<string, unknown>).agentId = form.agentId.trim();
+  if (form.agentId?.trim())
+    (event.metadata as Record<string, unknown>).agentId = form.agentId.trim();
 
   switch (form.eventType) {
     case "file_read":

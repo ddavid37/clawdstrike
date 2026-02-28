@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-
-import { NavRail } from "./NavRail";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStore } from "@/shell/sessions";
+import { NavRail } from "./NavRail";
 
 const navigateMock = vi.fn();
 
@@ -24,8 +24,9 @@ vi.mock("@/context/ConnectionContext", () => ({
   useConnectionStatus: () => "connected",
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("NavRail", () => {
   let container: HTMLDivElement;
@@ -63,7 +64,9 @@ describe("NavRail", () => {
     expect(container.textContent).toContain("Strikecell Alpha");
     expect(container.textContent).not.toContain("Settings");
 
-    const liveButton = container.querySelector("button[aria-label*='Open operations']") as HTMLButtonElement;
+    const liveButton = container.querySelector(
+      "button[aria-label*='Open operations']",
+    ) as HTMLButtonElement;
     expect(liveButton).toBeTruthy();
 
     act(() => {
@@ -84,7 +87,7 @@ describe("NavRail", () => {
     });
 
     const addButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "+"
+      (button) => button.textContent?.trim() === "+",
     ) as HTMLButtonElement;
     expect(addButton).toBeTruthy();
 

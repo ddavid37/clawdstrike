@@ -9,17 +9,17 @@ interface Toast {
 }
 
 const TYPE_STYLES: Record<Toast["type"], { border: string; color: string; glow: string }> = {
-  info:    { border: "rgba(214,177,90,0.3)",  color: "#d6b15a", glow: "rgba(214,177,90,0.15)" },
-  success: { border: "rgba(45,170,106,0.3)",  color: "#2daa6a", glow: "rgba(45,170,106,0.15)" },
-  warning: { border: "rgba(210,163,75,0.3)",  color: "#d2a34b", glow: "rgba(210,163,75,0.15)" },
-  error:   { border: "rgba(194,59,59,0.3)",   color: "#c23b3b", glow: "rgba(194,59,59,0.15)" },
+  info: { border: "rgba(214,177,90,0.3)", color: "#d6b15a", glow: "rgba(214,177,90,0.15)" },
+  success: { border: "rgba(45,170,106,0.3)", color: "#2daa6a", glow: "rgba(45,170,106,0.15)" },
+  warning: { border: "rgba(210,163,75,0.3)", color: "#d2a34b", glow: "rgba(210,163,75,0.15)" },
+  error: { border: "rgba(194,59,59,0.3)", color: "#c23b3b", glow: "rgba(194,59,59,0.15)" },
 };
 
 const STATUS_TOAST: Partial<Record<SSEConnectionStatus, { msg: string; type: Toast["type"] }>> = {
-  connected:     { msg: "SSE stream connected",           type: "success" },
-  disconnected:  { msg: "SSE stream disconnected",        type: "warning" },
-  unauthorized:  { msg: "SSE authentication failed",      type: "error" },
-  network_error: { msg: "SSE network error — retrying",   type: "error" },
+  connected: { msg: "SSE stream connected", type: "success" },
+  disconnected: { msg: "SSE stream disconnected", type: "warning" },
+  unauthorized: { msg: "SSE authentication failed", type: "error" },
+  network_error: { msg: "SSE network error — retrying", type: "error" },
 };
 
 export function SSENotifier() {

@@ -6,8 +6,8 @@
  * the entire plugin lifecycle.
  */
 
-import { PolicyEngine } from './policy/engine.js';
-import type { ClawdstrikeConfig } from './types.js';
+import { PolicyEngine } from "./policy/engine.js";
+import type { ClawdstrikeConfig } from "./types.js";
 
 let sharedEngine: PolicyEngine | null = null;
 

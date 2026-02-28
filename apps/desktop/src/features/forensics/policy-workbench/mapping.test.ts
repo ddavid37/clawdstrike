@@ -9,7 +9,7 @@ describe("buildPolicyTestEvent", () => {
         eventType: "file_read",
         target: "/workspace/src/main.ts",
       },
-      { eventId: "evt-1", timestamp: "2026-02-11T00:00:00.000Z" }
+      { eventId: "evt-1", timestamp: "2026-02-11T00:00:00.000Z" },
     );
 
     expect(event.eventId).toBe("evt-1");
@@ -27,7 +27,7 @@ describe("buildPolicyTestEvent", () => {
         eventType: "command_exec",
         target: `python -c "print(\\"a b\\")"`,
       },
-      { eventId: "evt-cmd-1", timestamp: "2026-02-11T00:00:00.000Z" }
+      { eventId: "evt-cmd-1", timestamp: "2026-02-11T00:00:00.000Z" },
     );
 
     expect(event.data).toMatchObject({
@@ -43,7 +43,7 @@ describe("buildPolicyTestEvent", () => {
         eventType: "command_exec",
         target: `git commit -m 'feat: policy editor' path\\ with\\ spaces.txt`,
       },
-      { eventId: "evt-cmd-2", timestamp: "2026-02-11T00:00:00.000Z" }
+      { eventId: "evt-cmd-2", timestamp: "2026-02-11T00:00:00.000Z" },
     );
 
     expect(event.data).toMatchObject({
@@ -59,7 +59,7 @@ describe("buildPolicyTestEvent", () => {
         eventType: "command_exec",
         target: `python -c "print('C:\\tmp')"`,
       },
-      { eventId: "evt-cmd-3", timestamp: "2026-02-11T00:00:00.000Z" }
+      { eventId: "evt-cmd-3", timestamp: "2026-02-11T00:00:00.000Z" },
     );
 
     expect(event.data).toMatchObject({
@@ -74,7 +74,7 @@ describe("buildPolicyTestEvent", () => {
       buildPolicyTestEvent({
         eventType: "command_exec",
         target: `python -c "print(1)`,
-      })
+      }),
     ).toThrow("command_exec target has unclosed quote");
   });
 
@@ -84,7 +84,7 @@ describe("buildPolicyTestEvent", () => {
         eventType: "file_read",
         target: "../../etc/passwd",
       },
-      { eventId: "evt-2", timestamp: "2026-02-11T00:00:00.000Z" }
+      { eventId: "evt-2", timestamp: "2026-02-11T00:00:00.000Z" },
     );
 
     expect(event.data).toMatchObject({
@@ -99,7 +99,7 @@ describe("buildPolicyTestEvent", () => {
         eventType: "network_egress",
         target: "https://api.openai.com:443@evil.example/path",
       },
-      { eventId: "evt-3", timestamp: "2026-02-11T00:00:00.000Z" }
+      { eventId: "evt-3", timestamp: "2026-02-11T00:00:00.000Z" },
     );
 
     expect(event.data).toMatchObject({
@@ -115,7 +115,7 @@ describe("buildPolicyTestEvent", () => {
         eventType: "network_egress",
         target: "http://10.0.0.5:8080/metrics",
       },
-      { eventId: "evt-4", timestamp: "2026-02-11T00:00:00.000Z" }
+      { eventId: "evt-4", timestamp: "2026-02-11T00:00:00.000Z" },
     );
 
     expect(event.data).toMatchObject({
@@ -131,7 +131,7 @@ describe("buildPolicyTestEvent", () => {
         eventType: "network_egress",
         target: "ws://example.com/socket",
       },
-      { eventId: "evt-4b", timestamp: "2026-02-11T00:00:00.000Z" }
+      { eventId: "evt-4b", timestamp: "2026-02-11T00:00:00.000Z" },
     );
 
     expect(event.data).toMatchObject({
@@ -147,7 +147,7 @@ describe("buildPolicyTestEvent", () => {
         eventType: "network_egress",
         target: "ftp://ftp.example.org/pub",
       },
-      { eventId: "evt-4c", timestamp: "2026-02-11T00:00:00.000Z" }
+      { eventId: "evt-4c", timestamp: "2026-02-11T00:00:00.000Z" },
     );
 
     expect(event.data).toMatchObject({
@@ -163,7 +163,7 @@ describe("buildPolicyTestEvent", () => {
         eventType: "network_egress",
         target: "2001:db8::1",
       },
-      { eventId: "evt-5", timestamp: "2026-02-11T00:00:00.000Z" }
+      { eventId: "evt-5", timestamp: "2026-02-11T00:00:00.000Z" },
     );
 
     expect(event.data).toMatchObject({
@@ -179,7 +179,7 @@ describe("buildPolicyTestEvent", () => {
         eventType: "network_egress",
         target: "[2001:db8::1]:8443",
       },
-      { eventId: "evt-6", timestamp: "2026-02-11T00:00:00.000Z" }
+      { eventId: "evt-6", timestamp: "2026-02-11T00:00:00.000Z" },
     );
 
     expect(event.data).toMatchObject({
@@ -195,7 +195,7 @@ describe("buildPolicyTestEvent", () => {
         eventType: "network_egress",
         target: "https://[2001:db8::1]/v1/models",
       },
-      { eventId: "evt-7", timestamp: "2026-02-11T00:00:00.000Z" }
+      { eventId: "evt-7", timestamp: "2026-02-11T00:00:00.000Z" },
     );
 
     expect(event.data).toMatchObject({
@@ -212,14 +212,14 @@ describe("buildPolicyTestEvent", () => {
         eventType: "tool_call",
         target: "mcp__fs__read_file",
         extra: "[1,2,3]",
-      })
+      }),
     ).toThrow("extra must be a JSON object");
   });
 
   it("provides shared target placeholders across policy test views", () => {
     expect(getPolicyTestTargetPlaceholder("file_read")).toBe("/workspace/file.txt");
     expect(getPolicyTestTargetPlaceholder("network_egress")).toBe(
-      "https://api.openai.com/v1/models"
+      "https://api.openai.com/v1/models",
     );
     expect(getPolicyTestTargetPlaceholder("tool_call")).toBe("mcp__fs__read_file");
   });

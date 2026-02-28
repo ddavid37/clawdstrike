@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { notifySSEConfigChanged } from "../../hooks/useSSE";
-import { NoiseGrain, GlassButton } from "../ui";
+import { GlassButton, NoiseGrain } from "../ui";
 
 const INPUT_FOCUS_CSS =
   "glass-input font-body rounded-md px-3 py-2 text-sm outline-none transition-colors duration-150 focus:ring-1 placeholder:text-[rgba(100,116,139,0.5)]";
@@ -48,10 +48,7 @@ export function ConnectionSettings() {
   return (
     <section className="glass-panel max-w-3xl space-y-5 p-6">
       <NoiseGrain />
-      <h2
-        className="font-display relative z-10 text-lg tracking-wide"
-        style={{ color: "#fff" }}
-      >
+      <h2 className="font-display relative z-10 text-lg tracking-wide" style={{ color: "#fff" }}>
         Connection
       </h2>
 

@@ -17,8 +17,12 @@ declare module "@backbay/glia/primitives" {
     }
   >;
 
-  export const GlowButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }>;
-  export const GlowInput: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { variant?: string }>;
+  export const GlowButton: React.FC<
+    React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }
+  >;
+  export const GlowInput: React.FC<
+    React.InputHTMLAttributes<HTMLInputElement> & { variant?: string }
+  >;
   export const Badge: React.FC<React.HTMLAttributes<HTMLSpanElement> & { variant?: string }>;
   export const CodeBlock: React.FC<{
     code: string;
@@ -43,11 +47,11 @@ declare module "@backbay/glia/primitives" {
   export const TabsTrigger: React.FC<
     React.ButtonHTMLAttributes<HTMLButtonElement> & { value: string }
   >;
-  export const TabsContent: React.FC<
-    React.HTMLAttributes<HTMLDivElement> & { value: string }
-  >;
+  export const TabsContent: React.FC<React.HTMLAttributes<HTMLDivElement> & { value: string }>;
 
-  export const GlitchText: React.FC<React.HTMLAttributes<HTMLSpanElement> & { text?: string; variants?: string[] }>;
+  export const GlitchText: React.FC<
+    React.HTMLAttributes<HTMLSpanElement> & { text?: string; variants?: string[] }
+  >;
 
   export const KPIStat: React.FC<Record<string, unknown>>;
   export const HUDProgressRing: React.FC<Record<string, unknown>>;

@@ -54,7 +54,10 @@ describe("OpenClawContext", () => {
       });
 
       expect(next.execApprovalQueue).toHaveLength(100);
-      expect(next.execApprovalQueue[0]).toMatchObject({ id: "id-50", request: { command: "echo updated" } });
+      expect(next.execApprovalQueue[0]).toMatchObject({
+        id: "id-50",
+        request: { command: "echo updated" },
+      });
       expect(next.execApprovalQueue.filter((a) => a.id === "id-50")).toHaveLength(1);
     });
 
@@ -69,4 +72,3 @@ describe("OpenClawContext", () => {
     });
   });
 });
-

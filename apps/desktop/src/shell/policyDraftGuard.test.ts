@@ -15,7 +15,7 @@ describe("policyDraftGuard", () => {
         hasDirtyDraft: true,
         currentPathname: "/nexus",
         nextPathname: "/operations",
-      })
+      }),
     ).toBe(true);
   });
 
@@ -25,7 +25,7 @@ describe("policyDraftGuard", () => {
         hasDirtyDraft: false,
         currentPathname: "/nexus",
         nextPathname: "/operations",
-      })
+      }),
     ).toBe(false);
   });
 
@@ -35,7 +35,7 @@ describe("policyDraftGuard", () => {
         hasDirtyDraft: true,
         currentPathname: "/nexus",
         nextPathname: "/nexus/session-2",
-      })
+      }),
     ).toBe(false);
   });
 
@@ -45,7 +45,7 @@ describe("policyDraftGuard", () => {
         hasDirtyDraft: true,
         currentPathname: "/operations",
         nextPathname: "/operations",
-      })
+      }),
     ).toBe(false);
   });
 });

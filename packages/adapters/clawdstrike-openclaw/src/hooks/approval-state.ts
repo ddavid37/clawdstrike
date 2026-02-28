@@ -9,9 +9,9 @@
  * - TTL + LRU eviction prevents unbounded growth.
  */
 
-import { createHash } from 'node:crypto';
+import { createHash } from "node:crypto";
 
-export type ApprovalResolutionType = 'allow-once' | 'allow-session' | 'allow-always';
+export type ApprovalResolutionType = "allow-once" | "allow-session" | "allow-always";
 
 export interface ApprovalRecord {
   resolution: ApprovalResolutionType;
@@ -43,20 +43,20 @@ function normalizeResource(resource: string): string {
 function hashKey(toolName: string, resource: string): string {
   // Avoid embedding raw resource strings in keys (resource may contain secrets).
   // Include a separator that cannot appear in JS strings.
-  return createHash('sha256')
+  return createHash("sha256")
     .update(normalizeToolName(toolName))
-    .update('\0')
+    .update("\0")
     .update(normalizeResource(resource))
-    .digest('hex');
+    .digest("hex");
 }
 
 function ttlFor(resolution: ApprovalResolutionType): number {
   switch (resolution) {
-    case 'allow-once':
+    case "allow-once":
       return TTL_ALLOW_ONCE_MS;
-    case 'allow-session':
+    case "allow-session":
       return TTL_ALLOW_SESSION_MS;
-    case 'allow-always':
+    case "allow-always":
       return TTL_ALLOW_ALWAYS_MS;
   }
 }
@@ -78,7 +78,7 @@ export function recordApproval(
     expiresAt: now + ttlFor(resolution),
   };
 
-  if (resolution === 'allow-always') {
+  if (resolution === "allow-always") {
     setLru(alwaysApprovals, key, record, MAX_ALWAYS_APPROVALS);
     return;
   }
@@ -104,19 +104,29 @@ function cleanupExpired(now: number): void {
   }
 }
 
-function touch(m: Map<string, ApprovalRecord>, key: string, rec: ApprovalRecord, now: number): void {
+function touch(
+  m: Map<string, ApprovalRecord>,
+  key: string,
+  rec: ApprovalRecord,
+  now: number,
+): void {
   // LRU: delete+set moves to most-recently-used.
   m.delete(key);
   rec.lastUsedAt = now;
 
   // Sliding expiration for session/always approvals.
-  if (rec.resolution === 'allow-session' || rec.resolution === 'allow-always') {
+  if (rec.resolution === "allow-session" || rec.resolution === "allow-always") {
     rec.expiresAt = now + ttlFor(rec.resolution);
   }
   m.set(key, rec);
 }
 
-function setLru(m: Map<string, ApprovalRecord>, key: string, rec: ApprovalRecord, maxSize: number): void {
+function setLru(
+  m: Map<string, ApprovalRecord>,
+  key: string,
+  rec: ApprovalRecord,
+  maxSize: number,
+): void {
   if (m.has(key)) m.delete(key);
   m.set(key, rec);
   while (m.size > maxSize) {
@@ -131,7 +141,7 @@ function getRecord(
   toolName: string,
   resource: string,
   now: number,
-): { scope: 'session' | 'always'; key: string; record: ApprovalRecord } | null {
+): { scope: "session" | "always"; key: string; record: ApprovalRecord } | null {
   const key = hashKey(toolName, resource);
 
   const m = sessionApprovals.get(sessionId);
@@ -141,7 +151,7 @@ function getRecord(
       if (now > rec.expiresAt) {
         m.delete(key);
       } else {
-        return { scope: 'session', key, record: rec };
+        return { scope: "session", key, record: rec };
       }
     }
     if (m.size === 0) sessionApprovals.delete(sessionId);
@@ -152,7 +162,7 @@ function getRecord(
     if (now > rec.expiresAt) {
       alwaysApprovals.delete(key);
     } else {
-      return { scope: 'always', key, record: rec };
+      return { scope: "always", key, record: rec };
     }
   }
 
@@ -175,9 +185,9 @@ export function peekApproval(
   if (!found) return null;
 
   const { scope, key, record } = found;
-  if (record.resolution === 'allow-once') return null;
+  if (record.resolution === "allow-once") return null;
 
-  if (scope === 'session') {
+  if (scope === "session") {
     const m = sessionApprovals.get(sessionId);
     if (m) touch(m, key, record, now);
   } else {
@@ -203,10 +213,10 @@ export function checkAndConsumeApproval(
   if (!found) return null;
 
   const { scope, key, record } = found;
-  if (scope === 'session') {
+  if (scope === "session") {
     const m = sessionApprovals.get(sessionId);
     if (m) {
-      if (record.resolution === 'allow-once') {
+      if (record.resolution === "allow-once") {
         m.delete(key);
       } else {
         touch(m, key, record, now);

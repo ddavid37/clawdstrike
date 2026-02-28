@@ -41,7 +41,9 @@ export class SecretLeakGuard implements Guard {
     // Filter out empty/whitespace-only secrets
     this.secrets = (config.secrets ?? []).filter((s) => s && s.trim());
     this.patterns = (config.patterns ?? [])
-      .filter((entry) => entry && typeof entry.pattern === "string" && entry.pattern.trim().length > 0)
+      .filter(
+        (entry) => entry && typeof entry.pattern === "string" && entry.pattern.trim().length > 0,
+      )
       .map((entry) => ({
         name: entry.name,
         regex: compileSecretLeakPattern(entry.pattern),
@@ -84,7 +86,7 @@ export class SecretLeakGuard implements Guard {
         return GuardResult.block(
           this.name,
           Severity.CRITICAL,
-          "Secret value exposed in output"
+          "Secret value exposed in output",
         ).withDetails({
           secret_hint: hint,
           action_type: action.customType ?? action.actionType,

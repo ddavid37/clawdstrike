@@ -16,7 +16,7 @@ export interface CryptoBackend {
   verifySignature(
     message: Uint8Array,
     signature: Uint8Array,
-    publicKey: Uint8Array
+    publicKey: Uint8Array,
   ): Promise<boolean>;
   publicKeyFromPrivate(privateKey: Uint8Array): Promise<Uint8Array>;
 }

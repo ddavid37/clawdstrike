@@ -4,9 +4,7 @@ import { WALLPAPERS } from "../../state/wallpapers";
 const WALLPAPER_CHANGED_EVENT = "clawdstrike:wallpaper-changed";
 
 export function WallpaperPicker() {
-  const [selected, setSelected] = useState(
-    () => localStorage.getItem("cs_wallpaper") || "default",
-  );
+  const [selected, setSelected] = useState(() => localStorage.getItem("cs_wallpaper") || "default");
 
   function handleSelect(id: string) {
     setSelected(id);
@@ -37,22 +35,15 @@ export function WallpaperPicker() {
               width: 60,
               height: 40,
               background: wp.gradient,
-              border:
-                selected === wp.id
-                  ? "2px solid #d6b15a"
-                  : "2px solid rgba(27,34,48,0.5)",
+              border: selected === wp.id ? "2px solid #d6b15a" : "2px solid rgba(27,34,48,0.5)",
               cursor: "pointer",
-              boxShadow:
-                selected === wp.id ? "0 0 8px rgba(214,177,90,0.2)" : "none",
+              boxShadow: selected === wp.id ? "0 0 8px rgba(214,177,90,0.2)" : "none",
             }}
             title={wp.name}
           />
         ))}
       </div>
-      <p
-        className="font-body mt-2 text-xs"
-        style={{ color: "rgba(229,231,235,0.4)" }}
-      >
+      <p className="font-body mt-2 text-xs" style={{ color: "rgba(229,231,235,0.4)" }}>
         {WALLPAPERS.find((w) => w.id === selected)?.name ?? "Default"}
       </p>
     </div>

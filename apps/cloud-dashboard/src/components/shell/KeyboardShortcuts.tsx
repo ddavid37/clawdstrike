@@ -1,8 +1,8 @@
-import { useMemo } from "react";
-import { useDesktopOS } from "@backbay/glia-desktop";
-import { useKeyboardShortcuts, type Shortcut } from "../../hooks/useKeyboardShortcuts";
-import { pinnedAppIds } from "../../state/processRegistry";
 import type { WindowId } from "@backbay/glia-desktop";
+import { useDesktopOS } from "@backbay/glia-desktop";
+import { useMemo } from "react";
+import { type Shortcut, useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
+import { pinnedAppIds } from "../../state/processRegistry";
 
 export function KeyboardShortcuts({
   onToggleCommandPalette,

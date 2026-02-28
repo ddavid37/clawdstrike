@@ -14,7 +14,7 @@ export interface TypedLanesConfig {
 
 export function calculateTypedLanesLayout(
   nodes: NexusLayoutNode[],
-  config: TypedLanesConfig = {}
+  config: TypedLanesConfig = {},
 ): Map<NexusLayoutNode["id"], LayoutPosition> {
   const positions = new Map<NexusLayoutNode["id"], LayoutPosition>();
   if (nodes.length === 0) return positions;
@@ -30,7 +30,9 @@ export function calculateTypedLanesLayout(
     groups.get(node.status)?.push(node);
   }
 
-  const lanes = [...groups.keys()].sort((a, b) => STATUS_ORDER.indexOf(a) - STATUS_ORDER.indexOf(b));
+  const lanes = [...groups.keys()].sort(
+    (a, b) => STATUS_ORDER.indexOf(a) - STATUS_ORDER.indexOf(b),
+  );
   const totalDepth = (lanes.length - 1) * laneSpacing;
   const zStart = -totalDepth / 2;
 

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
 import { renderHook } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import { useAgentSessions } from "./useAgentSessions";
 import type { SSEEvent } from "./useSSE";
 
@@ -42,9 +42,7 @@ describe("useAgentSessions", () => {
   });
 
   it("computes posture based on violations", () => {
-    const events = [
-      makeEvent({ agent_id: "a1", session_id: "s1", allowed: true }),
-    ];
+    const events = [makeEvent({ agent_id: "a1", session_id: "s1", allowed: true })];
     const { result } = renderHook(() => useAgentSessions(events));
     expect(result.current[0].posture).toBe("nominal");
   });
@@ -58,9 +56,7 @@ describe("useAgentSessions", () => {
   });
 
   it("skips events without agent_id", () => {
-    const events = [
-      makeEvent({ agent_id: undefined, session_id: "s1" }),
-    ];
+    const events = [makeEvent({ agent_id: undefined, session_id: "s1" })];
     const { result } = renderHook(() => useAgentSessions(events));
     expect(result.current).toHaveLength(0);
   });

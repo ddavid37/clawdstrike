@@ -53,19 +53,12 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: [
-          "Inter",
-          "-apple-system",
-          "BlinkMacSystemFont",
-          "Segoe UI",
-          "Roboto",
-          "sans-serif",
-        ],
+        sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
         mono: ["JetBrains Mono", "Menlo", "Monaco", "Consolas", "monospace"],
       },
       animation: {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-        "glow": "glow 2s ease-in-out infinite alternate",
+        glow: "glow 2s ease-in-out infinite alternate",
       },
       keyframes: {
         glow: {

@@ -109,4 +109,3 @@ export interface CapsuleContentProps {
   capsule: DockCapsuleState;
   isExpanded: boolean;
 }
-

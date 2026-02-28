@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { computeGuardFrequency } from "../../utils/vizHelpers";
 import type { SSEEvent } from "../../hooks/useSSE";
+import { computeGuardFrequency } from "../../utils/vizHelpers";
 
 const GUARDS = [
   "ForbiddenPathGuard",
@@ -21,7 +21,13 @@ export function GuardHeatmap({ events }: { events: SSEEvent[] }) {
   const maxFreq = Math.max(...GUARDS.map((g) => freq[g] || 0), 1);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 4 }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))",
+        gap: 4,
+      }}
+    >
       {GUARDS.map((guard) => {
         const count = freq[guard] || 0;
         const opacity = count > 0 ? 0.05 + (count / maxFreq) * 0.55 : 0.03;

@@ -1,18 +1,17 @@
 /**
  * SecurityOverviewView - Composite security monitoring dashboard
  */
-import { Suspense } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+
+import { GlassPanel, HUDProgressRing, KPIStat } from "@backbay/glia/primitives";
 import {
-  SecurityDashboard,
   type DashboardAuditEvent,
   type DashboardThreat,
+  SecurityDashboard,
   type ShieldConfig,
 } from "@backbay/glia-three/three";
-import { KPIStat } from "@backbay/glia/primitives";
-import { HUDProgressRing } from "@backbay/glia/primitives";
-import { GlassPanel } from "@backbay/glia/primitives";
+import { OrbitControls } from "@react-three/drei";
+import { Canvas } from "@react-three/fiber";
+import { Suspense } from "react";
 
 const SHIELD_DATA: ShieldConfig = {
   level: 0.85,
@@ -21,20 +20,114 @@ const SHIELD_DATA: ShieldConfig = {
 };
 
 const THREAT_DATA: DashboardThreat[] = [
-  { id: "dt-1", angle: 0.5, distance: 0.7, severity: 0.9, type: "malware", active: true, label: "Ransomware" },
-  { id: "dt-2", angle: 1.8, distance: 0.4, severity: 0.6, type: "phishing", active: false, label: "Phishing Campaign" },
-  { id: "dt-3", angle: 3.2, distance: 0.8, severity: 0.85, type: "intrusion", active: true, label: "Lateral Movement" },
-  { id: "dt-4", angle: 4.5, distance: 0.3, severity: 0.4, type: "anomaly", active: false, label: "Traffic Anomaly" },
-  { id: "dt-5", angle: 5.5, distance: 0.6, severity: 0.7, type: "ddos", active: true, label: "DDoS Amplification" },
+  {
+    id: "dt-1",
+    angle: 0.5,
+    distance: 0.7,
+    severity: 0.9,
+    type: "malware",
+    active: true,
+    label: "Ransomware",
+  },
+  {
+    id: "dt-2",
+    angle: 1.8,
+    distance: 0.4,
+    severity: 0.6,
+    type: "phishing",
+    active: false,
+    label: "Phishing Campaign",
+  },
+  {
+    id: "dt-3",
+    angle: 3.2,
+    distance: 0.8,
+    severity: 0.85,
+    type: "intrusion",
+    active: true,
+    label: "Lateral Movement",
+  },
+  {
+    id: "dt-4",
+    angle: 4.5,
+    distance: 0.3,
+    severity: 0.4,
+    type: "anomaly",
+    active: false,
+    label: "Traffic Anomaly",
+  },
+  {
+    id: "dt-5",
+    angle: 5.5,
+    distance: 0.6,
+    severity: 0.7,
+    type: "ddos",
+    active: true,
+    label: "DDoS Amplification",
+  },
 ];
 
 const AUDIT_EVENTS: DashboardAuditEvent[] = [
-  { id: "ae-1", timestamp: new Date(Date.now() - 120000), type: "alert", severity: "critical", actor: "ids-engine", resource: "fw-edge-01", action: "Blocked malicious payload", success: true },
-  { id: "ae-2", timestamp: new Date(Date.now() - 300000), type: "access", severity: "warning", actor: "admin@corp", resource: "db-prod-01", action: "Elevated privilege access", success: true },
-  { id: "ae-3", timestamp: new Date(Date.now() - 600000), type: "modify", severity: "info", actor: "ci-pipeline", resource: "policy-engine", action: "Policy ruleset updated", success: true },
-  { id: "ae-4", timestamp: new Date(Date.now() - 900000), type: "login", severity: "warning", actor: "unknown@ext", resource: "vpn-gateway", action: "Failed authentication attempt", success: false },
-  { id: "ae-5", timestamp: new Date(Date.now() - 1200000), type: "error", severity: "error", actor: "siem-collector", resource: "log-aggregator", action: "Log ingestion pipeline error", success: false },
-  { id: "ae-6", timestamp: new Date(Date.now() - 1500000), type: "alert", severity: "critical", actor: "threat-intel", resource: "network-monitor", action: "C2 beacon pattern detected", success: true },
+  {
+    id: "ae-1",
+    timestamp: new Date(Date.now() - 120000),
+    type: "alert",
+    severity: "critical",
+    actor: "ids-engine",
+    resource: "fw-edge-01",
+    action: "Blocked malicious payload",
+    success: true,
+  },
+  {
+    id: "ae-2",
+    timestamp: new Date(Date.now() - 300000),
+    type: "access",
+    severity: "warning",
+    actor: "admin@corp",
+    resource: "db-prod-01",
+    action: "Elevated privilege access",
+    success: true,
+  },
+  {
+    id: "ae-3",
+    timestamp: new Date(Date.now() - 600000),
+    type: "modify",
+    severity: "info",
+    actor: "ci-pipeline",
+    resource: "policy-engine",
+    action: "Policy ruleset updated",
+    success: true,
+  },
+  {
+    id: "ae-4",
+    timestamp: new Date(Date.now() - 900000),
+    type: "login",
+    severity: "warning",
+    actor: "unknown@ext",
+    resource: "vpn-gateway",
+    action: "Failed authentication attempt",
+    success: false,
+  },
+  {
+    id: "ae-5",
+    timestamp: new Date(Date.now() - 1200000),
+    type: "error",
+    severity: "error",
+    actor: "siem-collector",
+    resource: "log-aggregator",
+    action: "Log ingestion pipeline error",
+    success: false,
+  },
+  {
+    id: "ae-6",
+    timestamp: new Date(Date.now() - 1500000),
+    type: "alert",
+    severity: "critical",
+    actor: "threat-intel",
+    resource: "network-monitor",
+    action: "C2 beacon pattern detected",
+    success: true,
+  },
 ];
 
 export function SecurityOverviewView() {
@@ -110,13 +203,11 @@ export function SecurityOverviewView() {
         </div>
 
         {/* Shield Health Ring sidebar */}
-        <GlassPanel className="w-48 flex flex-col items-center justify-center gap-4 border-l border-white/5" variant="flush">
-          <HUDProgressRing
-            value={0.85}
-            size={120}
-            theme="emerald"
-            label="Shield Health"
-          />
+        <GlassPanel
+          className="w-48 flex flex-col items-center justify-center gap-4 border-l border-white/5"
+          variant="flush"
+        >
+          <HUDProgressRing value={0.85} size={120} theme="emerald" label="Shield Health" />
           <div className="text-center space-y-2 px-3">
             <div className="text-xs text-white/40 font-mono uppercase">Status</div>
             <div className="text-sm text-emerald-400 font-semibold">Active</div>

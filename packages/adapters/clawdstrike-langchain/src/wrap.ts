@@ -1,14 +1,14 @@
-import { createSecurityContext } from '@clawdstrike/adapter-core';
 import type {
   AdapterConfig,
   Decision,
   PolicyEngineLike,
   SecurityContext,
   ToolInterceptor,
-} from '@clawdstrike/adapter-core';
+} from "@clawdstrike/adapter-core";
+import { createSecurityContext } from "@clawdstrike/adapter-core";
 
-import { ClawdstrikeViolationError } from './errors.js';
-import { createLangChainInterceptor } from './interceptor.js';
+import { ClawdstrikeViolationError } from "./errors.js";
+import { createLangChainInterceptor } from "./interceptor.js";
 
 type LangChainInvokeLike<TInput = unknown, TOutput = unknown> = {
   invoke: (input: TInput, config?: unknown) => Promise<TOutput> | TOutput;
@@ -18,9 +18,10 @@ type LangChainCallLike<TInput = unknown, TOutput = unknown> = {
   _call: (input: TInput, ...rest: unknown[]) => Promise<TOutput> | TOutput;
 };
 
-type LangChainToolLike = Partial<LangChainInvokeLike> & Partial<LangChainCallLike> & {
-  name?: string;
-};
+type LangChainToolLike = Partial<LangChainInvokeLike> &
+  Partial<LangChainCallLike> & {
+    name?: string;
+  };
 
 export interface WrapToolOptions {
   context?: SecurityContext;
@@ -83,9 +84,9 @@ function resolveInterceptor(csOrEngine: ClawdstrikeLike | PolicyEngineLike): Too
 
 function isClawdstrikeLike(value: unknown): value is ClawdstrikeLike {
   return (
-    typeof value === 'object' &&
+    typeof value === "object" &&
     value !== null &&
-    typeof (value as ClawdstrikeLike).createInterceptor === 'function'
+    typeof (value as ClawdstrikeLike).createInterceptor === "function"
   );
 }
 
@@ -100,7 +101,7 @@ export function wrapTool<TTool extends LangChainToolLike>(
   const context =
     options?.context ??
     createSecurityContext({
-      metadata: { framework: 'langchain' },
+      metadata: { framework: "langchain" },
     });
   return wrapToolWithContext(tool, interceptor, context, options?.getContext);
 }
@@ -116,9 +117,9 @@ export function wrapTools<TTool extends LangChainToolLike>(
   const context =
     options?.context ??
     createSecurityContext({
-      metadata: { framework: 'langchain' },
+      metadata: { framework: "langchain" },
     });
-  return tools.map(tool => wrapToolWithContext(tool, interceptor, context, options?.getContext));
+  return tools.map((tool) => wrapToolWithContext(tool, interceptor, context, options?.getContext));
 }
 
 export function wrapToolWithConfig<TTool extends LangChainToolLike>(
@@ -131,7 +132,7 @@ export function wrapToolWithConfig<TTool extends LangChainToolLike>(
   const context =
     options?.context ??
     createSecurityContext({
-      metadata: { framework: 'langchain' },
+      metadata: { framework: "langchain" },
     });
 
   return wrapToolWithContext(tool, interceptor, context, options?.getContext, {
@@ -151,10 +152,10 @@ export function wrapToolsWithConfig<TTool extends LangChainToolLike>(
   const context =
     options?.context ??
     createSecurityContext({
-      metadata: { framework: 'langchain' },
+      metadata: { framework: "langchain" },
     });
 
-  return tools.map(tool =>
+  return tools.map((tool) =>
     wrapToolWithContext(tool, interceptor, context, options?.getContext, {
       engine,
       config,
@@ -174,9 +175,9 @@ function wrapToolWithContext<TTool extends LangChainToolLike>(
     options?: WrapToolOptions;
   },
 ): TTool {
-  const toolName = typeof tool.name === 'string' && tool.name.length > 0 ? tool.name : 'tool';
-  const hasInvoke = typeof tool.invoke === 'function';
-  const hasCall = typeof tool._call === 'function';
+  const toolName = typeof tool.name === "string" && tool.name.length > 0 ? tool.name : "tool";
+  const hasInvoke = typeof tool.invoke === "function";
+  const hasCall = typeof tool._call === "function";
 
   if (!hasInvoke && !hasCall) {
     throw new Error(`Tool must implement invoke(input, ...) or _call(input, ...)`);
@@ -195,7 +196,7 @@ function wrapToolWithContext<TTool extends LangChainToolLike>(
           interceptor,
           resolvedContext,
           input,
-          decision => {
+          (decision) => {
             lastDecision = decision;
           },
           (nextInput: unknown) => originalInvoke!(nextInput, config),
@@ -211,7 +212,7 @@ function wrapToolWithContext<TTool extends LangChainToolLike>(
           interceptor,
           resolvedContext,
           input,
-          decision => {
+          (decision) => {
             lastDecision = decision;
           },
           (nextInput: unknown) => originalCall!(nextInput, ...rest),
@@ -221,16 +222,16 @@ function wrapToolWithContext<TTool extends LangChainToolLike>(
 
   return new Proxy(tool, {
     get(target, prop, receiver) {
-      if (prop === 'invoke' && wrappedInvoke) {
+      if (prop === "invoke" && wrappedInvoke) {
         return wrappedInvoke;
       }
-      if (prop === '_call' && wrappedCall) {
+      if (prop === "_call" && wrappedCall) {
         return wrappedCall;
       }
-      if (prop === 'getLastDecision') {
+      if (prop === "getLastDecision") {
         return () => lastDecision;
       }
-      if (prop === 'withConfig' && withConfigSupport) {
+      if (prop === "withConfig" && withConfigSupport) {
         return (overrides: Partial<AdapterConfig>) =>
           wrapToolWithConfig(
             tool,
@@ -241,7 +242,7 @@ function wrapToolWithContext<TTool extends LangChainToolLike>(
       }
 
       const value = Reflect.get(target, prop, receiver) as unknown;
-      if (typeof value === 'function') {
+      if (typeof value === "function") {
         return (value as (...args: unknown[]) => unknown).bind(target);
       }
       return value;

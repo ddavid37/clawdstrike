@@ -1,5 +1,5 @@
-import { Stamp } from "../ui";
 import type { SSEEvent } from "../../hooks/useSSE";
+import { Stamp } from "../ui";
 
 export function ChatBubble({ event, agentColor }: { event: SSEEvent; agentColor: string }) {
   const initial = ((event.agent_id || "?")[0] ?? "?").toUpperCase();
@@ -37,7 +37,17 @@ export function ChatBubble({ event, agentColor }: { event: SSEEvent; agentColor:
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
           {event.guard && (
-            <span className="font-mono" style={{ fontSize: 10, color: "var(--gold)", background: "var(--gold-bloom)", border: "1px solid var(--gold-edge)", borderRadius: 4, padding: "1px 6px" }}>
+            <span
+              className="font-mono"
+              style={{
+                fontSize: 10,
+                color: "var(--gold)",
+                background: "var(--gold-bloom)",
+                border: "1px solid var(--gold-edge)",
+                borderRadius: 4,
+                padding: "1px 6px",
+              }}
+            >
               {event.guard}
             </span>
           )}
@@ -46,7 +56,10 @@ export function ChatBubble({ event, agentColor }: { event: SSEEvent; agentColor:
               {event.allowed ? "ALLOWED" : "BLOCKED"}
             </Stamp>
           )}
-          <span className="font-mono" style={{ fontSize: 9, color: "rgba(154,167,181,0.4)", marginLeft: "auto" }}>
+          <span
+            className="font-mono"
+            style={{ fontSize: 9, color: "rgba(154,167,181,0.4)", marginLeft: "auto" }}
+          >
             {new Date(event.timestamp).toLocaleTimeString()}
           </span>
         </div>

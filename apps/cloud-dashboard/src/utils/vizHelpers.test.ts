@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { bucketByTime, computeGuardFrequency, computeDecisionRatio } from "./vizHelpers";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SSEEvent } from "../hooks/useSSE";
+import { bucketByTime, computeDecisionRatio, computeGuardFrequency } from "./vizHelpers";
 
 function makeEvent(overrides: Partial<SSEEvent> = {}): SSEEvent {
   return {

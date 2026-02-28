@@ -87,7 +87,9 @@ export class ClawdstrikeClient {
     return (json as V1Response<T>).data;
   }
 
-  listCertifications(params?: Record<string, string | number | boolean | undefined>): Promise<any[]> {
+  listCertifications(
+    params?: Record<string, string | number | boolean | undefined>,
+  ): Promise<any[]> {
     const qp = new URLSearchParams();
     for (const [k, v] of Object.entries(params ?? {})) {
       if (v === undefined) continue;
@@ -103,10 +105,7 @@ export class ClawdstrikeClient {
     });
   }
 
-  verifyCertification(
-    certificationId: string,
-    body?: any
-  ): Promise<any> {
+  verifyCertification(certificationId: string, body?: any): Promise<any> {
     return this.request<any>(`/v1/certifications/${encodeURIComponent(certificationId)}/verify`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -129,7 +128,7 @@ export class ClawdstrikeClient {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
-      }
+      },
     );
   }
 
@@ -139,4 +138,3 @@ export class ClawdstrikeClient {
     });
   }
 }
-

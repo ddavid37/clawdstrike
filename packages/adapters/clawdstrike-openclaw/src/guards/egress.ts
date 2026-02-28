@@ -4,58 +4,58 @@
  * Enforces network egress allowlist/denylist policies.
  */
 
-import { minimatch } from 'minimatch';
-import type { PolicyEvent, Policy, GuardResult, EventType } from '../types.js';
-import { BaseGuard } from './types.js';
+import { minimatch } from "minimatch";
+import type { EventType, GuardResult, Policy, PolicyEvent } from "../types.js";
+import { BaseGuard } from "./types.js";
 
 /**
  * Default denied domains when no policy is specified
  */
 const DEFAULT_DENIED_DOMAINS = [
-  '*.onion',
-  'localhost',
-  '127.*',
-  '10.*',
-  '192.168.*',
-  '172.16.*',
-  '172.17.*',
-  '172.18.*',
-  '172.19.*',
-  '172.20.*',
-  '172.21.*',
-  '172.22.*',
-  '172.23.*',
-  '172.24.*',
-  '172.25.*',
-  '172.26.*',
-  '172.27.*',
-  '172.28.*',
-  '172.29.*',
-  '172.30.*',
-  '172.31.*',
-  '0.0.0.0',
-  '[::1]',
-  '[::0]',
-  '::1',
-  '::0',
-  '169.254.*',
-  'fe80:*',
-  'fc00:*',
-  'fd00:*',
-  'fd[0-9a-f][0-9a-f]:*',
+  "*.onion",
+  "localhost",
+  "127.*",
+  "10.*",
+  "192.168.*",
+  "172.16.*",
+  "172.17.*",
+  "172.18.*",
+  "172.19.*",
+  "172.20.*",
+  "172.21.*",
+  "172.22.*",
+  "172.23.*",
+  "172.24.*",
+  "172.25.*",
+  "172.26.*",
+  "172.27.*",
+  "172.28.*",
+  "172.29.*",
+  "172.30.*",
+  "172.31.*",
+  "0.0.0.0",
+  "[::1]",
+  "[::0]",
+  "::1",
+  "::0",
+  "169.254.*",
+  "fe80:*",
+  "fc00:*",
+  "fd00:*",
+  "fd[0-9a-f][0-9a-f]:*",
 ];
 
 /**
  * Default allowed domains for AI agent operations
  */
 const DEFAULT_ALLOWED_DOMAINS = [
-  'api.anthropic.com',
-  'api.openai.com',
-  'pypi.org',
-  'registry.npmjs.org',
-  'crates.io',
-  '*.github.com',
-  '*.githubusercontent.com',
+  "api.anthropic.com",
+  "api.openai.com",
+  "pypi.org",
+  "registry.npmjs.org",
+  "crates.io",
+  "*.github.com",
+  "*.githubusercontent.com",
 ];
 
 /**
@@ -63,11 +63,11 @@ const DEFAULT_ALLOWED_DOMAINS = [
  */
 export class EgressGuard extends BaseGuard {
   name(): string {
-    return 'egress';
+    return "egress";
   }
 
   handles(): EventType[] {
-    return ['network_egress'];
+    return ["network_egress"];
   }
 
   async check(event: PolicyEvent, policy: Policy): Promise<GuardResult> {
@@ -78,7 +78,7 @@ export class EgressGuard extends BaseGuard {
     const data = event.data;
 
     // Only handle network events
-    if (data.type !== 'network') {
+    if (data.type !== "network") {
       return this.allow();
     }
 
@@ -88,38 +88,32 @@ export class EgressGuard extends BaseGuard {
     // Get configured lists or defaults
     const deniedDomains = egressPolicy?.denied_domains ?? DEFAULT_DENIED_DOMAINS;
     const allowedDomains = egressPolicy?.allowed_domains ?? DEFAULT_ALLOWED_DOMAINS;
-    const mode = egressPolicy?.mode ?? 'allowlist';
+    const mode = egressPolicy?.mode ?? "allowlist";
 
     // Always check denied domains first (takes precedence)
     if (this.matchesDomain(host, deniedDomains)) {
-      return this.deny(
-        `Egress to denied domain: ${host}`,
-        this.getSeverity(host),
-      );
+      return this.deny(`Egress to denied domain: ${host}`, this.getSeverity(host));
     }
 
     // Handle different modes
     switch (mode) {
-      case 'deny_all':
-        return this.deny(`Egress denied (deny_all mode): ${host}`, 'high');
+      case "deny_all":
+        return this.deny(`Egress denied (deny_all mode): ${host}`, "high");
 
-      case 'open':
+      case "open":
         return this.allow();
 
-      case 'denylist':
+      case "denylist":
         // In denylist mode, only deny explicitly listed domains
         return this.allow();
 
-      case 'allowlist':
+      case "allowlist":
       default:
         // In allowlist mode, only allow explicitly listed domains
         if (this.matchesDomain(host, allowedDomains)) {
           return this.allow();
         }
-        return this.deny(
-          `Egress to non-allowlisted domain: ${host}`,
-          'medium',
-        );
+        return this.deny(`Egress to non-allowlisted domain: ${host}`, "medium");
     }
   }
 
@@ -136,18 +130,16 @@ export class EgressGuard extends BaseGuard {
       }
 
       // Wildcard subdomain match (*.example.com)
-      if (normalizedPattern.startsWith('*.')) {
+      if (normalizedPattern.startsWith("*.")) {
         const baseDomain = normalizedPattern.slice(2);
-        if (host === baseDomain || host.endsWith('.' + baseDomain)) {
+        if (host === baseDomain || host.endsWith("." + baseDomain)) {
           return true;
         }
       }
 
       // IP range match (e.g., 192.168.*)
-      if (normalizedPattern.includes('*')) {
-        const regexPattern = normalizedPattern
-          .replace(/\./g, '\\.')
-          .replace(/\*/g, '.*');
+      if (normalizedPattern.includes("*")) {
+        const regexPattern = normalizedPattern.replace(/\./g, "\\.").replace(/\*/g, ".*");
         const regex = new RegExp(`^${regexPattern}$`);
         if (regex.test(host)) {
           return true;
@@ -166,32 +158,32 @@ export class EgressGuard extends BaseGuard {
   /**
    * Get severity based on the type of denied domain
    */
-  private getSeverity(host: string): 'low' | 'medium' | 'high' | 'critical' {
+  private getSeverity(host: string): "low" | "medium" | "high" | "critical" {
     // Tor/onion domains are critical
-    if (host.endsWith('.onion')) {
-      return 'critical';
+    if (host.endsWith(".onion")) {
+      return "critical";
     }
 
     // Localhost/private IPs are high
     if (
-      host === 'localhost' ||
-      host === '0.0.0.0' ||
-      host === '[::1]' ||
-      host === '::1' ||
-      host === '[::0]' ||
-      host === '::0' ||
-      host.startsWith('127.') ||
-      host.startsWith('10.') ||
-      host.startsWith('192.168.') ||
-      host.startsWith('172.') ||
-      host.startsWith('169.254.') ||
-      host.startsWith('fe80:') ||
-      host.startsWith('fc00:') ||
+      host === "localhost" ||
+      host === "0.0.0.0" ||
+      host === "[::1]" ||
+      host === "::1" ||
+      host === "[::0]" ||
+      host === "::0" ||
+      host.startsWith("127.") ||
+      host.startsWith("10.") ||
+      host.startsWith("192.168.") ||
+      host.startsWith("172.") ||
+      host.startsWith("169.254.") ||
+      host.startsWith("fe80:") ||
+      host.startsWith("fc00:") ||
       /^fd[0-9a-f]{2}:/.test(host)
     ) {
-      return 'high';
+      return "high";
     }
 
-    return 'medium';
+    return "medium";
   }
 }

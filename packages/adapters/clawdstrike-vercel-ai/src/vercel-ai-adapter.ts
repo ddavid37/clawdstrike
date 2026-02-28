@@ -1,4 +1,3 @@
-import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
 import type {
   AdapterConfig,
   FrameworkAdapter,
@@ -8,13 +7,14 @@ import type {
   ProcessedOutput,
   SecurityContext,
   SessionSummary,
-} from '@clawdstrike/adapter-core';
+} from "@clawdstrike/adapter-core";
+import { BaseToolInterceptor, createSecurityContext } from "@clawdstrike/adapter-core";
 
-import { secureTools } from './tools.js';
+import { secureTools } from "./tools.js";
 
 export class VercelAIAdapter implements FrameworkAdapter {
-  readonly name = 'vercel-ai';
-  readonly version = '0.1.0';
+  readonly name = "vercel-ai";
+  readonly version = "0.1.0";
 
   private readonly engine: PolicyEngineLike;
   private config: AdapterConfig = {};
@@ -33,14 +33,11 @@ export class VercelAIAdapter implements FrameworkAdapter {
 
   createContext(metadata: Record<string, unknown> = {}): SecurityContext {
     return createSecurityContext({
-      metadata: { framework: 'vercel-ai', ...metadata },
+      metadata: { framework: "vercel-ai", ...metadata },
     });
   }
 
-  async interceptToolCall(
-    context: SecurityContext,
-    toolCall: GenericToolCall,
-  ) {
+  async interceptToolCall(context: SecurityContext, toolCall: GenericToolCall) {
     return await this.interceptor.beforeExecute(toolCall.name, toolCall.parameters, context);
   }
 
@@ -59,11 +56,11 @@ export class VercelAIAdapter implements FrameworkAdapter {
 
     const auditEvents = context.auditEvents;
     const toolsUsed = Array.from(
-      new Set(auditEvents.map(e => e.toolName).filter(Boolean) as string[]),
+      new Set(auditEvents.map((e) => e.toolName).filter(Boolean) as string[]),
     );
 
     const toolsBlocked = Array.from(context.blockedTools);
-    const warningsIssued = auditEvents.filter(e => e.type === 'tool_call_warning').length;
+    const warningsIssued = auditEvents.filter((e) => e.type === "tool_call_warning").length;
 
     return {
       sessionId: context.sessionId,
@@ -76,8 +73,8 @@ export class VercelAIAdapter implements FrameworkAdapter {
       toolsUsed,
       toolsBlocked,
       auditEvents,
-      policy: this.config.policy ?? '',
-      mode: this.config.mode ?? 'deterministic',
+      policy: this.config.policy ?? "",
+      mode: this.config.mode ?? "deterministic",
     };
   }
 
@@ -87,9 +84,9 @@ export class VercelAIAdapter implements FrameworkAdapter {
 
   getHooks(): FrameworkHooks {
     return {
-      wrapTool: tool => tool,
+      wrapTool: (tool) => tool,
       createCallbackHandler: () => undefined,
-      injectIntoContext: ctx => ctx,
+      injectIntoContext: (ctx) => ctx,
       extractFromContext: () => ({}),
     };
   }
@@ -101,4 +98,3 @@ export class VercelAIAdapter implements FrameworkAdapter {
     return secureTools(tools, this.interceptor, { context });
   }
 }
-

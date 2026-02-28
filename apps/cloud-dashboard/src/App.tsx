@@ -1,9 +1,9 @@
 import { DesktopOSProvider, type PartialDesktopOSTheme } from "@backbay/glia-desktop";
-import { SharedSSEProvider } from "./context/SSEContext";
-import { ThemeProvider } from "./hooks/useTheme";
 import { ClawdStrikeDesktop } from "./components/shell/ClawdStrikeDesktop";
 import { ErrorBoundary } from "./components/shell/ErrorBoundary";
-import { processes, pinnedAppIds } from "./state/processRegistry";
+import { SharedSSEProvider } from "./context/SSEContext";
+import { ThemeProvider } from "./hooks/useTheme";
+import { pinnedAppIds, processes } from "./state/processRegistry";
 
 const artifactTheme: PartialDesktopOSTheme = {
   colors: {

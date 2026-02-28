@@ -40,7 +40,7 @@ export interface SessionActions {
     appId: AppId,
     title?: string,
     data?: unknown,
-    options?: { strikecellId?: string; strikecellKind?: StrikecellSessionKind }
+    options?: { strikecellId?: string; strikecellKind?: StrikecellSessionKind },
   ) => Session;
   updateSession: (id: string, updates: Partial<Session>) => void;
   deleteSession: (id: string) => void;

@@ -55,11 +55,17 @@ describe("OpenClawGatewayClient", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    Object.defineProperty(globalThis, "WebSocket", { value: originalWebSocket, configurable: true });
+    Object.defineProperty(globalThis, "WebSocket", {
+      value: originalWebSocket,
+      configurable: true,
+    });
   });
 
   it("connects, emits status updates, and handles request/response", async () => {
-    const client = new OpenClawGatewayClient("ws://example.test", { token: "t", instanceId: "sdr:test" });
+    const client = new OpenClawGatewayClient("ws://example.test", {
+      token: "t",
+      instanceId: "sdr:test",
+    });
     const statuses: string[] = [];
     client.onStatus((snap) => statuses.push(snap.status));
 
@@ -104,7 +110,11 @@ describe("OpenClawGatewayClient", () => {
     await expect(presencePromise).resolves.toEqual([{ id: 1 }]);
 
     ws.emitMessage({ type: "event", event: "presence", payload: [{ client: "test" }] });
-    expect(onEvent).toHaveBeenCalledWith({ type: "event", event: "presence", payload: [{ client: "test" }] });
+    expect(onEvent).toHaveBeenCalledWith({
+      type: "event",
+      event: "presence",
+      payload: [{ client: "test" }],
+    });
   });
 
   it("returns the in-flight connect promise when connect is called twice", async () => {
@@ -170,7 +180,12 @@ describe("OpenClawGatewayClient", () => {
     vi.advanceTimersByTime(150);
     const connectFrame = JSON.parse(ws.sent[0]!) as Record<string, unknown>;
 
-    ws.emitMessage({ type: "res", id: String(connectFrame.id), ok: false, error: { message: "bad token" } });
+    ws.emitMessage({
+      type: "res",
+      id: String(connectFrame.id),
+      ok: false,
+      error: { message: "bad token" },
+    });
     await expect(connectPromise).rejects.toThrow("bad token");
     expect(client.getStatusSnapshot().status).toBe("error");
   });
@@ -282,7 +297,10 @@ describe("OpenClawGatewayClient", () => {
     vi.advanceTimersByTime(50);
 
     await expect(connectPromise).rejects.toThrow("connect timeout");
-    expect(client.getStatusSnapshot()).toMatchObject({ status: "error", lastError: "connect timeout" });
+    expect(client.getStatusSnapshot()).toMatchObject({
+      status: "error",
+      lastError: "connect timeout",
+    });
   });
 
   it("cancels connect when manually disconnected while connecting", async () => {
@@ -319,7 +337,13 @@ describe("OpenClawGatewayClient", () => {
   it("cancels auto-reconnect when manually disconnected", async () => {
     const client = new OpenClawGatewayClient("ws://example.test", {
       autoReconnect: true,
-      reconnect: { maxAttempts: 3, initialDelayMs: 50, maxDelayMs: 50, backoffFactor: 1, jitterRatio: 0 },
+      reconnect: {
+        maxAttempts: 3,
+        initialDelayMs: 50,
+        maxDelayMs: 50,
+        backoffFactor: 1,
+        jitterRatio: 0,
+      },
     });
 
     const connectPromise = client.connect();
@@ -344,7 +368,13 @@ describe("OpenClawGatewayClient", () => {
   it("auto-reconnects with backoff after unexpected close", async () => {
     const client = new OpenClawGatewayClient("ws://example.test", {
       autoReconnect: true,
-      reconnect: { maxAttempts: 3, initialDelayMs: 50, maxDelayMs: 50, backoffFactor: 1, jitterRatio: 0 },
+      reconnect: {
+        maxAttempts: 3,
+        initialDelayMs: 50,
+        maxDelayMs: 50,
+        backoffFactor: 1,
+        jitterRatio: 0,
+      },
     });
 
     const connectPromise = client.connect();
@@ -360,7 +390,11 @@ describe("OpenClawGatewayClient", () => {
     const connectedAgain = new Promise<void>((resolve) => {
       let unsubscribe: (() => void) | null = null;
       unsubscribe = client.onStatus((snap) => {
-        if (snap.status === "connected" && snap.connectedAtMs && snap.connectedAtMs !== firstConnectedAt) {
+        if (
+          snap.status === "connected" &&
+          snap.connectedAtMs &&
+          snap.connectedAtMs !== firstConnectedAt
+        ) {
           unsubscribe?.();
           resolve();
         }
@@ -386,7 +420,13 @@ describe("OpenClawGatewayClient", () => {
   it("surfaces an error once reconnect attempts are exhausted", async () => {
     const client = new OpenClawGatewayClient("ws://example.test", {
       autoReconnect: true,
-      reconnect: { maxAttempts: 1, initialDelayMs: 50, maxDelayMs: 50, backoffFactor: 1, jitterRatio: 0 },
+      reconnect: {
+        maxAttempts: 1,
+        initialDelayMs: 50,
+        maxDelayMs: 50,
+        backoffFactor: 1,
+        jitterRatio: 0,
+      },
     });
 
     const connectPromise = client.connect();

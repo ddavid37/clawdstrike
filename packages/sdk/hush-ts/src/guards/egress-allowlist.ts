@@ -139,7 +139,7 @@ export class EgressAllowlistGuard implements Guard {
 
     const host = action.host;
     if (!host) {
-      return GuardResult.block(this.name, Severity.ERROR, 'No host specified; fail-closed');
+      return GuardResult.block(this.name, Severity.ERROR, "No host specified; fail-closed");
     }
 
     // Check block list first (takes precedence)
@@ -147,7 +147,7 @@ export class EgressAllowlistGuard implements Guard {
       return GuardResult.block(
         this.name,
         Severity.ERROR,
-        `Egress to blocked destination: ${host}`
+        `Egress to blocked destination: ${host}`,
       ).withDetails({
         host,
         port: action.port,
@@ -168,7 +168,7 @@ export class EgressAllowlistGuard implements Guard {
     return GuardResult.block(
       this.name,
       Severity.ERROR,
-      `Egress to unlisted destination: ${host}`
+      `Egress to unlisted destination: ${host}`,
     ).withDetails({
       host,
       port: action.port,

@@ -7,16 +7,16 @@
  * attestation.
  */
 
-import { createHash } from 'node:crypto';
+import { createHash } from "node:crypto";
 
-import type { Decision, PolicyEvent } from '../types.js';
-import type { DecisionReceipt, ReceiptSignerConfig } from './types.js';
+import type { Decision, PolicyEvent } from "../types.js";
+import type { DecisionReceipt, ReceiptSignerConfig } from "./types.js";
 
 /** Default configuration values for receipt signing */
 const DEFAULTS: Required<ReceiptSignerConfig> = {
   enabled: true,
   sign: false,
-  keyId: '',
+  keyId: "",
 };
 
 /**
@@ -53,8 +53,7 @@ export class ReceiptSigner {
 
     // Extract event metadata for the receipt envelope
     const eventData = event.data;
-    const toolName =
-      eventData.type === 'tool' ? eventData.toolName : undefined;
+    const toolName = eventData.type === "tool" ? eventData.toolName : undefined;
     const resource = extractResource(eventData);
 
     // TODO: When hush-wasm is integrated, this will produce real Ed25519
@@ -75,7 +74,7 @@ export class ReceiptSigner {
         resource,
       },
       signature: null,
-      algorithm: 'EdDSA',
+      algorithm: "EdDSA",
       keyId: null,
     };
   }
@@ -87,7 +86,7 @@ export class ReceiptSigner {
    */
   static hashPolicy(policy: unknown): string {
     const canonical = JSON.stringify(sortKeys(policy));
-    return createHash('sha256').update(canonical).digest('hex');
+    return createHash("sha256").update(canonical).digest("hex");
   }
 
   /**
@@ -120,7 +119,7 @@ function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(sortKeys);
   }
-  if (typeof value === 'object') {
+  if (typeof value === "object") {
     const sorted: Record<string, unknown> = {};
     for (const key of Object.keys(value as Record<string, unknown>).sort()) {
       sorted[key] = sortKeys((value as Record<string, unknown>)[key]);
@@ -133,21 +132,19 @@ function sortKeys(value: unknown): unknown {
 /**
  * Extract a resource identifier from event data when available.
  */
-function extractResource(
-  data: PolicyEvent['data'],
-): string | undefined {
+function extractResource(data: PolicyEvent["data"]): string | undefined {
   switch (data.type) {
-    case 'file':
+    case "file":
       return data.path;
-    case 'network':
+    case "network":
       return data.url ?? data.host;
-    case 'command':
+    case "command":
       return data.command;
-    case 'tool':
+    case "tool":
       return data.toolName;
-    case 'patch':
+    case "patch":
       return data.filePath;
-    case 'secret':
+    case "secret":
       return data.secretName;
     default:
       return undefined;

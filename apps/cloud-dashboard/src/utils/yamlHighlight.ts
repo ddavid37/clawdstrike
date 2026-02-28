@@ -78,8 +78,7 @@ function findInlineComment(raw: string): number {
     else if (ch === "&" && raw.slice(i, i + 6) === "&quot;" && !inSingle) {
       inDouble = !inDouble;
       i += 5; // skip past &quot;
-    }
-    else if (ch === "#" && !inSingle && !inDouble && i > 0 && raw[i - 1] === " ") {
+    } else if (ch === "#" && !inSingle && !inDouble && i > 0 && raw[i - 1] === " ") {
       return i;
     }
   }

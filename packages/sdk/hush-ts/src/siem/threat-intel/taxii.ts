@@ -39,12 +39,9 @@ export class TaxiiClient {
     });
   }
 
-  async getObjects(options: {
-    addedAfter?: string;
-    limit?: number;
-    type?: string[];
-    next?: string;
-  } = {}): Promise<TaxiiObjectsResponse> {
+  async getObjects(
+    options: { addedAfter?: string; limit?: number; type?: string[]; next?: string } = {},
+  ): Promise<TaxiiObjectsResponse> {
     const params = new URLSearchParams();
     if (options.addedAfter) {
       params.set("added_after", options.addedAfter);
@@ -70,11 +67,9 @@ export class TaxiiClient {
     return { objects: body.objects ?? [], next };
   }
 
-  async *getAllObjects(options: {
-    addedAfter?: string;
-    type?: string[];
-    pageSize?: number;
-  } = {}): AsyncGenerator<StixObject[]> {
+  async *getAllObjects(
+    options: { addedAfter?: string; type?: string[]; pageSize?: number } = {},
+  ): AsyncGenerator<StixObject[]> {
     let next: string | undefined;
     do {
       const resp = await this.getObjects({

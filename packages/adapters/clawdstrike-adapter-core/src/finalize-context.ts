@@ -1,5 +1,5 @@
-import type { AdapterConfig, SessionSummary } from './adapter.js';
-import type { SecurityContext } from './context.js';
+import type { AdapterConfig, SessionSummary } from "./adapter.js";
+import type { SecurityContext } from "./context.js";
 
 export function createSessionSummary(
   context: SecurityContext,
@@ -11,11 +11,11 @@ export function createSessionSummary(
 
   const auditEvents = context.auditEvents;
   const toolsUsed = Array.from(
-    new Set(auditEvents.map(e => e.toolName).filter(Boolean) as string[]),
+    new Set(auditEvents.map((e) => e.toolName).filter(Boolean) as string[]),
   );
 
   const toolsBlocked = Array.from(context.blockedTools);
-  const warningsIssued = auditEvents.filter(e => e.type === 'tool_call_warning').length;
+  const warningsIssued = auditEvents.filter((e) => e.type === "tool_call_warning").length;
 
   return {
     sessionId: context.sessionId,
@@ -28,7 +28,7 @@ export function createSessionSummary(
     toolsUsed,
     toolsBlocked,
     auditEvents,
-    policy: config.policy ?? '',
-    mode: config.mode ?? 'deterministic',
+    policy: config.policy ?? "",
+    mode: config.mode ?? "deterministic",
   };
 }

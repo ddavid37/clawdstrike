@@ -16,4 +16,4 @@
 
 // Re-export everything from adapter-core
 // This allows users to do: import { adapters } from '@clawdstrike/sdk'
-export * from '@clawdstrike/adapter-core';
+export * from "@clawdstrike/adapter-core";

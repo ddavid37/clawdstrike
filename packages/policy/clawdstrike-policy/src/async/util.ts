@@ -7,15 +7,15 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     if (!signal) return;
     if (signal.aborted) {
       clearTimeout(timeoutId);
-      reject(new Error('aborted'));
+      reject(new Error("aborted"));
       return;
     }
 
     const onAbort = () => {
       clearTimeout(timeoutId);
-      reject(new Error('aborted'));
+      reject(new Error("aborted"));
     };
-    signal.addEventListener('abort', onAbort, { once: true });
+    signal.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -40,4 +40,3 @@ export async function withTimeout<T>(
     if (timeoutId) clearTimeout(timeoutId);
   }
 }
-

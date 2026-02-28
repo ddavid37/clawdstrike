@@ -1,12 +1,12 @@
-import type { EngineMode, ModeChangeEvent } from './types.js';
+import type { EngineMode, ModeChangeEvent } from "./types.js";
 
 /**
  * Valid mode transitions. Each key maps to the set of modes it can transition to.
  */
 const VALID_TRANSITIONS: Record<EngineMode, Set<EngineMode>> = {
-  standalone: new Set(['connected']),
-  connected: new Set(['degraded']),
-  degraded: new Set(['connected', 'standalone']),
+  standalone: new Set(["connected"]),
+  connected: new Set(["degraded"]),
+  degraded: new Set(["connected", "standalone"]),
 };
 
 export type ModeChangeListener = (event: ModeChangeEvent) => void;
@@ -23,7 +23,7 @@ export interface ModeMachine {
   transition(
     to: EngineMode,
     reason: string,
-    extras?: Pick<ModeChangeEvent, 'drainedReceipts'>
+    extras?: Pick<ModeChangeEvent, "drainedReceipts">,
   ): Promise<boolean>;
 
   /** Register a listener for mode changes. */
@@ -56,7 +56,7 @@ export function createModeMachine(initial: EngineMode): ModeMachine {
     transition(
       to: EngineMode,
       reason: string,
-      extras?: Pick<ModeChangeEvent, 'drainedReceipts'>
+      extras?: Pick<ModeChangeEvent, "drainedReceipts">,
     ): Promise<boolean> {
       const result = new Promise<boolean>((resolve) => {
         chain = chain.then(() => {

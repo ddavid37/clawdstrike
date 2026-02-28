@@ -1,15 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import type { PolicyEngineLike } from "@clawdstrike/adapter-core";
+import { describe, expect, it } from "vitest";
 
-import type { PolicyEngineLike } from '@clawdstrike/adapter-core';
+import { VercelAIAdapter } from "./vercel-ai-adapter.js";
 
-import { VercelAIAdapter } from './vercel-ai-adapter.js';
-
-describe('VercelAIAdapter', () => {
-  it('evaluates tool calls via FrameworkAdapter interface', async () => {
+describe("VercelAIAdapter", () => {
+  it("evaluates tool calls via FrameworkAdapter interface", async () => {
     const engine: PolicyEngineLike = {
-      evaluate: event => ({
-        status: event.eventType === 'command_exec' ? 'deny' : 'allow',
-        reason: event.eventType === 'command_exec' ? 'blocked' : undefined,
+      evaluate: (event) => ({
+        status: event.eventType === "command_exec" ? "deny" : "allow",
+        reason: event.eventType === "command_exec" ? "blocked" : undefined,
       }),
     };
 
@@ -19,11 +18,11 @@ describe('VercelAIAdapter', () => {
     const context = adapter.createContext();
 
     const blocked = await adapter.interceptToolCall(context, {
-      id: '1',
-      name: 'bash',
-      parameters: { cmd: 'rm -rf /' },
+      id: "1",
+      name: "bash",
+      parameters: { cmd: "rm -rf /" },
       timestamp: new Date(),
-      source: 'test',
+      source: "test",
     });
 
     expect(blocked.proceed).toBe(false);

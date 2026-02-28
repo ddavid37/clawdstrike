@@ -15,47 +15,43 @@ import type {
   PolicyEvent,
   ToolCallTranslationInput,
   ToolCallTranslator,
-} from '@clawdstrike/adapter-core';
+} from "@clawdstrike/adapter-core";
+import { classifyTool, inferEventTypeFromName, tokenize } from "../classification.js";
+import { extractPath } from "../hooks/approval-utils.js";
 import {
-  tokenize,
-  classifyTool,
-  inferEventTypeFromName,
-} from '../classification.js';
-import {
-  isCuaToolCall,
   buildCuaEvent,
   classifyCuaAction,
   extractActionToken,
-} from '../hooks/cua-bridge/handler.js';
-import { extractPath } from '../hooks/approval-utils.js';
+  isCuaToolCall,
+} from "../hooks/cua-bridge/handler.js";
 
 // ── Parameter Extraction Helpers ────────────────────────────────────
 
 function extractFilePath(params: Record<string, unknown>): string {
-  return extractPath(params) ?? '';
+  return extractPath(params) ?? "";
 }
 
 function extractCommand(params: Record<string, unknown>): { command: string; args: string[] } {
   const cmdLine =
-    typeof params.command === 'string'
+    typeof params.command === "string"
       ? params.command
-      : typeof params.cmd === 'string'
+      : typeof params.cmd === "string"
         ? params.cmd
-        : '';
+        : "";
 
   const argv =
-    Array.isArray(params.argv) && params.argv.every((a) => typeof a === 'string')
+    Array.isArray(params.argv) && params.argv.every((a) => typeof a === "string")
       ? (params.argv as string[])
-      : Array.isArray(params.args) && params.args.every((a) => typeof a === 'string')
+      : Array.isArray(params.args) && params.args.every((a) => typeof a === "string")
         ? (params.args as string[])
         : null;
 
-  let command = '';
+  let command = "";
   let args: string[] = [];
 
   if (cmdLine.trim()) {
     const parts = cmdLine.trim().split(/\s+/).filter(Boolean);
-    command = parts[0] ?? '';
+    command = parts[0] ?? "";
     const inlineArgs = parts.slice(1);
 
     if (inlineArgs.length > 0) {
@@ -70,12 +66,19 @@ function extractCommand(params: Record<string, unknown>): { command: string; arg
   return { command, args };
 }
 
-function extractNetworkInfo(params: Record<string, unknown>): { host: string; port: number; url?: string } {
+function extractNetworkInfo(params: Record<string, unknown>): {
+  host: string;
+  port: number;
+  url?: string;
+} {
   const url =
-    typeof params.url === 'string' ? params.url
-    : typeof params.endpoint === 'string' ? params.endpoint
-    : typeof params.href === 'string' ? params.href
-    : undefined;
+    typeof params.url === "string"
+      ? params.url
+      : typeof params.endpoint === "string"
+        ? params.endpoint
+        : typeof params.href === "string"
+          ? params.href
+          : undefined;
 
   if (url) {
     try {
@@ -84,7 +87,9 @@ function extractNetworkInfo(params: Record<string, unknown>): { host: string; po
         host: parsed.hostname,
         port: parsed.port
           ? parseInt(parsed.port, 10)
-          : (parsed.protocol === 'https:' || parsed.protocol === 'wss:' ? 443 : 80),
+          : parsed.protocol === "https:" || parsed.protocol === "wss:"
+            ? 443
+            : 80,
         url,
       };
     } catch {
@@ -93,57 +98,81 @@ function extractNetworkInfo(params: Record<string, unknown>): { host: string; po
   }
 
   const host =
-    typeof params.host === 'string' ? params.host
-    : typeof params.hostname === 'string' ? params.hostname
-    : 'unknown';
+    typeof params.host === "string"
+      ? params.host
+      : typeof params.hostname === "string"
+        ? params.hostname
+        : "unknown";
 
-  const port = typeof params.port === 'number' ? params.port : 80;
+  const port = typeof params.port === "number" ? params.port : 80;
   return { host, port, url };
 }
 
-function extractPatchInfo(params: Record<string, unknown>): { filePath: string; patchContent: string } {
+function extractPatchInfo(params: Record<string, unknown>): {
+  filePath: string;
+  patchContent: string;
+} {
   const filePath =
-    typeof params.filePath === 'string' ? params.filePath
-    : typeof params.path === 'string' ? params.path
-    : '';
+    typeof params.filePath === "string"
+      ? params.filePath
+      : typeof params.path === "string"
+        ? params.path
+        : "";
   const patchContent =
-    typeof params.patch === 'string' ? params.patch
-    : typeof params.diff === 'string' ? params.diff
-    : typeof params.content === 'string' ? params.content
-    : '';
+    typeof params.patch === "string"
+      ? params.patch
+      : typeof params.diff === "string"
+        ? params.diff
+        : typeof params.content === "string"
+          ? params.content
+          : "";
   return { filePath, patchContent };
 }
 
 // ── Parameter-based fallback heuristics ─────────────────────────────
 
 function looksLikePatchApply(params: Record<string, unknown>): boolean {
-  return typeof params.patch === 'string'
-    || typeof params.diff === 'string'
-    || typeof params.patchContent === 'string';
+  return (
+    typeof params.patch === "string" ||
+    typeof params.diff === "string" ||
+    typeof params.patchContent === "string"
+  );
 }
 
 function looksLikeCommandExec(params: Record<string, unknown>): boolean {
-  if (typeof params.command === 'string' || typeof params.cmd === 'string') return true;
-  if (Array.isArray(params.args) && params.args.every((a) => typeof a === 'string')) return true;
-  if (Array.isArray(params.argv) && params.argv.every((a) => typeof a === 'string')) return true;
+  if (typeof params.command === "string" || typeof params.cmd === "string") return true;
+  if (Array.isArray(params.args) && params.args.every((a) => typeof a === "string")) return true;
+  if (Array.isArray(params.argv) && params.argv.every((a) => typeof a === "string")) return true;
   return false;
 }
 
 function looksLikeNetworkEgress(params: Record<string, unknown>): boolean {
-  if (typeof params.url === 'string' || typeof params.endpoint === 'string' || typeof params.href === 'string') return true;
-  if (typeof params.host === 'string' || typeof params.hostname === 'string') return true;
+  if (
+    typeof params.url === "string" ||
+    typeof params.endpoint === "string" ||
+    typeof params.href === "string"
+  )
+    return true;
+  if (typeof params.host === "string" || typeof params.hostname === "string") return true;
   return false;
 }
 
 function looksLikeFileWrite(params: Record<string, unknown>): boolean {
-  if (typeof params.content === 'string') return true;
-  if (typeof params.text === 'string') return true;
-  if (typeof params.contentBase64 === 'string') return true;
-  if (typeof params.base64 === 'string') return true;
-  if (typeof params.patch === 'string' || typeof params.diff === 'string') return true;
-  if (typeof params.operation === 'string') {
+  if (typeof params.content === "string") return true;
+  if (typeof params.text === "string") return true;
+  if (typeof params.contentBase64 === "string") return true;
+  if (typeof params.base64 === "string") return true;
+  if (typeof params.patch === "string" || typeof params.diff === "string") return true;
+  if (typeof params.operation === "string") {
     const op = params.operation.toLowerCase();
-    if (op === 'write' || op === 'append' || op === 'delete' || op === 'remove' || op === 'truncate') return true;
+    if (
+      op === "write" ||
+      op === "append" ||
+      op === "delete" ||
+      op === "remove" ||
+      op === "truncate"
+    )
+      return true;
   }
   return false;
 }
@@ -166,7 +195,9 @@ function generateEventId(): string {
  * Returns `null` when the tool cannot be confidently classified, allowing
  * the BaseToolInterceptor to apply its own fallback logic.
  */
-export const openclawTranslator: ToolCallTranslator = (input: ToolCallTranslationInput): PolicyEvent | null => {
+export const openclawTranslator: ToolCallTranslator = (
+  input: ToolCallTranslationInput,
+): PolicyEvent | null => {
   const { toolName, parameters, sessionId } = input;
 
   // ── CUA Detection ───────────────────────────────────────────────
@@ -191,73 +222,73 @@ export const openclawTranslator: ToolCallTranslator = (input: ToolCallTranslatio
   // Use the inferred event type from name tokens when available.
   if (eventType) {
     switch (eventType) {
-      case 'file_read': {
+      case "file_read": {
         const path = extractFilePath(parameters);
         return {
           eventId: generateEventId(),
-          eventType: 'file_read',
+          eventType: "file_read",
           timestamp,
           sessionId,
-          data: { type: 'file', path, operation: 'read' },
-          metadata: { source: 'openclaw-translator', toolName },
+          data: { type: "file", path, operation: "read" },
+          metadata: { source: "openclaw-translator", toolName },
         };
       }
 
-      case 'file_write': {
+      case "file_write": {
         const path = extractFilePath(parameters);
         return {
           eventId: generateEventId(),
-          eventType: 'file_write',
+          eventType: "file_write",
           timestamp,
           sessionId,
           data: {
-            type: 'file',
+            type: "file",
             path,
-            operation: 'write',
-            ...(typeof parameters.content === 'string' ? { content: parameters.content } : {}),
+            operation: "write",
+            ...(typeof parameters.content === "string" ? { content: parameters.content } : {}),
           },
-          metadata: { source: 'openclaw-translator', toolName },
+          metadata: { source: "openclaw-translator", toolName },
         };
       }
 
-      case 'command_exec': {
+      case "command_exec": {
         const { command, args } = extractCommand(parameters);
         return {
           eventId: generateEventId(),
-          eventType: 'command_exec',
+          eventType: "command_exec",
           timestamp,
           sessionId,
           data: {
-            type: 'command',
+            type: "command",
             command,
             args,
-            ...(typeof parameters.cwd === 'string' ? { workingDir: parameters.cwd } : {}),
+            ...(typeof parameters.cwd === "string" ? { workingDir: parameters.cwd } : {}),
           },
-          metadata: { source: 'openclaw-translator', toolName },
+          metadata: { source: "openclaw-translator", toolName },
         };
       }
 
-      case 'network_egress': {
+      case "network_egress": {
         const { host, port, url } = extractNetworkInfo(parameters);
         return {
           eventId: generateEventId(),
-          eventType: 'network_egress',
+          eventType: "network_egress",
           timestamp,
           sessionId,
-          data: { type: 'network', host, port, url },
-          metadata: { source: 'openclaw-translator', toolName },
+          data: { type: "network", host, port, url },
+          metadata: { source: "openclaw-translator", toolName },
         };
       }
 
-      case 'patch_apply': {
+      case "patch_apply": {
         const { filePath, patchContent } = extractPatchInfo(parameters);
         return {
           eventId: generateEventId(),
-          eventType: 'patch_apply',
+          eventType: "patch_apply",
           timestamp,
           sessionId,
-          data: { type: 'patch', filePath, patchContent },
-          metadata: { source: 'openclaw-translator', toolName },
+          data: { type: "patch", filePath, patchContent },
+          metadata: { source: "openclaw-translator", toolName },
         };
       }
 
@@ -271,16 +302,16 @@ export const openclawTranslator: ToolCallTranslator = (input: ToolCallTranslatio
   // When token-based classification returns null (unknown), attempt
   // parameter inspection — same heuristics as the preflight handler.
 
-  if (classification === 'unknown') {
+  if (classification === "unknown") {
     if (looksLikePatchApply(parameters)) {
       const { filePath, patchContent } = extractPatchInfo(parameters);
       return {
         eventId: generateEventId(),
-        eventType: 'patch_apply',
+        eventType: "patch_apply",
         timestamp,
         sessionId,
-        data: { type: 'patch', filePath, patchContent },
-        metadata: { source: 'openclaw-translator', toolName },
+        data: { type: "patch", filePath, patchContent },
+        metadata: { source: "openclaw-translator", toolName },
       };
     }
 
@@ -288,16 +319,16 @@ export const openclawTranslator: ToolCallTranslator = (input: ToolCallTranslatio
       const { command, args } = extractCommand(parameters);
       return {
         eventId: generateEventId(),
-        eventType: 'command_exec',
+        eventType: "command_exec",
         timestamp,
         sessionId,
         data: {
-          type: 'command',
+          type: "command",
           command,
           args,
-          ...(typeof parameters.cwd === 'string' ? { workingDir: parameters.cwd } : {}),
+          ...(typeof parameters.cwd === "string" ? { workingDir: parameters.cwd } : {}),
         },
-        metadata: { source: 'openclaw-translator', toolName },
+        metadata: { source: "openclaw-translator", toolName },
       };
     }
 
@@ -305,11 +336,11 @@ export const openclawTranslator: ToolCallTranslator = (input: ToolCallTranslatio
       const { host, port, url } = extractNetworkInfo(parameters);
       return {
         eventId: generateEventId(),
-        eventType: 'network_egress',
+        eventType: "network_egress",
         timestamp,
         sessionId,
-        data: { type: 'network', host, port, url },
-        metadata: { source: 'openclaw-translator', toolName },
+        data: { type: "network", host, port, url },
+        metadata: { source: "openclaw-translator", toolName },
       };
     }
 
@@ -318,16 +349,18 @@ export const openclawTranslator: ToolCallTranslator = (input: ToolCallTranslatio
       const isWrite = looksLikeFileWrite(parameters);
       return {
         eventId: generateEventId(),
-        eventType: isWrite ? 'file_write' : 'file_read',
+        eventType: isWrite ? "file_write" : "file_read",
         timestamp,
         sessionId,
         data: {
-          type: 'file',
+          type: "file",
           path,
-          operation: isWrite ? 'write' : 'read',
-          ...(isWrite && typeof parameters.content === 'string' ? { content: parameters.content } : {}),
+          operation: isWrite ? "write" : "read",
+          ...(isWrite && typeof parameters.content === "string"
+            ? { content: parameters.content }
+            : {}),
         },
-        metadata: { source: 'openclaw-translator', toolName },
+        metadata: { source: "openclaw-translator", toolName },
       };
     }
   }

@@ -60,9 +60,7 @@ export function MultiInstance({
                 key={inst.id}
                 className="glass-panel flex items-center gap-3 rounded-md p-3"
                 style={{
-                  borderColor: isActive
-                    ? "rgba(214,177,90,0.35)"
-                    : "rgba(27,34,48,0.6)",
+                  borderColor: isActive ? "rgba(214,177,90,0.35)" : "rgba(27,34,48,0.6)",
                 }}
               >
                 {isActive && (
@@ -77,10 +75,7 @@ export function MultiInstance({
                   />
                 )}
                 <div className="flex-1 min-w-0">
-                  <p
-                    className="font-mono text-sm"
-                    style={{ color: "rgba(229,231,235,0.9)" }}
-                  >
+                  <p className="font-mono text-sm" style={{ color: "rgba(229,231,235,0.9)" }}>
                     {inst.name}
                   </p>
                   <p
@@ -91,9 +86,7 @@ export function MultiInstance({
                   </p>
                 </div>
                 <div className="flex gap-2 flex-shrink-0">
-                  {!isActive && (
-                    <GlassButton onClick={() => onSwitch(inst.id)}>Switch</GlassButton>
-                  )}
+                  {!isActive && <GlassButton onClick={() => onSwitch(inst.id)}>Switch</GlassButton>}
                   <button
                     type="button"
                     onClick={() => onRemove(inst.id)}
@@ -113,10 +106,7 @@ export function MultiInstance({
           })}
         </div>
       ) : (
-        <p
-          className="font-body text-sm"
-          style={{ color: "rgba(229,231,235,0.4)" }}
-        >
+        <p className="font-body text-sm" style={{ color: "rgba(229,231,235,0.4)" }}>
           No instances configured. Add one below to manage multiple hushd connections.
         </p>
       )}

@@ -133,9 +133,7 @@ fn resolve_public_key(
         return Some(pk);
     }
 
-    let Some(pk_str) = raw.get("public_key").and_then(|v| v.as_str()) else {
-        return None;
-    };
+    let pk_str = raw.get("public_key").and_then(|v| v.as_str())?;
 
     match hush_core::PublicKey::from_hex(pk_str) {
         Ok(pk) => Some(pk),
@@ -196,12 +194,8 @@ fn verify_merkle(
     payload: &ReceiptPayload,
     errors: &mut Vec<String>,
 ) -> Option<bool> {
-    let Some(root_str) = raw.get("merkle_root").and_then(|v| v.as_str()) else {
-        return None;
-    };
-    let Some(proof_value) = raw.get("merkle_proof") else {
-        return None;
-    };
+    let root_str = raw.get("merkle_root").and_then(|v| v.as_str())?;
+    let proof_value = raw.get("merkle_proof")?;
 
     let root = match parse_merkle_root(root_str) {
         Ok(v) => v,

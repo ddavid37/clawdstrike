@@ -1,4 +1,4 @@
-import { sha256, keccak256 } from "./crypto/hash";
+import { keccak256, sha256 } from "./crypto/hash";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
@@ -58,7 +58,7 @@ export function canonicalize(obj: JsonValue): string {
  */
 export function canonicalHash(
   obj: JsonValue,
-  algorithm: "sha256" | "keccak256" = "sha256"
+  algorithm: "sha256" | "keccak256" = "sha256",
 ): Uint8Array {
   const canonical = canonicalize(obj);
   const bytes = new TextEncoder().encode(canonical);

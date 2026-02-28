@@ -3,10 +3,10 @@
  */
 import { clsx } from "clsx";
 import { useNavigate } from "react-router-dom";
-import type { AppId } from "../plugins/types";
 import { useConnectionStatus } from "@/context/ConnectionContext";
 import type { StrikecellSessionKind } from "@/shell/sessions";
 import { useActiveSession, useSessionActions, useSessions } from "@/shell/sessions";
+import type { AppId } from "../plugins/types";
 import { CyberNexusOrb } from "./CyberNexusOrb";
 
 interface NavRailProps {
@@ -109,28 +109,30 @@ export function NavRail({ activeAppId, onSelectApp }: NavRailProps) {
                 <button
                   key={session.id}
                   type="button"
-                    onClick={() => {
-                      setActiveSession(session.id);
-                      navigate(`/nexus/${session.id}`);
-                    }}
-                    title={session.title}
-                    data-active={isActive ? "true" : "false"}
+                  onClick={() => {
+                    setActiveSession(session.id);
+                    navigate(`/nexus/${session.id}`);
+                  }}
+                  title={session.title}
+                  data-active={isActive ? "true" : "false"}
                   className={clsx(
                     "origin-focus-ring strikecell-session-row w-full rounded-lg border px-2 py-1.5 text-left transition-colors",
                     isActive
                       ? "border-[color:var(--origin-gold)] bg-[rgba(213,173,87,0.12)]"
-                      : "border-sdr-border/50 bg-[rgba(8,10,16,0.64)] hover:border-[rgba(213,173,87,0.55)]"
+                      : "border-sdr-border/50 bg-[rgba(8,10,16,0.64)] hover:border-[rgba(213,173,87,0.55)]",
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <span className={clsx("h-2 w-2 rounded-full", sessionStatusClass(session.status))} />
+                    <span
+                      className={clsx("h-2 w-2 rounded-full", sessionStatusClass(session.status))}
+                    />
                     <span className="min-w-0 truncate text-[11px] font-mono uppercase tracking-[0.1em] text-sdr-text-primary">
                       {session.title}
                     </span>
                     <span
                       className={clsx(
                         "ml-auto rounded-full border px-1.5 py-0.5 text-[8px] font-mono uppercase tracking-[0.08em]",
-                        sessionKindClass(session.strikecellKind)
+                        sessionKindClass(session.strikecellKind),
                       )}
                     >
                       {sessionKindLabel(session.strikecellKind)}
@@ -160,7 +162,7 @@ export function NavRail({ activeAppId, onSelectApp }: NavRailProps) {
                   ? "bg-sdr-accent-green shadow-[0_0_8px_rgba(61,191,132,0.65)]"
                   : connectionStatus === "connecting"
                     ? "bg-sdr-accent-amber shadow-[0_0_8px_rgba(212,168,75,0.65)]"
-                    : "bg-sdr-accent-red shadow-[0_0_8px_rgba(196,92,92,0.55)]"
+                    : "bg-sdr-accent-red shadow-[0_0_8px_rgba(196,92,92,0.55)]",
               )}
             />
           </span>

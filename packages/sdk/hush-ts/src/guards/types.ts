@@ -60,7 +60,7 @@ export class GuardResult {
     public readonly guard: string,
     public readonly severity: Severity,
     public readonly message: string,
-    public details?: Record<string, unknown>
+    public details?: Record<string, unknown>,
   ) {}
 
   /**
@@ -108,7 +108,7 @@ export class GuardContext {
       sessionId?: string;
       agentId?: string;
       metadata?: Record<string, unknown>;
-    } = {}
+    } = {},
   ) {
     this.cwd = data.cwd;
     this.sessionId = data.sessionId;
@@ -150,8 +150,20 @@ export class GuardAction {
   public readonly customType?: string;
   public readonly customData?: Record<string, unknown>;
 
-  constructor(actionTypeOrOptions: string | GuardActionOptions, path?: string, content?: Uint8Array, host?: string, port?: number, tool?: string, args?: Record<string, unknown>, command?: string, diff?: string, customType?: string, customData?: Record<string, unknown>) {
-    if (typeof actionTypeOrOptions === 'object') {
+  constructor(
+    actionTypeOrOptions: string | GuardActionOptions,
+    path?: string,
+    content?: Uint8Array,
+    host?: string,
+    port?: number,
+    tool?: string,
+    args?: Record<string, unknown>,
+    command?: string,
+    diff?: string,
+    customType?: string,
+    customData?: Record<string, unknown>,
+  ) {
+    if (typeof actionTypeOrOptions === "object") {
       const opts = actionTypeOrOptions;
       this.actionType = opts.actionType;
       this.path = opts.path;
@@ -212,7 +224,7 @@ export class GuardAction {
       undefined,
       undefined,
       undefined,
-      command
+      command,
     );
   }
 
@@ -220,15 +232,7 @@ export class GuardAction {
    * Create an MCP tool action.
    */
   static mcpTool(tool: string, args: Record<string, unknown>): GuardAction {
-    return new GuardAction(
-      "mcp_tool",
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      tool,
-      args
-    );
+    return new GuardAction("mcp_tool", undefined, undefined, undefined, undefined, tool, args);
   }
 
   /**
@@ -244,7 +248,7 @@ export class GuardAction {
       undefined,
       undefined,
       undefined,
-      diff
+      diff,
     );
   }
 
@@ -263,7 +267,7 @@ export class GuardAction {
       undefined,
       undefined,
       customType,
-      data
+      data,
     );
   }
 }

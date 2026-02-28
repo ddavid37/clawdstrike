@@ -75,4 +75,3 @@ export function toCef(event: SecurityEvent): string {
 
   return `CEF:${version}|${deviceVendor}|${deviceProduct}|${deviceVersion}|${signatureId}|${name}|${severity}|${ext.join(" ")}`;
 }
-

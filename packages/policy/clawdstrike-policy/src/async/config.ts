@@ -1,10 +1,15 @@
-import type { AsyncGuardPolicyConfig } from '../policy/schema.js';
+import type { AsyncGuardPolicyConfig } from "../policy/schema.js";
 
-import type { AsyncGuardConfig, CircuitBreakerConfig, RateLimitConfig, RetryConfig } from './types.js';
+import type {
+  AsyncGuardConfig,
+  CircuitBreakerConfig,
+  RateLimitConfig,
+  RetryConfig,
+} from "./types.js";
 
 const DEFAULT_TIMEOUT_MS = 5_000;
-const DEFAULT_ON_TIMEOUT = 'warn' as const;
-const DEFAULT_EXECUTION_MODE = 'parallel' as const;
+const DEFAULT_ON_TIMEOUT = "warn" as const;
+const DEFAULT_EXECUTION_MODE = "parallel" as const;
 const DEFAULT_CACHE_TTL_SECONDS = 3_600;
 const DEFAULT_CACHE_MAX_SIZE_MB = 64;
 
@@ -34,12 +39,12 @@ export function buildAsyncGuardConfig(policy?: AsyncGuardPolicyConfig): AsyncGua
   };
 }
 
-function buildRateLimit(policy: AsyncGuardPolicyConfig['rate_limit']): RateLimitConfig | undefined {
+function buildRateLimit(policy: AsyncGuardPolicyConfig["rate_limit"]): RateLimitConfig | undefined {
   if (!policy) return undefined;
   const rps =
-    typeof policy.requests_per_second === 'number'
+    typeof policy.requests_per_second === "number"
       ? policy.requests_per_second
-      : typeof policy.requests_per_minute === 'number'
+      : typeof policy.requests_per_minute === "number"
         ? policy.requests_per_minute / 60
         : undefined;
   if (!rps || rps <= 0) return undefined;
@@ -48,7 +53,7 @@ function buildRateLimit(policy: AsyncGuardPolicyConfig['rate_limit']): RateLimit
 }
 
 function buildCircuitBreaker(
-  policy: AsyncGuardPolicyConfig['circuit_breaker'],
+  policy: AsyncGuardPolicyConfig["circuit_breaker"],
 ): CircuitBreakerConfig | undefined {
   if (!policy) return undefined;
   const failureThreshold = Math.max(1, Math.trunc(policy.failure_threshold ?? 5));
@@ -57,12 +62,11 @@ function buildCircuitBreaker(
   return { failureThreshold, resetTimeoutMs, successThreshold };
 }
 
-function buildRetry(policy: AsyncGuardPolicyConfig['retry']): RetryConfig | undefined {
+function buildRetry(policy: AsyncGuardPolicyConfig["retry"]): RetryConfig | undefined {
   if (!policy) return undefined;
-  const multiplier = Math.max(1, typeof policy.multiplier === 'number' ? policy.multiplier : 2);
+  const multiplier = Math.max(1, typeof policy.multiplier === "number" ? policy.multiplier : 2);
   const maxRetries = Math.max(0, Math.trunc(policy.max_retries ?? 2));
   const initialBackoffMs = Math.max(100, Math.trunc(policy.initial_backoff_ms ?? 250));
   const maxBackoffMs = Math.max(100, Math.trunc(policy.max_backoff_ms ?? 2_000));
   return { multiplier, maxRetries, initialBackoffMs, maxBackoffMs };
 }
-

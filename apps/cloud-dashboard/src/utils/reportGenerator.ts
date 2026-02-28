@@ -15,7 +15,11 @@ export interface ReportConfig {
 }
 
 function escHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 export function generateReportHTML(config: ReportConfig): string {
@@ -65,5 +69,9 @@ export function downloadReportHTML(html: string, filename: string): void {
 
 export function printReport(html: string): void {
   const w = window.open("", "_blank");
-  if (w) { w.document.write(html); w.document.close(); w.print(); }
+  if (w) {
+    w.document.write(html);
+    w.document.close();
+    w.print();
+  }
 }

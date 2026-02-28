@@ -6,14 +6,12 @@ describe("EventStream", () => {
   it("ignores empty and undefined payloads", () => {
     const onEvent = vi.fn();
     const stream = new EventStream("http://example.test", { onEvent });
-    (stream as unknown as { emitIncomingEvent: (eventType: string, payload: string) => void }).emitIncomingEvent(
-      "check",
-      ""
-    );
-    (stream as unknown as { emitIncomingEvent: (eventType: string, payload: string) => void }).emitIncomingEvent(
-      "check",
-      "undefined"
-    );
+    (
+      stream as unknown as { emitIncomingEvent: (eventType: string, payload: string) => void }
+    ).emitIncomingEvent("check", "");
+    (
+      stream as unknown as { emitIncomingEvent: (eventType: string, payload: string) => void }
+    ).emitIncomingEvent("check", "undefined");
     expect(onEvent).not.toHaveBeenCalled();
   });
 
@@ -26,10 +24,9 @@ describe("EventStream", () => {
       data: { ok: true },
     });
 
-    (stream as unknown as { emitIncomingEvent: (eventType: string, payload: string) => void }).emitIncomingEvent(
-      "check",
-      payload
-    );
+    (
+      stream as unknown as { emitIncomingEvent: (eventType: string, payload: string) => void }
+    ).emitIncomingEvent("check", payload);
 
     expect(onEvent).toHaveBeenCalledWith({
       type: "check",
@@ -43,12 +40,13 @@ describe("EventStream", () => {
     const stream = new EventStream("http://example.test", { onEvent });
     const payload = JSON.stringify({ hello: "world" });
 
-    (stream as unknown as { emitIncomingEvent: (eventType: string, payload: string) => void }).emitIncomingEvent(
-      "policy_updated",
-      payload
-    );
+    (
+      stream as unknown as { emitIncomingEvent: (eventType: string, payload: string) => void }
+    ).emitIncomingEvent("policy_updated", payload);
 
-    const event = onEvent.mock.calls[0]?.[0] as { type: string; timestamp: string; data: unknown } | undefined;
+    const event = onEvent.mock.calls[0]?.[0] as
+      | { type: string; timestamp: string; data: unknown }
+      | undefined;
     expect(event?.type).toBe("policy_updated");
     expect(event?.data).toEqual({ hello: "world" });
     expect(Number.isNaN(Date.parse(String(event?.timestamp)))).toBe(false);
@@ -58,12 +56,13 @@ describe("EventStream", () => {
     const onEvent = vi.fn();
     const stream = new EventStream("http://example.test", { onEvent });
 
-    (stream as unknown as { emitIncomingEvent: (eventType: string, payload: string) => void }).emitIncomingEvent(
-      "message",
-      "123"
-    );
+    (
+      stream as unknown as { emitIncomingEvent: (eventType: string, payload: string) => void }
+    ).emitIncomingEvent("message", "123");
 
-    const event = onEvent.mock.calls[0]?.[0] as { type: string; data: { message: string } } | undefined;
+    const event = onEvent.mock.calls[0]?.[0] as
+      | { type: string; data: { message: string } }
+      | undefined;
     expect(event?.type).toBe("message");
     expect(event?.data).toEqual({ message: "123" });
   });
@@ -73,16 +72,15 @@ describe("EventStream", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const stream = new EventStream("http://example.test", { onEvent });
 
-    (stream as unknown as { emitIncomingEvent: (eventType: string, payload: string) => void }).emitIncomingEvent(
-      "error",
-      "plain text"
-    );
+    (
+      stream as unknown as { emitIncomingEvent: (eventType: string, payload: string) => void }
+    ).emitIncomingEvent("error", "plain text");
 
     expect(onEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "error",
         data: { message: "plain text" },
-      })
+      }),
     );
     expect(warnSpy).toHaveBeenCalled();
 
@@ -143,12 +141,18 @@ describe("EventStream", () => {
     beforeEach(() => {
       MockEventSource.instances = [];
       vi.useFakeTimers();
-      Object.defineProperty(globalThis, "EventSource", { value: MockEventSource, configurable: true });
+      Object.defineProperty(globalThis, "EventSource", {
+        value: MockEventSource,
+        configurable: true,
+      });
     });
 
     afterEach(() => {
       vi.useRealTimers();
-      Object.defineProperty(globalThis, "EventSource", { value: originalEventSource, configurable: true });
+      Object.defineProperty(globalThis, "EventSource", {
+        value: originalEventSource,
+        configurable: true,
+      });
     });
 
     it("dispatches named events via addEventListener", () => {
@@ -167,7 +171,7 @@ describe("EventStream", () => {
           type: "check",
           timestamp: "2025-01-01T00:00:00.000Z",
           data: { ok: true },
-        })
+        }),
       );
 
       es.emitNamed("policy_updated", JSON.stringify({ hello: "world" }));
@@ -178,7 +182,11 @@ describe("EventStream", () => {
         data: { ok: true },
       });
 
-      const wrapped = onEvent.mock.calls[1]?.[0] as { type?: string; timestamp?: string; data?: unknown };
+      const wrapped = onEvent.mock.calls[1]?.[0] as {
+        type?: string;
+        timestamp?: string;
+        data?: unknown;
+      };
       expect(wrapped.type).toBe("policy_updated");
       expect(wrapped.data).toEqual({ hello: "world" });
       expect(Number.isNaN(Date.parse(String(wrapped.timestamp)))).toBe(false);
@@ -213,7 +221,9 @@ describe("EventStream", () => {
 
       MockEventSource.instances[2]!.emitError();
       expect(onDisconnect).toHaveBeenCalledTimes(3);
-      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "Max reconnection attempts reached" }));
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "Max reconnection attempts reached" }),
+      );
 
       vi.advanceTimersByTime(1000);
       expect(MockEventSource.instances).toHaveLength(3);
@@ -222,7 +232,12 @@ describe("EventStream", () => {
     it("cancels pending reconnect timers when manually disconnected", () => {
       const onEvent = vi.fn();
       const onDisconnect = vi.fn();
-      const stream = new EventStream("http://example.test", { onEvent, onDisconnect, reconnectDelay: 100, maxReconnectAttempts: 2 });
+      const stream = new EventStream("http://example.test", {
+        onEvent,
+        onDisconnect,
+        reconnectDelay: 100,
+        maxReconnectAttempts: 2,
+      });
 
       stream.connect();
       expect(MockEventSource.instances).toHaveLength(1);

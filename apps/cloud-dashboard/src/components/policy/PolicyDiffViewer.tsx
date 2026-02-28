@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { diffLines, type DiffLine } from "../../utils/simpleDiff";
-import { NoiseGrain, GlassButton } from "../ui";
+import { type DiffLine, diffLines } from "../../utils/simpleDiff";
+import { GlassButton, NoiseGrain } from "../ui";
 
 interface PolicyDiffViewerProps {
   oldYaml: string;

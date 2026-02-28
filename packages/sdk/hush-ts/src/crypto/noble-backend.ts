@@ -5,9 +5,9 @@
  * This is the default backend — always available, no native dependencies.
  */
 
+import * as ed25519 from "@noble/ed25519";
 import { sha256 as nobleSha256 } from "@noble/hashes/sha2.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import * as ed25519 from "@noble/ed25519";
 import type { CryptoBackend } from "./backend";
 
 export function createNobleBackend(): CryptoBackend {
@@ -31,17 +31,14 @@ export function createNobleBackend(): CryptoBackend {
       return { privateKey, publicKey };
     },
 
-    async signMessage(
-      message: Uint8Array,
-      privateKey: Uint8Array
-    ): Promise<Uint8Array> {
+    async signMessage(message: Uint8Array, privateKey: Uint8Array): Promise<Uint8Array> {
       return ed25519.signAsync(message, privateKey);
     },
 
     async verifySignature(
       message: Uint8Array,
       signature: Uint8Array,
-      publicKey: Uint8Array
+      publicKey: Uint8Array,
     ): Promise<boolean> {
       try {
         return await ed25519.verifyAsync(signature, message, publicKey);
@@ -50,9 +47,7 @@ export function createNobleBackend(): CryptoBackend {
       }
     },
 
-    async publicKeyFromPrivate(
-      privateKey: Uint8Array
-    ): Promise<Uint8Array> {
+    async publicKeyFromPrivate(privateKey: Uint8Array): Promise<Uint8Array> {
       return ed25519.getPublicKeyAsync(privateKey);
     },
   };

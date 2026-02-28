@@ -1,9 +1,10 @@
 /**
  * AgentNodes - 3D spheres representing agents
  */
-import { useRef, useState } from "react";
-import { useFrame } from "@react-three/fiber";
+
 import { Html, Sphere } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
+import { useRef, useState } from "react";
 import type { Mesh } from "three";
 import type { AgentNode } from "@/types/agents";
 import { TRUST_COLORS } from "@/types/agents";
@@ -87,11 +88,7 @@ function AgentSphere({ agent, isSelected, onSelect }: AgentSphereProps) {
 
       {/* Glow effect */}
       <Sphere args={[size * 1.2, 16, 16]}>
-        <meshBasicMaterial
-          color={color}
-          transparent
-          opacity={isSelected || hovered ? 0.3 : 0.1}
-        />
+        <meshBasicMaterial color={color} transparent opacity={isSelected || hovered ? 0.3 : 0.1} />
       </Sphere>
 
       {/* Selection ring */}

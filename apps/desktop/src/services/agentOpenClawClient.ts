@@ -44,9 +44,7 @@ type AgentAuthInfo = {
   token: string;
 };
 
-type ClientMode =
-  | { kind: "tauri" }
-  | { kind: "http"; auth: AgentAuthInfo };
+type ClientMode = { kind: "tauri" } | { kind: "http"; auth: AgentAuthInfo };
 
 let cachedAuth: AgentAuthInfo | null = null;
 
@@ -65,9 +63,7 @@ function createJsonError(status: number, body: string): Error {
   return new Error(`Agent API request failed (${status}): ${trimmed}`);
 }
 
-function normalizeMethod(
-  method?: string
-): "GET" | "POST" | "PATCH" | "PUT" | "DELETE" {
+function normalizeMethod(method?: string): "GET" | "POST" | "PATCH" | "PUT" | "DELETE" {
   const upper = (method ?? "GET").toUpperCase();
   switch (upper) {
     case "GET":
@@ -97,16 +93,9 @@ export class AgentOpenClawClient {
     return new AgentOpenClawClient({ kind: "http", auth });
   }
 
-  private async request<T>(
-    path: string,
-    init?: RequestInit & { bodyJson?: unknown }
-  ): Promise<T> {
+  private async request<T>(path: string, init?: RequestInit & { bodyJson?: unknown }): Promise<T> {
     if (this.mode.kind === "tauri") {
-      return openclawAgentRequest<T>(
-        normalizeMethod(init?.method),
-        path,
-        init?.bodyJson
-      );
+      return openclawAgentRequest<T>(normalizeMethod(init?.method), path, init?.bodyJson);
     }
 
     const headers = new Headers(init?.headers ?? {});
@@ -157,7 +146,7 @@ export class AgentOpenClawClient {
       gatewayUrl?: string;
       token?: string;
       deviceToken?: string;
-    }
+    },
   ): Promise<AgentGatewayView> {
     return this.request<AgentGatewayView>(`/api/v1/openclaw/gateways/${encodeURIComponent(id)}`, {
       method: "PATCH",
@@ -255,7 +244,7 @@ export class AgentOpenClawClient {
 
   subscribeEvents(
     onEvent: (event: AgentOpenClawEvent) => void,
-    onError?: (error: Error) => void
+    onError?: (error: Error) => void,
   ): () => void {
     const runtimeDigest = new Map<string, string>();
     let closed = false;

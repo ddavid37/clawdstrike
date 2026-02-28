@@ -167,8 +167,7 @@ function cfgWithDefaults(cfg: HierarchyEnforcerConfig): ResolvedHierarchyEnforce
 
 const RE_OVERRIDE =
   /\b(ignore|disregard|forget|override)\b.{0,64}\b(instructions?|rules?|policy|guardrails?|system)\b/ims;
-const RE_IMPERSONATION =
-  /\b(i am|i'm|as)\b.{0,16}\b(system|developer|admin|root|maintainer)\b/ims;
+const RE_IMPERSONATION = /\b(i am|i'm|as)\b.{0,16}\b(system|developer|admin|root|maintainer)\b/ims;
 const RE_ROLE_CHANGE = /\b(you are now|act as|pretend to be|roleplay)\b/ims;
 const RE_PROMPT_LEAK =
   /\b(reveal|show|tell me|repeat|print|output)\b.{0,64}\b(system prompt|developer (message|instructions|prompt)|hidden (instructions|prompt)|system instructions)\b/ims;
@@ -218,7 +217,11 @@ export class InstructionHierarchyEnforcer {
 
     // Inject reminders.
     if (this.cfg.reminders.enabled && this.cfg.reminders.frequency > 0) {
-      for (let i = this.cfg.reminders.frequency; i < out.length; i += this.cfg.reminders.frequency + 1) {
+      for (
+        let i = this.cfg.reminders.frequency;
+        i < out.length;
+        i += this.cfg.reminders.frequency + 1
+      ) {
         const id = this.nextId("reminder");
         out.splice(i, 0, {
           id,

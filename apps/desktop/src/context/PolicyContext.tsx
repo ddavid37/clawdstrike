@@ -1,9 +1,9 @@
 /**
  * PolicyContext - Policy state management
  */
-import { createContext, useContext, useCallback, useState, useEffect, type ReactNode } from "react";
-import type { Policy, PolicyBundle, ValidationResult } from "@/types/policies";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { HushdClient } from "@/services/hushdClient";
+import type { Policy, PolicyBundle, ValidationResult } from "@/types/policies";
 import { useConnection } from "./ConnectionContext";
 
 interface PolicyState {
@@ -63,7 +63,7 @@ export function PolicyProvider({ children }: { children: ReactNode }) {
       const client = new HushdClient(daemonUrl);
       return client.validatePolicy(yaml);
     },
-    [daemonUrl]
+    [daemonUrl],
   );
 
   const reloadPolicy = useCallback(async () => {

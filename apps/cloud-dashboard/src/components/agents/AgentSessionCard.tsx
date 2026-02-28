@@ -1,7 +1,7 @@
 import { useState } from "react";
+import type { AgentInfo } from "../../hooks/useAgentSessions";
 import { NoiseGrain } from "../ui";
 import { AgentPostureBadge } from "./AgentPostureBadge";
-import type { AgentInfo } from "../../hooks/useAgentSessions";
 
 function relativeTime(ts: string): string {
   const diff = Date.now() - new Date(ts).getTime();
@@ -27,8 +27,18 @@ export function AgentSessionCard({
       <NoiseGrain />
       <div style={{ position: "relative", zIndex: 2 }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-          <span className="font-mono" style={{ fontSize: 13, color: "var(--gold)", fontWeight: 500 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 8,
+          }}
+        >
+          <span
+            className="font-mono"
+            style={{ fontSize: 13, color: "var(--gold)", fontWeight: 500 }}
+          >
             {agent.agentId.slice(0, 12)}
           </span>
           <AgentPostureBadge posture={agent.posture} />
@@ -83,7 +93,10 @@ export function AgentSessionCard({
                 <span className="font-mono" style={{ fontSize: 10, color: "var(--muted)" }}>
                   {session.events.length} events
                 </span>
-                <span className="font-mono" style={{ fontSize: 10, color: "rgba(154,167,181,0.4)", marginLeft: "auto" }}>
+                <span
+                  className="font-mono"
+                  style={{ fontSize: 10, color: "rgba(154,167,181,0.4)", marginLeft: "auto" }}
+                >
                   {new Date(session.startTime).toLocaleTimeString()}
                 </span>
               </div>
@@ -98,10 +111,20 @@ export function AgentSessionCard({
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
     <div>
-      <div className="font-mono" style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(154,167,181,0.5)" }}>
+      <div
+        className="font-mono"
+        style={{
+          fontSize: 9,
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          color: "rgba(154,167,181,0.5)",
+        }}
+      >
         {label}
       </div>
-      <div className="font-mono" style={{ fontSize: 13, color: "var(--text)" }}>{String(value)}</div>
+      <div className="font-mono" style={{ fontSize: 13, color: "var(--text)" }}>
+        {String(value)}
+      </div>
     </div>
   );
 }

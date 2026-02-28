@@ -1,5 +1,9 @@
 import * as React from "react";
-import { AgentOpenClawClient, type AgentGatewayListResponse, type AgentGatewayRuntime } from "@/services/agentOpenClawClient";
+import {
+  type AgentGatewayListResponse,
+  type AgentGatewayRuntime,
+  AgentOpenClawClient,
+} from "@/services/agentOpenClawClient";
 import type { GatewayConnectionStatus } from "@/services/openclaw/gatewayClient";
 import type { GatewayEventFrame } from "@/services/openclaw/gatewayProtocol";
 import {
@@ -108,7 +112,9 @@ function loadLegacyLocalStorageGateways(): {
 
     const activeGatewayIdRaw = localStorage.getItem(STORAGE_ACTIVE_KEY);
     const activeGatewayId =
-      typeof activeGatewayIdRaw === "string" && activeGatewayIdRaw.trim() ? activeGatewayIdRaw : null;
+      typeof activeGatewayIdRaw === "string" && activeGatewayIdRaw.trim()
+        ? activeGatewayIdRaw
+        : null;
     return { gateways: normalized, activeGatewayId };
   } catch {
     return { gateways: [], activeGatewayId: null };
@@ -127,7 +133,9 @@ function scrubLegacyLocalStorageSecrets() {
 export function OpenClawAgentProvider({ children }: { children: React.ReactNode }) {
   const [gateways, setGateways] = React.useState<OpenClawGatewayConfig[]>([]);
   const [activeGatewayId, setActiveGatewayIdState] = React.useState("");
-  const [runtimeByGatewayId, setRuntimeByGatewayId] = React.useState<Record<string, OpenClawGatewayRuntime>>({});
+  const [runtimeByGatewayId, setRuntimeByGatewayId] = React.useState<
+    Record<string, OpenClawGatewayRuntime>
+  >({});
 
   const clientRef = React.useRef<AgentOpenClawClient | null>(null);
   const unsubscribeEventsRef = React.useRef<(() => void) | null>(null);
@@ -216,7 +224,7 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
           () => {
             // Background sync can restore state after SSE interruptions.
             void syncFromAgent().catch(() => {});
-          }
+          },
         );
       } catch (err) {
         console.error("Failed to initialize OpenClaw agent client:", err);
@@ -231,12 +239,15 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
   }, [syncFromAgent]);
 
   const active = React.useMemo(() => {
-    return gateways.find((gateway) => gateway.id === activeGatewayId) ?? gateways[0] ?? {
-      id: "",
-      label: "Gateway",
-      gatewayUrl: "",
-      token: "",
-    };
+    return (
+      gateways.find((gateway) => gateway.id === activeGatewayId) ??
+      gateways[0] ?? {
+        id: "",
+        label: "Gateway",
+        gatewayUrl: "",
+        token: "",
+      }
+    );
   }, [activeGatewayId, gateways]);
 
   const setActiveGatewayId = React.useCallback((id: string) => {
@@ -252,7 +263,9 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
       if (!client) return;
 
       const label = partial?.label?.trim() ? partial.label.trim() : "Gateway";
-      const gatewayUrl = partial?.gatewayUrl?.trim() ? partial.gatewayUrl.trim() : "ws://127.0.0.1:18789";
+      const gatewayUrl = partial?.gatewayUrl?.trim()
+        ? partial.gatewayUrl.trim()
+        : "ws://127.0.0.1:18789";
       const token = partial?.token?.trim() ? partial.token.trim() : undefined;
 
       void client
@@ -260,7 +273,7 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
         .then(() => syncFromAgent())
         .catch(() => {});
     },
-    [syncFromAgent]
+    [syncFromAgent],
   );
 
   const updateGateway = React.useCallback(
@@ -292,7 +305,7 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
         .then(() => syncFromAgent())
         .catch(() => {});
     },
-    [syncFromAgent]
+    [syncFromAgent],
   );
 
   const removeGateway = React.useCallback(
@@ -304,26 +317,32 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
         .then(() => syncFromAgent())
         .catch(() => {});
     },
-    [syncFromAgent]
+    [syncFromAgent],
   );
 
-  const connectGateway = React.useCallback(async (id: string) => {
-    const client = clientRef.current;
-    if (!client) throw new Error("OpenClaw agent client unavailable");
-    await client.connectGateway(id);
-    await syncFromAgent();
-  }, [syncFromAgent]);
+  const connectGateway = React.useCallback(
+    async (id: string) => {
+      const client = clientRef.current;
+      if (!client) throw new Error("OpenClaw agent client unavailable");
+      await client.connectGateway(id);
+      await syncFromAgent();
+    },
+    [syncFromAgent],
+  );
 
-  const disconnectGateway = React.useCallback((id: string) => {
-    const client = clientRef.current;
-    if (!client) return;
-    autoConnectHoldUntilRef.current[id] = Date.now() + 60_000;
-    warmupTriggeredRef.current[id] = false;
-    void client
-      .disconnectGateway(id)
-      .then(() => syncFromAgent())
-      .catch(() => {});
-  }, [syncFromAgent]);
+  const disconnectGateway = React.useCallback(
+    (id: string) => {
+      const client = clientRef.current;
+      if (!client) return;
+      autoConnectHoldUntilRef.current[id] = Date.now() + 60_000;
+      warmupTriggeredRef.current[id] = false;
+      void client
+        .disconnectGateway(id)
+        .then(() => syncFromAgent())
+        .catch(() => {});
+    },
+    [syncFromAgent],
+  );
 
   const connect = React.useCallback(async () => {
     if (!active.id) throw new Error("No active gateway selected");
@@ -370,11 +389,16 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
         timeoutMs: opts?.timeoutMs,
       });
     },
-    [active.id]
+    [active.id],
   );
 
   const requestForGateway = React.useCallback(
-    async <TPayload,>(gatewayId: string, method: string, params?: unknown, opts?: { timeoutMs?: number }) => {
+    async <TPayload,>(
+      gatewayId: string,
+      method: string,
+      params?: unknown,
+      opts?: { timeoutMs?: number },
+    ) => {
       const client = clientRef.current;
       if (!client) throw new Error("OpenClaw agent client unavailable");
       return client.relayRequest<TPayload>({
@@ -384,17 +408,14 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
         timeoutMs: opts?.timeoutMs,
       });
     },
-    []
+    [],
   );
 
   const refreshPresence = React.useCallback(
     async (gatewayId = active.id) => {
-      const presence = await requestForGateway<unknown[]>(
-        gatewayId,
-        "system-presence",
-        undefined,
-        { timeoutMs: 8_000 }
-      );
+      const presence = await requestForGateway<unknown[]>(gatewayId, "system-presence", undefined, {
+        timeoutMs: 8_000,
+      });
       setRuntimeByGatewayId((prev) => ({
         ...prev,
         [gatewayId]: {
@@ -403,7 +424,7 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
         },
       }));
     },
-    [active.id, requestForGateway]
+    [active.id, requestForGateway],
   );
 
   const refreshNodes = React.useCallback(
@@ -412,7 +433,7 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
         gatewayId,
         "node.list",
         undefined,
-        { timeoutMs: 10_000 }
+        { timeoutMs: 10_000 },
       );
       const nodes = Array.isArray(result?.nodes) ? result.nodes : [];
       setRuntimeByGatewayId((prev) => ({
@@ -423,7 +444,7 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
         },
       }));
     },
-    [active.id, requestForGateway]
+    [active.id, requestForGateway],
   );
 
   const refreshDevices = React.useCallback(
@@ -433,7 +454,7 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
           gatewayId,
           "device.pair.list",
           undefined,
-          { timeoutMs: 10_000 }
+          { timeoutMs: 10_000 },
         );
         setRuntimeByGatewayId((prev) => ({
           ...prev,
@@ -446,12 +467,17 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
         if (!opts?.quiet) throw err;
       }
     },
-    [active.id, requestForGateway]
+    [active.id, requestForGateway],
   );
 
   const resolveExecApproval = React.useCallback(
     async (approvalId: string, decision: ExecApprovalDecision, gatewayId = active.id) => {
-      await requestForGateway(gatewayId, "exec.approval.resolve", { id: approvalId, decision }, { timeoutMs: 10_000 });
+      await requestForGateway(
+        gatewayId,
+        "exec.approval.resolve",
+        { id: approvalId, decision },
+        { timeoutMs: 10_000 },
+      );
       setRuntimeByGatewayId((prev) => {
         const current = prev[gatewayId] ?? emptyRuntime();
         return {
@@ -463,23 +489,33 @@ export function OpenClawAgentProvider({ children }: { children: React.ReactNode 
         };
       });
     },
-    [active.id, requestForGateway]
+    [active.id, requestForGateway],
   );
 
   const approveDevicePairing = React.useCallback(
     async (requestId: string, gatewayId = active.id) => {
-      await requestForGateway(gatewayId, "device.pair.approve", { requestId }, { timeoutMs: 12_000 });
+      await requestForGateway(
+        gatewayId,
+        "device.pair.approve",
+        { requestId },
+        { timeoutMs: 12_000 },
+      );
       await refreshDevices(gatewayId, { quiet: true });
     },
-    [active.id, refreshDevices, requestForGateway]
+    [active.id, refreshDevices, requestForGateway],
   );
 
   const rejectDevicePairing = React.useCallback(
     async (requestId: string, gatewayId = active.id) => {
-      await requestForGateway(gatewayId, "device.pair.reject", { requestId }, { timeoutMs: 12_000 });
+      await requestForGateway(
+        gatewayId,
+        "device.pair.reject",
+        { requestId },
+        { timeoutMs: 12_000 },
+      );
       await refreshDevices(gatewayId, { quiet: true });
     },
-    [active.id, refreshDevices, requestForGateway]
+    [active.id, refreshDevices, requestForGateway],
   );
 
   const summary = React.useMemo(() => {

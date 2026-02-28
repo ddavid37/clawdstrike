@@ -1,16 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  initialPolicyWorkbenchState,
-  isPolicyDraftDirty,
-  policyWorkbenchReducer,
-} from "./state";
+import { initialPolicyWorkbenchState, isPolicyDraftDirty, policyWorkbenchReducer } from "./state";
 
 describe("policyWorkbenchReducer", () => {
   it("marks draft as dirty after edit and clears on revert", () => {
     const loaded = policyWorkbenchReducer(initialPolicyWorkbenchState, {
       type: "load_success",
-      yaml: "version: \"1.2.0\"\nname: demo",
+      yaml: 'version: "1.2.0"\nname: demo',
       hash: "abc",
       version: "1.2.0",
     });
@@ -18,7 +14,7 @@ describe("policyWorkbenchReducer", () => {
 
     const edited = policyWorkbenchReducer(loaded, {
       type: "edit",
-      yaml: "version: \"1.2.0\"\nname: edited",
+      yaml: 'version: "1.2.0"\nname: edited',
     });
     expect(isPolicyDraftDirty(edited)).toBe(true);
 
@@ -52,19 +48,19 @@ describe("policyWorkbenchReducer", () => {
   it("preserves newer draft when save completes against an older snapshot", () => {
     const loaded = policyWorkbenchReducer(initialPolicyWorkbenchState, {
       type: "load_success",
-      yaml: "version: \"1.2.0\"\nname: loaded",
+      yaml: 'version: "1.2.0"\nname: loaded',
       hash: "h1",
       version: "1.2.0",
     });
     const edited = policyWorkbenchReducer(loaded, {
       type: "edit",
-      yaml: "version: \"1.2.0\"\nname: newer",
+      yaml: 'version: "1.2.0"\nname: newer',
     });
     const saving = policyWorkbenchReducer(edited, { type: "save_start" });
 
     const saved = policyWorkbenchReducer(saving, {
       type: "save_success_preserve_draft",
-      loadedYaml: "version: \"1.2.0\"\nname: loaded",
+      loadedYaml: 'version: "1.2.0"\nname: loaded',
       hash: "h2",
     });
 
@@ -83,14 +79,14 @@ describe("policyWorkbenchReducer", () => {
 
     const saved = policyWorkbenchReducer(errored, {
       type: "save_success",
-      yaml: "version: \"1.2.0\"\nname: saved",
+      yaml: 'version: "1.2.0"\nname: saved',
       hash: "h3",
     });
     expect(saved.loadError).toBeUndefined();
 
     const preserved = policyWorkbenchReducer(errored, {
       type: "save_success_preserve_draft",
-      loadedYaml: "version: \"1.2.0\"\nname: saved",
+      loadedYaml: 'version: "1.2.0"\nname: saved',
       hash: "h3",
     });
     expect(preserved.loadError).toBeUndefined();
@@ -115,14 +111,14 @@ describe("policyWorkbenchReducer", () => {
 
     const saved = policyWorkbenchReducer(failed, {
       type: "save_success",
-      yaml: "version: \"1.2.0\"\nname: saved",
+      yaml: 'version: "1.2.0"\nname: saved',
       hash: "h3",
     });
     expect(saved.saveError).toBeUndefined();
 
     const preserved = policyWorkbenchReducer(failed, {
       type: "save_success_preserve_draft",
-      loadedYaml: "version: \"1.2.0\"\nname: saved",
+      loadedYaml: 'version: "1.2.0"\nname: saved',
       hash: "h3",
     });
     expect(preserved.saveError).toBeUndefined();

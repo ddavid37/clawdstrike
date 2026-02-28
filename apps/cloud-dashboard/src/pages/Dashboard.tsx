@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchHealth, fetchAuditStats, type HealthResponse, type AuditStats } from "../api/client";
-import { useSharedSSE } from "../context/SSEContext";
+import { type AuditStats, fetchAuditStats, fetchHealth, type HealthResponse } from "../api/client";
+import { EventDetailDrawer } from "../components/events/EventDetailDrawer";
 import { NoiseGrain } from "../components/ui";
 import { DashboardCharts } from "../components/viz/DashboardCharts";
-import { EventDetailDrawer } from "../components/events/EventDetailDrawer";
-import { formatUptime } from "../utils/format";
+import { useSharedSSE } from "../context/SSEContext";
 import type { SSEEvent } from "../hooks/useSSE";
+import { formatUptime } from "../utils/format";
 
 export function Dashboard(_props: { windowId?: string }) {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -31,20 +31,22 @@ export function Dashboard(_props: { windowId?: string }) {
     return () => clearInterval(interval);
   }, [refresh]);
 
-  const violations = useMemo(
-    () => events.filter((e) => e.event_type === "violation"),
-    [events],
-  );
+  const violations = useMemo(() => events.filter((e) => e.event_type === "violation"), [events]);
 
   return (
-    <div className="space-y-6" style={{ padding: 20, color: "#e2e8f0", overflow: "auto", height: "100%" }}>
+    <div
+      className="space-y-6"
+      style={{ padding: 20, color: "#e2e8f0", overflow: "auto", height: "100%" }}
+    >
       {/* SSE status bar */}
       <div className="flex items-center gap-2.5">
         <span
           className="h-2 w-2 rounded-full"
           style={{
             background: connected ? "#2fa7a0" : "#c23b3b",
-            animation: connected ? "breathe-teal 2.4s ease-in-out infinite" : "breathe-crimson 1.6s ease-in-out infinite",
+            animation: connected
+              ? "breathe-teal 2.4s ease-in-out infinite"
+              : "breathe-crimson 1.6s ease-in-out infinite",
           }}
         />
         <span
@@ -135,9 +137,15 @@ export function Dashboard(_props: { windowId?: string }) {
                   Waiting for events…
                 </p>
               ) : (
-                events.slice(0, 50).map((event) => (
-                  <EventRow key={event._id} event={event} onClick={() => setSelectedEvent(event)} />
-                ))
+                events
+                  .slice(0, 50)
+                  .map((event) => (
+                    <EventRow
+                      key={event._id}
+                      event={event}
+                      onClick={() => setSelectedEvent(event)}
+                    />
+                  ))
               )}
             </div>
           </section>
@@ -173,9 +181,15 @@ export function Dashboard(_props: { windowId?: string }) {
                   No violations
                 </p>
               ) : (
-                violations.slice(0, 20).map((event) => (
-                  <EventRow key={event._id} event={event} onClick={() => setSelectedEvent(event)} />
-                ))
+                violations
+                  .slice(0, 20)
+                  .map((event) => (
+                    <EventRow
+                      key={event._id}
+                      event={event}
+                      onClick={() => setSelectedEvent(event)}
+                    />
+                  ))
               )}
             </div>
           </section>
@@ -271,15 +285,22 @@ function EventRow({ event, onClick }: { event: SSEEvent; onClick?: () => void })
       onClick={onClick}
       tabIndex={onClick ? 0 : undefined}
       role={onClick ? "button" : undefined}
-      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
     >
       <span
         className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
         style={{
           background: isViolation ? "#c23b3b" : "var(--gold)",
-          boxShadow: isViolation
-            ? "0 0 6px rgba(194,59,59,0.5)"
-            : "0 0 4px rgba(214,177,90,0.3)",
+          boxShadow: isViolation ? "0 0 6px rgba(194,59,59,0.5)" : "0 0 4px rgba(214,177,90,0.3)",
         }}
       />
       <span

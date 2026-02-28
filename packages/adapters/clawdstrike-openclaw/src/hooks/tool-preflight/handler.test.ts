@@ -1,30 +1,29 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it } from "vitest";
+import type { ToolCallEvent } from "../../types.js";
+import handler, { initialize } from "./handler.js";
 
-import handler, { initialize } from './handler.js';
-import type { ToolCallEvent } from '../../types.js';
-
-describe('tool-preflight handler', () => {
+describe("tool-preflight handler", () => {
   beforeEach(() => {
     // Ensure tests don't accidentally exercise the interactive approval flow.
     delete process.env.CLAWDSTRIKE_APPROVAL_URL;
     delete process.env.CLAWDSTRIKE_AGENT_TOKEN;
 
     initialize({
-      policy: 'clawdstrike:ai-agent-minimal',
-      mode: 'deterministic',
-      logLevel: 'error',
+      policy: "clawdstrike:ai-agent-minimal",
+      mode: "deterministic",
+      logLevel: "error",
     });
   });
 
-  it('preflights network tools even when the name looks read-only', async () => {
+  it("preflights network tools even when the name looks read-only", async () => {
     const event: ToolCallEvent = {
-      type: 'tool_call',
+      type: "tool_call",
       timestamp: new Date().toISOString(),
       context: {
-        sessionId: 'sess-test',
+        sessionId: "sess-test",
         toolCall: {
-          toolName: 'web_search',
-          params: { url: 'https://example.com' },
+          toolName: "web_search",
+          params: { url: "https://example.com" },
         },
       },
       preventDefault: false,
@@ -34,7 +33,6 @@ describe('tool-preflight handler', () => {
     await handler(event);
 
     expect(event.preventDefault).toBe(true);
-    expect(event.messages.join('\n')).toMatch(/blocked web_search/i);
+    expect(event.messages.join("\n")).toMatch(/blocked web_search/i);
   });
 });
-

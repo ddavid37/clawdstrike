@@ -78,9 +78,7 @@ export function AlertRules({
               className="glass-panel rounded-md p-3"
               style={{
                 opacity: rule.enabled ? 1 : 0.5,
-                borderColor: rule.enabled
-                  ? "rgba(27,34,48,0.6)"
-                  : "rgba(27,34,48,0.3)",
+                borderColor: rule.enabled ? "rgba(27,34,48,0.6)" : "rgba(27,34,48,0.3)",
               }}
             >
               <div className="flex items-center gap-3 flex-wrap">
@@ -117,9 +115,7 @@ export function AlertRules({
                   <input
                     type="url"
                     value={rule.webhookUrl || ""}
-                    onChange={(e) =>
-                      onUpdate(rule.id, { webhookUrl: e.target.value || undefined })
-                    }
+                    onChange={(e) => onUpdate(rule.id, { webhookUrl: e.target.value || undefined })}
                     placeholder="https://..."
                     className={INPUT_FOCUS_CSS}
                     style={{ ...focusRingStyle, color: "rgba(229,231,235,0.92)" }}
@@ -132,9 +128,7 @@ export function AlertRules({
                     onClick={() => onUpdate(rule.id, { enabled: !rule.enabled })}
                     className="font-mono rounded-md px-3 py-2 text-xs"
                     style={{
-                      background: rule.enabled
-                        ? "rgba(45,170,106,0.1)"
-                        : "rgba(100,116,139,0.1)",
+                      background: rule.enabled ? "rgba(45,170,106,0.1)" : "rgba(100,116,139,0.1)",
                       border: "1px solid rgba(27,34,48,0.5)",
                       color: rule.enabled ? "#2daa6a" : "rgba(229,231,235,0.4)",
                       cursor: "pointer",
@@ -163,10 +157,7 @@ export function AlertRules({
       )}
 
       {rules.length === 0 && (
-        <p
-          className="font-body text-sm"
-          style={{ color: "rgba(229,231,235,0.4)" }}
-        >
+        <p className="font-body text-sm" style={{ color: "rgba(229,231,235,0.4)" }}>
           No alert rules configured. Add one below.
         </p>
       )}

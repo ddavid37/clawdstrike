@@ -1,5 +1,5 @@
-import * as React from "react";
 import { clsx } from "clsx";
+import * as React from "react";
 
 import { useOpenClaw } from "@/context/OpenClawContext";
 import { PolicyWorkbenchPanel } from "./PolicyWorkbenchPanel";
@@ -40,14 +40,21 @@ export function ChronicleWorkbenchShelf({
   const runtimeSummary = {
     connected: openClawConnected,
     statusLabel: openClawConnected ? "LIVE" : "OFFLINE",
-    statusDetail: openClawConnected ? `OpenClaw telemetry ${lastSeen}` : "OpenClaw telemetry offline",
+    statusDetail: openClawConnected
+      ? `OpenClaw telemetry ${lastSeen}`
+      : "OpenClaw telemetry offline",
     nodes,
     presence,
     approvals,
   };
 
   return (
-    <div className={clsx("workbench-shelf-shell flex h-full min-h-0 flex-col overflow-hidden", className)}>
+    <div
+      className={clsx(
+        "workbench-shelf-shell flex h-full min-h-0 flex-col overflow-hidden",
+        className,
+      )}
+    >
       {policyWorkbenchEnabled ? (
         <PolicyWorkbenchPanel
           daemonUrl={daemonUrl}

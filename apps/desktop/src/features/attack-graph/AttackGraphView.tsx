@@ -4,14 +4,14 @@
  * Dynamically builds attack chains from live SDR events grouped by process
  * tree lineage. Falls back to demo mode when no spine connection is available.
  */
-import { Suspense, useState, useMemo } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+
+import { Badge, GlassHeader, GlassPanel } from "@backbay/glia/primitives";
 import { AttackGraph, type AttackTechnique } from "@backbay/glia-three/three";
-import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
-import { Badge } from "@backbay/glia/primitives";
-import { useSpineEvents } from "@/hooks/useSpineEvents";
+import { OrbitControls } from "@react-three/drei";
+import { Canvas } from "@react-three/fiber";
+import { Suspense, useMemo, useState } from "react";
 import { SpineStatusIndicator } from "@/components/SpineStatusIndicator";
+import { useSpineEvents } from "@/hooks/useSpineEvents";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   active: "destructive",
@@ -100,7 +100,9 @@ export function AttackGraphView() {
           <div className="p-4 space-y-4">
             <div>
               <div className="text-xs text-white/40 font-mono mb-1">MITRE ID</div>
-              <div className="text-sm text-cyan-400 font-mono font-semibold">{selectedTechnique.id}</div>
+              <div className="text-sm text-cyan-400 font-mono font-semibold">
+                {selectedTechnique.id}
+              </div>
             </div>
 
             <div>
@@ -130,15 +132,17 @@ export function AttackGraphView() {
             </div>
 
             <div className="border-t border-white/10 pt-3">
-              <div className="text-xs text-white/40 font-mono mb-2">CHAINS USING THIS TECHNIQUE</div>
-              {chains.filter((chain) =>
-                chain.techniques.some((t) => t.id === selectedTechnique.id)
-              ).map((chain) => (
-                <div key={chain.id} className="flex items-center justify-between py-1.5">
-                  <span className="text-xs text-white/70">{chain.name}</span>
-                  <Badge variant={STATUS_VARIANT[chain.status]}>{chain.status}</Badge>
-                </div>
-              ))}
+              <div className="text-xs text-white/40 font-mono mb-2">
+                CHAINS USING THIS TECHNIQUE
+              </div>
+              {chains
+                .filter((chain) => chain.techniques.some((t) => t.id === selectedTechnique.id))
+                .map((chain) => (
+                  <div key={chain.id} className="flex items-center justify-between py-1.5">
+                    <span className="text-xs text-white/70">{chain.name}</span>
+                    <Badge variant={STATUS_VARIANT[chain.status]}>{chain.status}</Badge>
+                  </div>
+                ))}
             </div>
 
             {/* Show contributing events from live chains */}
@@ -146,7 +150,11 @@ export function AttackGraphView() {
               <div className="border-t border-white/10 pt-3">
                 <div className="text-xs text-white/40 font-mono mb-2">CONTRIBUTING EVENTS</div>
                 {liveChains
-                  .flatMap((lc) => lc.techniques.filter((t) => t.id === selectedTechnique.id).flatMap((t) => t.eventIds))
+                  .flatMap((lc) =>
+                    lc.techniques
+                      .filter((t) => t.id === selectedTechnique.id)
+                      .flatMap((t) => t.eventIds),
+                  )
                   .slice(0, 5)
                   .map((eventId) => {
                     const liveEvent = liveChains
@@ -176,13 +184,17 @@ export function AttackGraphView() {
                 <div className="mt-6 space-y-3">
                   <div className="text-xs text-white/40 font-mono mb-2">ACTIVE CHAINS</div>
                   {chains.map((chain) => (
-                    <div key={chain.id} className="p-2.5 rounded-lg border border-white/5 bg-white/[0.02]">
+                    <div
+                      key={chain.id}
+                      className="p-2.5 rounded-lg border border-white/5 bg-white/[0.02]"
+                    >
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-xs text-white/80 font-medium">{chain.name}</span>
                         <Badge variant={STATUS_VARIANT[chain.status]}>{chain.status}</Badge>
                       </div>
                       <div className="text-xs text-white/40">
-                        {chain.techniques.length} techniques &middot; {chain.actor ?? "Unknown actor"}
+                        {chain.techniques.length} techniques &middot;{" "}
+                        {chain.actor ?? "Unknown actor"}
                       </div>
                     </div>
                   ))}

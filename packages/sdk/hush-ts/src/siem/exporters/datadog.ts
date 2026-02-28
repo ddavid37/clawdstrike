@@ -1,4 +1,4 @@
-import type { ExportResult, ExporterConfig } from "../framework";
+import type { ExporterConfig, ExportResult } from "../framework";
 import { BaseExporter, SchemaFormat } from "../framework";
 import { HttpClient, readResponseBody } from "../http";
 import type { SecurityEvent } from "../types";
@@ -96,7 +96,7 @@ export class DatadogExporter extends BaseExporter {
   }
 
   private async sendLogs(events: SecurityEvent[]): Promise<void> {
-    const logs = events.map(e => {
+    const logs = events.map((e) => {
       const tags = [...this.cfg.logs.tags];
       tags.push(`guard:${e.decision.guard}`);
       tags.push(`event_type:${e.event_type}`);
@@ -134,7 +134,7 @@ export class DatadogExporter extends BaseExporter {
 
     const now = Math.floor(Date.now() / 1000);
     const total = events.length;
-    const denied = events.filter(e => !e.decision.allowed).length;
+    const denied = events.filter((e) => !e.decision.allowed).length;
     const allowed = total - denied;
 
     const tags = [...this.cfg.metrics.tags, "source:clawdstrike"];

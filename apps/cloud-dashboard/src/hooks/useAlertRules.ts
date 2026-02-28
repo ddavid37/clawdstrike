@@ -116,16 +116,10 @@ export function useAlertRules(events: SSEEvent[], options?: { evaluate?: boolean
           })
             .then((res) => {
               if (!res.ok)
-                console.warn(
-                  `[AlertRules] webhook returned ${res.status} for ${rule.webhookUrl}`,
-                );
+                console.warn(`[AlertRules] webhook returned ${res.status} for ${rule.webhookUrl}`);
             })
             .catch((err) => {
-              console.warn(
-                "[AlertRules] webhook delivery failed:",
-                rule.webhookUrl,
-                err,
-              );
+              console.warn("[AlertRules] webhook delivery failed:", rule.webhookUrl, err);
             });
         }
       }

@@ -45,7 +45,8 @@ function normalizeNotaryUrl(value: unknown): string | null {
 }
 
 function normalizeSettings(value: unknown): MarketplaceProvenanceSettings {
-  if (typeof value !== "object" || value === null) return { ...DEFAULT_MARKETPLACE_PROVENANCE_SETTINGS };
+  if (typeof value !== "object" || value === null)
+    return { ...DEFAULT_MARKETPLACE_PROVENANCE_SETTINGS };
   const v = value as Record<string, unknown>;
   return {
     notaryUrl: normalizeNotaryUrl(v.notaryUrl),
@@ -92,4 +93,3 @@ export function parseMarketplaceTrustedAttestersInput(input: string): string[] {
 export function formatMarketplaceTrustedAttestersInput(attesters: string[]): string {
   return normalizeTrustedAttesters(attesters).join("\n");
 }
-

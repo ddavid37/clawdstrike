@@ -1,12 +1,13 @@
 /**
  * AgentDetailPanel - Detailed view of selected agent
  */
+
+import { Badge, GlassPanel, GlowButton } from "@backbay/glia/primitives";
 import { clsx } from "clsx";
 import type { ReactNode } from "react";
-import { GlassPanel, GlowButton, Badge } from "@backbay/glia/primitives";
+import { useSwarm } from "@/context/SwarmContext";
 import type { AgentNode } from "@/types/agents";
 import { TRUST_COLORS } from "@/types/agents";
-import { useSwarm } from "@/context/SwarmContext";
 
 interface AgentDetailPanelProps {
   agent: AgentNode;
@@ -26,10 +27,7 @@ export function AgentDetailPanel({ agent, onClose }: AgentDetailPanelProps) {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-sdr-border">
         <div className="flex items-center gap-2">
-          <div
-            className="w-3 h-3 rounded-full"
-            style={{ backgroundColor: trustColor }}
-          />
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: trustColor }} />
           <h2 className="font-medium text-sdr-text-primary">{agent.name}</h2>
         </div>
         <button
@@ -105,10 +103,7 @@ export function AgentDetailPanel({ agent, onClose }: AgentDetailPanelProps) {
           <Row label="Events" value={String(agent.event_count ?? 0)} />
           <Row label="Blocked" value={String(agent.blocked_count ?? 0)} />
           {agent.last_activity && (
-            <Row
-              label="Last Active"
-              value={new Date(agent.last_activity).toLocaleString()}
-            />
+            <Row label="Last Active" value={new Date(agent.last_activity).toLocaleString()} />
           )}
         </Section>
 
@@ -158,12 +153,7 @@ function Row({
     <div className="flex items-start gap-2 text-sm mb-1">
       <span className="text-sdr-text-muted w-20 shrink-0">{label}</span>
       {children ?? (
-        <span
-          className={clsx(
-            "text-sdr-text-primary break-all",
-            mono && "font-mono text-xs"
-          )}
-        >
+        <span className={clsx("text-sdr-text-primary break-all", mono && "font-mono text-xs")}>
           {value}
         </span>
       )}
@@ -172,11 +162,7 @@ function Row({
 }
 
 function TrustBadge({ level }: { level: string }) {
-  return (
-    <Badge variant="secondary">
-      {level}
-    </Badge>
-  );
+  return <Badge variant="secondary">{level}</Badge>;
 }
 
 function ThreatIndicator({ score }: { score: number }) {
@@ -211,16 +197,21 @@ function DelegationRow({
   return (
     <div className="text-xs text-sdr-text-secondary pl-2 border-l border-sdr-border mb-1">
       <span className="font-mono">{agentId.slice(0, 12)}...</span>
-      <span className="text-sdr-text-muted ml-1">
-        ({delegation.capabilities.length} caps)
-      </span>
+      <span className="text-sdr-text-muted ml-1">({delegation.capabilities.length} caps)</span>
     </div>
   );
 }
 
 function CloseIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   );

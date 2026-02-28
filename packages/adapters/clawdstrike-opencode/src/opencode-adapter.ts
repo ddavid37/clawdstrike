@@ -1,21 +1,25 @@
-import { createFrameworkAdapter } from '@clawdstrike/adapter-core';
 import type {
   AdapterConfig,
   FrameworkAdapter,
   GenericToolCall,
   PolicyEngineLike,
   SecurityContext,
-} from '@clawdstrike/adapter-core';
+} from "@clawdstrike/adapter-core";
+import { createFrameworkAdapter } from "@clawdstrike/adapter-core";
 
 export class OpenCodeAdapter {
   private readonly delegate: FrameworkAdapter;
 
   constructor(engine: PolicyEngineLike, config: AdapterConfig = {}) {
-    this.delegate = createFrameworkAdapter('opencode', engine, config);
+    this.delegate = createFrameworkAdapter("opencode", engine, config);
   }
 
-  get name() { return this.delegate.name; }
-  get version() { return this.delegate.version; }
+  get name() {
+    return this.delegate.name;
+  }
+  get version() {
+    return this.delegate.version;
+  }
 
   async initialize(config: AdapterConfig) {
     return this.delegate.initialize(config);

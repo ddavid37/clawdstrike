@@ -40,7 +40,13 @@ export function SwarmLegend() {
             <span className="text-xs text-sdr-text-secondary">Active delegation</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-6 h-0.5 bg-sdr-accent-red opacity-50" style={{ backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 2px, currentColor 2px, currentColor 4px)" }} />
+            <div
+              className="w-6 h-0.5 bg-sdr-accent-red opacity-50"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(90deg, transparent, transparent 2px, currentColor 2px, currentColor 4px)",
+              }}
+            />
             <span className="text-xs text-sdr-text-secondary">Expired/Revoked</span>
           </div>
         </div>

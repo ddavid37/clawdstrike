@@ -1,20 +1,20 @@
-import type { Decision } from './types.js';
+import type { Decision } from "./types.js";
 
 export type AuditEventType =
-  | 'tool_call_start'
-  | 'tool_call_blocked'
-  | 'tool_call_allowed'
-  | 'tool_call_warning'
-  | 'tool_call_end'
-  | 'tool_call_error'
-  | 'output_sanitized'
-  | 'prompt_security_prompt_injection'
-  | 'prompt_security_jailbreak'
-  | 'prompt_security_instruction_hierarchy'
-  | 'prompt_security_watermark'
-  | 'prompt_security_output_sanitized'
-  | 'session_start'
-  | 'session_end';
+  | "tool_call_start"
+  | "tool_call_blocked"
+  | "tool_call_allowed"
+  | "tool_call_warning"
+  | "tool_call_end"
+  | "tool_call_error"
+  | "output_sanitized"
+  | "prompt_security_prompt_injection"
+  | "prompt_security_jailbreak"
+  | "prompt_security_instruction_hierarchy"
+  | "prompt_security_watermark"
+  | "prompt_security_output_sanitized"
+  | "session_start"
+  | "session_end";
 
 export interface AuditEvent {
   id: string;
@@ -33,7 +33,7 @@ export interface AuditLogger {
   log(event: AuditEvent): Promise<void>;
   getSessionEvents(sessionId: string): Promise<AuditEvent[]>;
   getContextEvents(contextId: string): Promise<AuditEvent[]>;
-  export(format: 'json' | 'csv' | 'jsonl'): Promise<string>;
+  export(format: "json" | "csv" | "jsonl"): Promise<string>;
   prune(olderThan: Date): Promise<number>;
 }
 
@@ -59,46 +59,49 @@ export class InMemoryAuditLogger implements AuditLogger {
   }
 
   async getSessionEvents(sessionId: string): Promise<AuditEvent[]> {
-    return this.events.filter(e => e.sessionId === sessionId);
+    return this.events.filter((e) => e.sessionId === sessionId);
   }
 
   async getContextEvents(contextId: string): Promise<AuditEvent[]> {
-    return this.events.filter(e => e.contextId === contextId);
+    return this.events.filter((e) => e.contextId === contextId);
   }
 
-  async export(format: 'json' | 'csv' | 'jsonl'): Promise<string> {
+  async export(format: "json" | "csv" | "jsonl"): Promise<string> {
     switch (format) {
-      case 'json':
+      case "json":
         return JSON.stringify(this.events, null, 2);
-      case 'jsonl':
-        return this.events.map(e => JSON.stringify(e)).join('\n');
-      case 'csv': {
+      case "jsonl":
+        return this.events.map((e) => JSON.stringify(e)).join("\n");
+      case "csv": {
         const headers = [
-          'id',
-          'type',
-          'timestamp',
-          'contextId',
-          'sessionId',
-          'toolName',
-          'decision',
+          "id",
+          "type",
+          "timestamp",
+          "contextId",
+          "sessionId",
+          "toolName",
+          "decision",
         ];
-        const rows = this.events.map(e => [
+        const rows = this.events.map((e) => [
           e.id,
           e.type,
           e.timestamp.toISOString(),
           e.contextId,
           e.sessionId,
-          e.toolName ?? '',
-          e.decision?.status ?? 'allow',
+          e.toolName ?? "",
+          e.decision?.status ?? "allow",
         ]);
-        return [headers.map(csvEscape).join(','), ...rows.map(r => r.map(csvEscape).join(','))].join('\n');
+        return [
+          headers.map(csvEscape).join(","),
+          ...rows.map((r) => r.map(csvEscape).join(",")),
+        ].join("\n");
       }
     }
   }
 
   async prune(olderThan: Date): Promise<number> {
     const originalLength = this.events.length;
-    this.events = this.events.filter(e => e.timestamp > olderThan);
+    this.events = this.events.filter((e) => e.timestamp > olderThan);
     return originalLength - this.events.length;
   }
 }

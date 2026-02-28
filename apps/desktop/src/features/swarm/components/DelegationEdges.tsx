@@ -1,8 +1,9 @@
 /**
  * DelegationEdges - Lines connecting agents with delegation relationships
  */
-import { useMemo } from "react";
+
 import { Line } from "@react-three/drei";
+import { useMemo } from "react";
 import type { AgentNode, DelegationEdge } from "@/types/agents";
 
 interface DelegationEdgesProps {

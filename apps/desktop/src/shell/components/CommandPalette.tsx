@@ -1,9 +1,10 @@
 /**
  * CommandPalette - Quick navigation and command execution
  */
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import type { KeyboardEvent } from "react";
+
 import { clsx } from "clsx";
+import type { KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getVisiblePlugins } from "../plugins";
 import type { AppId } from "../plugins/types";
 
@@ -34,7 +35,12 @@ interface PaletteCommandGroup {
   items: GroupedPaletteCommand[];
 }
 
-export function CommandPalette({ isOpen, onClose, onSelectApp, extraCommands = [] }: CommandPaletteProps) {
+export function CommandPalette({
+  isOpen,
+  onClose,
+  onSelectApp,
+  extraCommands = [],
+}: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -52,7 +58,7 @@ export function CommandPalette({ isOpen, onClose, onSelectApp, extraCommands = [
         shortcut: index < 6 ? `Cmd+${index + 1}` : undefined,
         action: () => onSelectApp(plugin.id),
       })),
-    [onSelectApp, plugins]
+    [onSelectApp, plugins],
   );
   const fullCommands = useMemo(() => [...extraCommands, ...commands], [commands, extraCommands]);
 
@@ -63,10 +69,10 @@ export function CommandPalette({ isOpen, onClose, onSelectApp, extraCommands = [
         ? fullCommands.filter(
             (cmd) =>
               cmd.title.toLowerCase().includes(query.toLowerCase()) ||
-              cmd.description?.toLowerCase().includes(query.toLowerCase())
+              cmd.description?.toLowerCase().includes(query.toLowerCase()),
           )
         : fullCommands,
-    [fullCommands, query]
+    [fullCommands, query],
   );
 
   const groupedCommands = useMemo(() => {
@@ -134,7 +140,7 @@ export function CommandPalette({ isOpen, onClose, onSelectApp, extraCommands = [
           break;
       }
     },
-    [filteredCommands, selectedIndex, onClose]
+    [filteredCommands, selectedIndex, onClose],
   );
 
   if (!isOpen) return null;
@@ -217,7 +223,7 @@ export function CommandPalette({ isOpen, onClose, onSelectApp, extraCommands = [
                             "origin-focus-ring premium-result-row flex w-full items-center justify-between px-3 py-2 text-left",
                             index === selectedIndex
                               ? "text-sdr-text-primary"
-                              : "text-sdr-text-secondary"
+                              : "text-sdr-text-secondary",
                           )}
                         >
                           <div>

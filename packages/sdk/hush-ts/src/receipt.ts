@@ -1,6 +1,6 @@
-import { keccak256, sha256, fromHex, toHex } from "./crypto/hash";
-import { signMessage, verifySignature } from "./crypto/sign";
 import { canonicalize } from "./canonical";
+import { fromHex, keccak256, sha256, toHex } from "./crypto/hash";
+import { signMessage, verifySignature } from "./crypto/sign";
 
 export const RECEIPT_SCHEMA_VERSION = "1.0.0";
 
@@ -63,7 +63,7 @@ export function validateReceiptVersion(version: string): void {
   }
   if (version !== RECEIPT_SCHEMA_VERSION) {
     throw new Error(
-      `Unsupported receipt version: ${version} (supported: ${RECEIPT_SCHEMA_VERSION})`
+      `Unsupported receipt version: ${version} (supported: ${RECEIPT_SCHEMA_VERSION})`,
     );
   }
 }
@@ -78,7 +78,7 @@ function normalizeHexString(
   input: string,
   bytes: number,
   mode: "0x" | "none",
-  label: string
+  label: string,
 ): string {
   const raw = input.startsWith("0x") ? input.slice(2) : input;
   if (!/^[0-9a-fA-F]+$/.test(raw)) {
@@ -110,7 +110,11 @@ function assertObject(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function assertAllowedKeys(obj: Record<string, unknown>, allowed: Set<string>, label: string): void {
+function assertAllowedKeys(
+  obj: Record<string, unknown>,
+  allowed: Set<string>,
+  label: string,
+): void {
   for (const key of Object.keys(obj)) {
     if (!allowed.has(key)) {
       throw new Error(`Unknown ${label} field: ${key}`);
@@ -126,7 +130,11 @@ function requireString(obj: Record<string, unknown>, key: string, label: string)
   return value;
 }
 
-function optionalString(obj: Record<string, unknown>, key: string, label: string): string | undefined {
+function optionalString(
+  obj: Record<string, unknown>,
+  key: string,
+  label: string,
+): string | undefined {
   const value = obj[key];
   if (value === undefined) return undefined;
   if (typeof value !== "string") {
@@ -138,7 +146,7 @@ function optionalString(obj: Record<string, unknown>, key: string, label: string
 function optionalNumber(
   obj: Record<string, unknown>,
   key: string,
-  label: string
+  label: string,
 ): number | undefined {
   const value = obj[key];
   if (value === undefined) return undefined;
@@ -158,11 +166,7 @@ function requireBoolean(obj: Record<string, unknown>, key: string, label: string
 
 function normalizeVerdict(input: unknown): Verdict {
   const verdict = assertObject(input, "verdict");
-  assertAllowedKeys(
-    verdict,
-    new Set(["passed", "gate_id", "scores", "threshold"]),
-    "verdict"
-  );
+  assertAllowedKeys(verdict, new Set(["passed", "gate_id", "scores", "threshold"]), "verdict");
 
   const normalized: Verdict = {
     passed: requireBoolean(verdict, "passed", "verdict.passed"),
@@ -199,7 +203,7 @@ function normalizeProvenance(input: Provenance): Provenance {
   assertAllowedKeys(
     prov,
     new Set(["clawdstrike_version", "provider", "policy_hash", "ruleset", "violations"]),
-    "provenance"
+    "provenance",
   );
 
   const violationsVal = prov.violations;
@@ -216,7 +220,7 @@ function normalizeProvenance(input: Provenance): Provenance {
   const clawdstrikeVersion = optionalString(
     prov,
     "clawdstrike_version",
-    "provenance.clawdstrike_version"
+    "provenance.clawdstrike_version",
   );
   if (clawdstrikeVersion !== undefined) out.clawdstrike_version = clawdstrikeVersion;
 
@@ -307,7 +311,7 @@ export class Receipt {
         "provenance",
         "metadata",
       ]),
-      "receipt"
+      "receipt",
     );
 
     const version = requireString(r, "version", "receipt.version");
@@ -342,7 +346,10 @@ export class Receipt {
  * Receipt with signatures.
  */
 export class SignedReceipt {
-  constructor(readonly receipt: Receipt, readonly signatures: Signatures) {}
+  constructor(
+    readonly receipt: Receipt,
+    readonly signatures: Signatures,
+  ) {}
 
   static async sign(receipt: Receipt, privateKey: Uint8Array): Promise<SignedReceipt> {
     const message = new TextEncoder().encode(receipt.toCanonicalJSON());

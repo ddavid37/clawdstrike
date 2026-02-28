@@ -1,11 +1,10 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 
-import { load as loadYaml } from 'js-yaml';
-
-import type { GuardConfigs, MergeStrategy, Policy } from './schema.js';
-import { isLegacyOpenClawPolicyV1, translateLegacyOpenClawPolicyV1 } from './legacy.js';
-import { validatePolicy } from './validator.js';
+import { load as loadYaml } from "js-yaml";
+import { isLegacyOpenClawPolicyV1, translateLegacyOpenClawPolicyV1 } from "./legacy.js";
+import type { GuardConfigs, MergeStrategy, Policy } from "./schema.js";
+import { validatePolicy } from "./validator.js";
 
 export interface PolicyLoadOptions {
   resolve?: boolean;
@@ -14,11 +13,11 @@ export interface PolicyLoadOptions {
   onWarning?: (message: string) => void;
 }
 
-const DEFAULT_RULESETS = new Set(['default', 'strict', 'ai-agent', 'cicd', 'permissive']);
+const DEFAULT_RULESETS = new Set(["default", "strict", "ai-agent", "cicd", "permissive"]);
 
 export function loadPolicyFromFile(filePath: string, options: PolicyLoadOptions = {}): Policy {
   const absPath = path.resolve(filePath);
-  const yaml = fs.readFileSync(absPath, 'utf8');
+  const yaml = fs.readFileSync(absPath, "utf8");
   const basePath = path.dirname(absPath);
   return loadPolicyFromString(yaml, { ...options, basePath });
 }
@@ -30,15 +29,21 @@ export function loadPolicyFromString(yaml: string, options: PolicyLoadOptions = 
     options.rulesetsDir ??
     discoverRulesetsDir(basePath) ??
     discoverRulesetsDir(process.cwd()) ??
-    path.join(process.cwd(), 'rulesets');
+    path.join(process.cwd(), "rulesets");
   const onWarning = options.onWarning;
 
   const visited = extractVisited(options) ?? new Set<string>();
-  const policy = loadPolicyFromStringInternal(yaml, { resolve, basePath, rulesetsDir, onWarning, visited });
+  const policy = loadPolicyFromStringInternal(yaml, {
+    resolve,
+    basePath,
+    rulesetsDir,
+    onWarning,
+    visited,
+  });
 
   const lint = validatePolicy(policy);
   if (!lint.valid) {
-    const msg = lint.errors.join('; ') || 'policy validation failed';
+    const msg = lint.errors.join("; ") || "policy validation failed";
     throw new Error(msg);
   }
 
@@ -52,11 +57,17 @@ function extractVisited(options: PolicyLoadOptions): Set<string> | null {
 
 function loadPolicyFromStringInternal(
   yaml: string,
-  options: { resolve: boolean; basePath: string; rulesetsDir: string; onWarning?: (message: string) => void; visited: Set<string> },
+  options: {
+    resolve: boolean;
+    basePath: string;
+    rulesetsDir: string;
+    onWarning?: (message: string) => void;
+    visited: Set<string>;
+  },
 ): Policy {
   const parsed = loadYaml(yaml) as unknown;
   if (!isPlainObject(parsed)) {
-    throw new Error('Policy must be an object');
+    throw new Error("Policy must be an object");
   }
 
   const child = normalizeToCanonical(parsed, options.onWarning);
@@ -71,14 +82,17 @@ function loadPolicyFromStringInternal(
   options.visited.add(baseRef);
 
   const basePolicy = loadBasePolicy(baseRef, options);
-  const merged = mergePolicy(basePolicy, child, child.merge_strategy ?? 'deep_merge');
+  const merged = mergePolicy(basePolicy, child, child.merge_strategy ?? "deep_merge");
   // Prevent re-processing.
   delete merged.extends;
   delete merged.merge_strategy;
   return merged;
 }
 
-function normalizeToCanonical(value: unknown, onWarning: ((message: string) => void) | undefined): Policy {
+function normalizeToCanonical(
+  value: unknown,
+  onWarning: ((message: string) => void) | undefined,
+): Policy {
   if (isLegacyOpenClawPolicyV1(value)) {
     const { policy, warnings } = translateLegacyOpenClawPolicyV1(value);
     for (const w of warnings) {
@@ -95,10 +109,16 @@ function normalizeToCanonical(value: unknown, onWarning: ((message: string) => v
 
 function loadBasePolicy(
   baseRef: string,
-  options: { resolve: boolean; basePath: string; rulesetsDir: string; onWarning?: (message: string) => void; visited: Set<string> },
+  options: {
+    resolve: boolean;
+    basePath: string;
+    rulesetsDir: string;
+    onWarning?: (message: string) => void;
+    visited: Set<string>;
+  },
 ): Policy {
   // Built-in rulesets: clawdstrike:<id> or <id>.
-  const id = baseRef.startsWith('clawdstrike:') ? baseRef.slice('clawdstrike:'.length) : baseRef;
+  const id = baseRef.startsWith("clawdstrike:") ? baseRef.slice("clawdstrike:".length) : baseRef;
   if (DEFAULT_RULESETS.has(id)) {
     const rulesetPath = path.join(options.rulesetsDir, `${id}.yaml`);
     if (fs.existsSync(rulesetPath)) {
@@ -114,11 +134,11 @@ function loadBasePolicy(
 }
 
 function mergePolicy(base: Policy, child: Policy, strategy: MergeStrategy): Policy {
-  if (strategy === 'replace') {
+  if (strategy === "replace") {
     return { ...child };
   }
 
-  if (strategy === 'merge') {
+  if (strategy === "merge") {
     const out: Policy = { ...base };
     if (child.version) out.version = child.version;
     if (child.name) out.name = child.name;
@@ -153,7 +173,11 @@ function mergePolicy(base: Policy, child: Policy, strategy: MergeStrategy): Poli
 
 function mergeGuards(base: unknown, child: unknown): GuardConfigs | undefined {
   if (!isPlainObject(base) && !isPlainObject(child)) {
-    return isPlainObject(child) ? (child as GuardConfigs) : isPlainObject(base) ? (base as GuardConfigs) : undefined;
+    return isPlainObject(child)
+      ? (child as GuardConfigs)
+      : isPlainObject(base)
+        ? (base as GuardConfigs)
+        : undefined;
   }
 
   const baseObj = (isPlainObject(base) ? base : {}) as GuardConfigs;
@@ -185,17 +209,17 @@ function mergePolicyCustomGuards(base: unknown, child: unknown): unknown {
   for (let i = 0; i < out.length; i++) {
     const cg = out[i];
     const id = isPlainObject(cg) ? (cg as any).id : undefined;
-    if (typeof id === 'string') {
+    if (typeof id === "string") {
       index.set(id, i);
     }
   }
 
   for (const cg of childArr) {
     const id = isPlainObject(cg) ? (cg as any).id : undefined;
-    if (typeof id === 'string' && index.has(id)) {
+    if (typeof id === "string" && index.has(id)) {
       out[index.get(id)!] = cg;
     } else {
-      if (typeof id === 'string') {
+      if (typeof id === "string") {
         index.set(id, out.length);
       }
       out.push(cg);
@@ -206,14 +230,14 @@ function mergePolicyCustomGuards(base: unknown, child: unknown): unknown {
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function discoverRulesetsDir(startPath: string): string | null {
   let current = path.resolve(startPath);
   while (true) {
-    const candidate = path.join(current, 'rulesets');
-    if (fs.existsSync(path.join(candidate, 'default.yaml'))) {
+    const candidate = path.join(current, "rulesets");
+    if (fs.existsSync(path.join(candidate, "default.yaml"))) {
       return candidate;
     }
     const parent = path.dirname(current);

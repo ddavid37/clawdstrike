@@ -162,7 +162,10 @@ function truncateToBytes(s: string, maxBytes: number): { slice: string; truncate
   return { slice: truncatedBytes.toString("utf8"), truncated: true };
 }
 
-function canonicalizeForDetection(input: string): { canonical: string; stats: JailbreakDetectionResult["canonicalization"] } {
+function canonicalizeForDetection(input: string): {
+  canonical: string;
+  stats: JailbreakDetectionResult["canonicalization"];
+} {
   const scannedBytes = Buffer.from(input, "utf8").length;
   const nfkc = input.normalize("NFKC");
   const nfkcChanged = nfkc !== input;
@@ -187,7 +190,12 @@ function canonicalizeForDetection(input: string): { canonical: string; stats: Ja
   };
 }
 
-const HEURISTIC_PATTERNS: Array<{ id: string; category: JailbreakCategory; weight: number; re: RegExp }> = [
+const HEURISTIC_PATTERNS: Array<{
+  id: string;
+  category: JailbreakCategory;
+  weight: number;
+  re: RegExp;
+}> = [
   {
     id: "jb_ignore_policy",
     category: "authority_confusion",
@@ -425,10 +433,13 @@ export class JailbreakDetector {
 
     const riskScore = Math.max(0, Math.min(100, Math.round(combined * 100)));
     const severity: JailbreakSeverity =
-      riskScore >= 85 ? "confirmed" :
-        riskScore >= 60 ? "likely" :
-          riskScore >= 25 ? "suspicious" :
-            "safe";
+      riskScore >= 85
+        ? "confirmed"
+        : riskScore >= 60
+          ? "likely"
+          : riskScore >= 25
+            ? "suspicious"
+            : "safe";
     const blocked = riskScore >= this.cfg.blockThreshold;
 
     const signals: JailbreakSignal[] = [];
@@ -456,15 +467,14 @@ export class JailbreakDetector {
         }
       }
 
-      const st: JailbreakSessionState =
-        this.sessions.get(sessionId) ?? {
-          sessionId,
-          messagesSeen: 0,
-          suspiciousCount: 0,
-          cumulativeRisk: 0,
-          rollingRisk: 0,
-          lastSeenMs: nowMs,
-        };
+      const st: JailbreakSessionState = this.sessions.get(sessionId) ?? {
+        sessionId,
+        messagesSeen: 0,
+        suspiciousCount: 0,
+        cumulativeRisk: 0,
+        rollingRisk: 0,
+        lastSeenMs: nowMs,
+      };
 
       const elapsedMs = Math.max(0, nowMs - st.lastSeenMs);
       st.rollingRisk *= this.decayFactor(elapsedMs);

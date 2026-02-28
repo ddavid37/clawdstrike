@@ -20,7 +20,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "build:local-deps": "bun --cwd ../../policy/clawdstrike-policy run build && bun --cwd ../clawdstrike-adapter-core run build",
+    "build:local-deps": "(cd ../../policy/clawdstrike-policy && ([ -d node_modules ] || npm ci) && npm run build) && (cd ../clawdstrike-adapter-core && ([ -d node_modules ] || npm ci) && npm run build)",
     "e2e": "npm run build && node dist/e2e/openclaw-e2e.js",
     "test": "vitest run",
     "test:workspace": "bun run build:local-deps && vitest run",
@@ -29,7 +29,9 @@
     "typecheck": "tsc --noEmit",
     "typecheck:workspace": "bun run build:local-deps && tsc --noEmit",
     "bench": "npm run build && node benchmarks/policy-engine.bench.mjs",
-    "bench:json": "npm run build && OUTPUT_JSON=1 node benchmarks/policy-engine.bench.mjs"
+    "bench:json": "npm run build && OUTPUT_JSON=1 node benchmarks/policy-engine.bench.mjs",
+    "format": "biome check --write src/",
+    "format:check": "biome check src/"
   },
   "dependencies": {
     "@clawdstrike/adapter-core": "^0.1.1",

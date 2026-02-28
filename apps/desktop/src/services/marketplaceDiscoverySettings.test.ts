@@ -31,7 +31,12 @@ beforeEach(() => {
 describe("marketplaceDiscoverySettings", () => {
   it("parses one bootstrap peer per line and ignores comments", () => {
     const bootstrap = parseMarketplaceDiscoveryBootstrapInput(
-      ["", "# comment", "/ip4/1.2.3.4/tcp/1234/p2p/12D3KooW...", " /dns4/example.com/tcp/1/p2p/abc "].join("\n")
+      [
+        "",
+        "# comment",
+        "/ip4/1.2.3.4/tcp/1234/p2p/12D3KooW...",
+        " /dns4/example.com/tcp/1/p2p/abc ",
+      ].join("\n"),
     );
     expect(bootstrap).toEqual([
       "/ip4/1.2.3.4/tcp/1234/p2p/12D3KooW...",
@@ -41,7 +46,7 @@ describe("marketplaceDiscoverySettings", () => {
 
   it("formats bootstrap peers as newline-separated", () => {
     expect(formatMarketplaceDiscoveryBootstrapInput(["/ip4/1.2.3.4/tcp/1234/p2p/abc"])).toBe(
-      "/ip4/1.2.3.4/tcp/1234/p2p/abc"
+      "/ip4/1.2.3.4/tcp/1234/p2p/abc",
     );
   });
 
@@ -67,4 +72,3 @@ describe("marketplaceDiscoverySettings", () => {
     expect(loadMarketplaceDiscoverySettings()).toEqual(DEFAULT_MARKETPLACE_DISCOVERY_SETTINGS);
   });
 });
-

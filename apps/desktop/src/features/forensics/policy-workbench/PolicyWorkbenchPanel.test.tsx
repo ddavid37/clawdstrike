@@ -1,13 +1,11 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import * as React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import * as React from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  POLICY_WORKBENCH_DIRTY_EVENT,
-  type PolicyWorkbenchDirtyEventDetail,
-} from "./events";
+import { POLICY_WORKBENCH_DIRTY_EVENT, type PolicyWorkbenchDirtyEventDetail } from "./events";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -17,8 +15,7 @@ const globalWithRegistry = globalThis as typeof globalThis & {
   __sdr_require__?: Record<string, unknown>;
 };
 const registry =
-  globalWithRegistry.__sdr_require__ ??
-  (globalWithRegistry.__sdr_require__ = Object.create(null));
+  globalWithRegistry.__sdr_require__ ?? (globalWithRegistry.__sdr_require__ = Object.create(null));
 registry.react = (React as unknown as { default?: unknown }).default ?? React;
 
 if (typeof (globalThis as Record<string, unknown>).require !== "function") {
@@ -56,29 +53,21 @@ vi.mock("@/services/policyWorkbenchClient", () => {
 });
 
 vi.mock("@backbay/glia/primitives", () => ({
-  GlassPanel: ({
-    children,
-    ...rest
-  }: React.HTMLAttributes<HTMLDivElement>) => <div {...rest}>{children}</div>,
-  GlassHeader: ({
-    children,
-    ...rest
-  }: React.HTMLAttributes<HTMLDivElement>) => <div {...rest}>{children}</div>,
-  Badge: ({
-    children,
-    ...rest
-  }: React.HTMLAttributes<HTMLSpanElement>) => <span {...rest}>{children}</span>,
-  GlowButton: ({
-    children,
-    ...rest
-  }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+  GlassPanel: ({ children, ...rest }: React.HTMLAttributes<HTMLDivElement>) => (
+    <div {...rest}>{children}</div>
+  ),
+  GlassHeader: ({ children, ...rest }: React.HTMLAttributes<HTMLDivElement>) => (
+    <div {...rest}>{children}</div>
+  ),
+  Badge: ({ children, ...rest }: React.HTMLAttributes<HTMLSpanElement>) => (
+    <span {...rest}>{children}</span>
+  ),
+  GlowButton: ({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button type={rest.type ?? "button"} {...rest}>
       {children}
     </button>
   ),
-  GlowInput: (props: React.InputHTMLAttributes<HTMLInputElement>) => (
-    <input {...props} />
-  ),
+  GlowInput: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
   GlassTextarea: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
     <textarea {...props} />
   ),
@@ -105,14 +94,23 @@ vi.mock("@backbay/glia/primitives", () => ({
     value?: string;
     onValueChange?: (value: string) => void;
   }) => {
-    const TabsContext = (globalThis as { __policyWorkbenchTabsContext?: React.Context<{
-      value?: string;
-      onValueChange?: (value: string) => void;
-    }> }).__policyWorkbenchTabsContext ??
-      ((globalThis as { __policyWorkbenchTabsContext?: React.Context<{
-        value?: string;
-        onValueChange?: (value: string) => void;
-      }> }).__policyWorkbenchTabsContext = React.createContext<{
+    const TabsContext =
+      (
+        globalThis as {
+          __policyWorkbenchTabsContext?: React.Context<{
+            value?: string;
+            onValueChange?: (value: string) => void;
+          }>;
+        }
+      ).__policyWorkbenchTabsContext ??
+      ((
+        globalThis as {
+          __policyWorkbenchTabsContext?: React.Context<{
+            value?: string;
+            onValueChange?: (value: string) => void;
+          }>;
+        }
+      ).__policyWorkbenchTabsContext = React.createContext<{
         value?: string;
         onValueChange?: (value: string) => void;
       }>({}));
@@ -123,20 +121,23 @@ vi.mock("@backbay/glia/primitives", () => ({
       </TabsContext.Provider>
     );
   },
-  TabsList: ({
-    children,
-    ...rest
-  }: React.HTMLAttributes<HTMLDivElement>) => <div {...rest}>{children}</div>,
+  TabsList: ({ children, ...rest }: React.HTMLAttributes<HTMLDivElement>) => (
+    <div {...rest}>{children}</div>
+  ),
   TabsTrigger: ({
     value,
     children,
     onClick,
     ...rest
   }: React.ButtonHTMLAttributes<HTMLButtonElement> & { value: string }) => {
-    const TabsContext = (globalThis as { __policyWorkbenchTabsContext?: React.Context<{
-      value?: string;
-      onValueChange?: (value: string) => void;
-    }> }).__policyWorkbenchTabsContext!;
+    const TabsContext = (
+      globalThis as {
+        __policyWorkbenchTabsContext?: React.Context<{
+          value?: string;
+          onValueChange?: (value: string) => void;
+        }>;
+      }
+    ).__policyWorkbenchTabsContext!;
     const ctx = React.useContext(TabsContext);
     const selected = ctx?.value === value;
     return (
@@ -158,9 +159,13 @@ vi.mock("@backbay/glia/primitives", () => ({
     children,
     ...rest
   }: React.HTMLAttributes<HTMLDivElement> & { value: string }) => {
-    const TabsContext = (globalThis as { __policyWorkbenchTabsContext?: React.Context<{
-      value?: string;
-    }> }).__policyWorkbenchTabsContext!;
+    const TabsContext = (
+      globalThis as {
+        __policyWorkbenchTabsContext?: React.Context<{
+          value?: string;
+        }>;
+      }
+    ).__policyWorkbenchTabsContext!;
     const ctx = React.useContext(TabsContext);
     if (ctx?.value !== value) return null;
     return <div {...rest}>{children}</div>;
@@ -243,13 +248,13 @@ describe("PolicyWorkbenchPanel", () => {
     expect(validatePolicyMock).toHaveBeenCalled();
 
     const editor = container.querySelector(
-      '[data-testid="policy-editor-textarea"]'
+      '[data-testid="policy-editor-textarea"]',
     ) as HTMLTextAreaElement;
     expect(editor).toBeTruthy();
 
     const editorValueSetter = Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,
-      "value"
+      "value",
     )?.set;
     if (!editorValueSetter) throw new Error("Missing textarea value setter");
 
@@ -271,7 +276,7 @@ describe("PolicyWorkbenchPanel", () => {
     expect(dirtyEvents).toContain(true);
 
     const saveButton = container.querySelector(
-      '[data-testid="policy-editor-save"]'
+      '[data-testid="policy-editor-save"]',
     ) as HTMLButtonElement;
     expect(saveButton.disabled).toBe(false);
 
@@ -280,23 +285,21 @@ describe("PolicyWorkbenchPanel", () => {
       await Promise.resolve();
     });
 
-    expect(savePolicyMock).toHaveBeenCalledWith(
-      expect.stringContaining('name: "edited"')
-    );
+    expect(savePolicyMock).toHaveBeenCalledWith(expect.stringContaining('name: "edited"'));
 
     const testTab = container.querySelector(
-      '[data-testid="policy-workbench-tab-test"]'
+      '[data-testid="policy-workbench-tab-test"]',
     ) as HTMLButtonElement;
     await act(async () => {
       testTab.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     const targetInput = container.querySelector(
-      '[data-testid="policy-test-target"]'
+      '[data-testid="policy-test-target"]',
     ) as HTMLInputElement;
     const inputValueSetter = Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
-      "value"
+      "value",
     )?.set;
     if (!inputValueSetter) throw new Error("Missing input value setter");
 
@@ -306,7 +309,7 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const runButton = container.querySelector(
-      '[data-testid="policy-test-run"]'
+      '[data-testid="policy-test-run"]',
     ) as HTMLButtonElement;
     await act(async () => {
       runButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -315,7 +318,7 @@ describe("PolicyWorkbenchPanel", () => {
 
     expect(evalPolicyEventMock).toHaveBeenCalledTimes(1);
     expect(
-      container.querySelectorAll('[data-testid="policy-test-history-item"]').length
+      container.querySelectorAll('[data-testid="policy-test-history-item"]').length,
     ).toBeGreaterThan(0);
 
     window.removeEventListener(POLICY_WORKBENCH_DIRTY_EVENT, onDirty);
@@ -353,11 +356,11 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const editor = container.querySelector(
-      '[data-testid="policy-editor-textarea"]'
+      '[data-testid="policy-editor-textarea"]',
     ) as HTMLTextAreaElement;
     const editorValueSetter = Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,
-      "value"
+      "value",
     )?.set;
     if (!editorValueSetter) throw new Error("Missing textarea value setter");
 
@@ -414,7 +417,7 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const editor = container.querySelector(
-      '[data-testid="policy-editor-textarea"]'
+      '[data-testid="policy-editor-textarea"]',
     ) as HTMLTextAreaElement;
     expect(editor.value).toContain('name: "server-a"');
 
@@ -432,12 +435,14 @@ describe("PolicyWorkbenchPanel", () => {
   });
 
   it("preserves newer draft edits when save response returns for an older snapshot", async () => {
-    let resolveSave: ((value: { success: boolean; message: string; policy_hash: string }) => void) | undefined;
+    let resolveSave:
+      | ((value: { success: boolean; message: string; policy_hash: string }) => void)
+      | undefined;
     savePolicyMock.mockImplementation(
       () =>
         new Promise<{ success: boolean; message: string; policy_hash: string }>((resolve) => {
           resolveSave = resolve;
-        })
+        }),
     );
 
     container = document.createElement("div");
@@ -456,11 +461,11 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const editor = container.querySelector(
-      '[data-testid="policy-editor-textarea"]'
+      '[data-testid="policy-editor-textarea"]',
     ) as HTMLTextAreaElement;
     const editorValueSetter = Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,
-      "value"
+      "value",
     )?.set;
     if (!editorValueSetter) throw new Error("Missing textarea value setter");
 
@@ -470,7 +475,7 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const saveButton = container.querySelector(
-      '[data-testid="policy-editor-save"]'
+      '[data-testid="policy-editor-save"]',
     ) as HTMLButtonElement;
 
     await act(async () => {
@@ -511,11 +516,11 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const editor = container.querySelector(
-      '[data-testid="policy-editor-textarea"]'
+      '[data-testid="policy-editor-textarea"]',
     ) as HTMLTextAreaElement;
     const editorValueSetter = Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,
-      "value"
+      "value",
     )?.set;
     if (!editorValueSetter) throw new Error("Missing textarea value setter");
 
@@ -533,7 +538,7 @@ describe("PolicyWorkbenchPanel", () => {
     savePolicyMock.mockClear();
 
     const saveButton = container.querySelector(
-      '[data-testid="policy-editor-save"]'
+      '[data-testid="policy-editor-save"]',
     ) as HTMLButtonElement;
     expect(saveButton.disabled).toBe(true);
 
@@ -579,11 +584,11 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const editor = container.querySelector(
-      '[data-testid="policy-editor-textarea"]'
+      '[data-testid="policy-editor-textarea"]',
     ) as HTMLTextAreaElement;
     const editorValueSetter = Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,
-      "value"
+      "value",
     )?.set;
     if (!editorValueSetter) throw new Error("Missing textarea value setter");
 
@@ -593,7 +598,7 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const reloadButton = container.querySelector(
-      '[data-testid="policy-editor-reload"]'
+      '[data-testid="policy-editor-reload"]',
     ) as HTMLButtonElement;
     await act(async () => {
       reloadButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -619,18 +624,18 @@ describe("PolicyWorkbenchPanel", () => {
 
     let resolveReload:
       | ((value: {
-        name: string;
-        version: string;
-        description: string;
-        policy_hash: string;
-        yaml: string;
-      }) => void)
+          name: string;
+          version: string;
+          description: string;
+          policy_hash: string;
+          yaml: string;
+        }) => void)
       | undefined;
     loadPolicyMock.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           resolveReload = resolve as typeof resolveReload;
-        })
+        }),
     );
 
     container = document.createElement("div");
@@ -649,11 +654,11 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const editor = container.querySelector(
-      '[data-testid="policy-editor-textarea"]'
+      '[data-testid="policy-editor-textarea"]',
     ) as HTMLTextAreaElement;
     const editorValueSetter = Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,
-      "value"
+      "value",
     )?.set;
     if (!editorValueSetter) throw new Error("Missing textarea value setter");
 
@@ -663,7 +668,7 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const reloadButton = container.querySelector(
-      '[data-testid="policy-editor-reload"]'
+      '[data-testid="policy-editor-reload"]',
     ) as HTMLButtonElement;
     await act(async () => {
       reloadButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -697,18 +702,18 @@ describe("PolicyWorkbenchPanel", () => {
   it("ignores stale load responses that resolve after user starts editing", async () => {
     let resolveLoad:
       | ((value: {
-        name: string;
-        version: string;
-        description: string;
-        policy_hash: string;
-        yaml: string;
-      }) => void)
+          name: string;
+          version: string;
+          description: string;
+          policy_hash: string;
+          yaml: string;
+        }) => void)
       | undefined;
     loadPolicyMock.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           resolveLoad = resolve as typeof resolveLoad;
-        })
+        }),
     );
 
     container = document.createElement("div");
@@ -722,11 +727,11 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const editor = container.querySelector(
-      '[data-testid="policy-editor-textarea"]'
+      '[data-testid="policy-editor-textarea"]',
     ) as HTMLTextAreaElement;
     const editorValueSetter = Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,
-      "value"
+      "value",
     )?.set;
     if (!editorValueSetter) throw new Error("Missing textarea value setter");
 
@@ -807,11 +812,11 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const editor = container.querySelector(
-      '[data-testid="policy-editor-textarea"]'
+      '[data-testid="policy-editor-textarea"]',
     ) as HTMLTextAreaElement;
     const editorValueSetter = Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,
-      "value"
+      "value",
     )?.set;
     if (!editorValueSetter) throw new Error("Missing textarea value setter");
 
@@ -833,12 +838,14 @@ describe("PolicyWorkbenchPanel", () => {
   });
 
   it("cancels pending debounced validation while save validation is in-flight", async () => {
-    let resolveSave: ((value: { success: boolean; message: string; policy_hash: string }) => void) | undefined;
+    let resolveSave:
+      | ((value: { success: boolean; message: string; policy_hash: string }) => void)
+      | undefined;
     savePolicyMock.mockImplementation(
       () =>
         new Promise<{ success: boolean; message: string; policy_hash: string }>((resolve) => {
           resolveSave = resolve;
-        })
+        }),
     );
 
     container = document.createElement("div");
@@ -859,11 +866,11 @@ describe("PolicyWorkbenchPanel", () => {
     validatePolicyMock.mockClear();
 
     const editor = container.querySelector(
-      '[data-testid="policy-editor-textarea"]'
+      '[data-testid="policy-editor-textarea"]',
     ) as HTMLTextAreaElement;
     const editorValueSetter = Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,
-      "value"
+      "value",
     )?.set;
     if (!editorValueSetter) throw new Error("Missing textarea value setter");
 
@@ -874,7 +881,7 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const saveButton = container.querySelector(
-      '[data-testid="policy-editor-save"]'
+      '[data-testid="policy-editor-save"]',
     ) as HTMLButtonElement;
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -913,11 +920,11 @@ describe("PolicyWorkbenchPanel", () => {
     });
 
     const editor = container.querySelector(
-      '[data-testid="policy-editor-textarea"]'
+      '[data-testid="policy-editor-textarea"]',
     ) as HTMLTextAreaElement;
     const editorValueSetter = Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,
-      "value"
+      "value",
     )?.set;
     if (!editorValueSetter) throw new Error("Missing textarea value setter");
 
@@ -930,7 +937,7 @@ describe("PolicyWorkbenchPanel", () => {
     validatePolicyMock.mockRejectedValueOnce(new Error("daemon disconnected"));
 
     const saveButton = container.querySelector(
-      '[data-testid="policy-editor-save"]'
+      '[data-testid="policy-editor-save"]',
     ) as HTMLButtonElement;
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));

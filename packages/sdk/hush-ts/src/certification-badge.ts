@@ -83,4 +83,3 @@ export async function verifyCertificationBadge(badge: CertificationBadge): Promi
     return false;
   }
 }
-

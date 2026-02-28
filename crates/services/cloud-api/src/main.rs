@@ -143,6 +143,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let nats = state.nats.clone();
         let db = state.db.clone();
         let subject_filter = config.approval_subject_filter.clone();
+        let stream_subjects = stream_subjects_for_consumer(
+            &config.approval_stream_name,
+            &config.approval_subject_filter,
+            config.heartbeat_consumer_enabled,
+            &config.heartbeat_stream_name,
+            &config.heartbeat_subject_filter,
+        );
         let stream_name = config.approval_stream_name.clone();
         let consumer_name = config.approval_consumer_name.clone();
         let shutdown_rx = approval_shutdown_rx.clone();
@@ -151,6 +158,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 nats,
                 db,
                 &subject_filter,
+                &stream_subjects,
                 &stream_name,
                 &consumer_name,
                 shutdown_rx,
@@ -183,6 +191,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let nats = state.nats.clone();
         let db = state.db.clone();
         let subject_filter = config.heartbeat_subject_filter.clone();
+        let stream_subjects = stream_subjects_for_consumer(
+            &config.heartbeat_stream_name,
+            &config.heartbeat_subject_filter,
+            config.approval_consumer_enabled,
+            &config.approval_stream_name,
+            &config.approval_subject_filter,
+        );
         let stream_name = config.heartbeat_stream_name.clone();
         let consumer_name = config.heartbeat_consumer_name.clone();
         let shutdown_rx = heartbeat_shutdown_rx.clone();
@@ -191,6 +206,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 nats,
                 db,
                 &subject_filter,
+                &stream_subjects,
                 &stream_name,
                 &consumer_name,
                 shutdown_rx,
@@ -231,6 +247,22 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("Shut down cleanly");
     Ok(())
+}
+
+fn stream_subjects_for_consumer(
+    consumer_stream_name: &str,
+    consumer_subject_filter: &str,
+    sibling_consumer_enabled: bool,
+    sibling_stream_name: &str,
+    sibling_subject_filter: &str,
+) -> Vec<String> {
+    let mut subjects = vec![consumer_subject_filter.to_string()];
+    if sibling_consumer_enabled && consumer_stream_name == sibling_stream_name {
+        subjects.push(sibling_subject_filter.to_string());
+    }
+    subjects.sort();
+    subjects.dedup();
+    subjects
 }
 
 fn resolve_approval_signing_keypair(
@@ -276,7 +308,10 @@ fn load_approval_signing_keypair(path: &str) -> Result<hush_core::Keypair, Strin
 
 #[cfg(test)]
 mod tests {
-    use super::{load_approval_signing_keypair, resolve_approval_signing_keypair};
+    use super::{
+        load_approval_signing_keypair, resolve_approval_signing_keypair,
+        stream_subjects_for_consumer,
+    };
 
     #[test]
     fn signing_keypair_disabled_returns_none() {
@@ -305,5 +340,53 @@ mod tests {
         std::fs::remove_file(path).unwrap();
 
         assert_eq!(parsed.public_key(), keypair.public_key());
+    }
+
+    #[test]
+    fn shared_stream_consumer_subjects_include_both_filters() {
+        let subjects = stream_subjects_for_consumer(
+            "adaptive-ingress",
+            "tenant-*.clawdstrike.approval.request.*",
+            true,
+            "adaptive-ingress",
+            "tenant-*.clawdstrike.agent.heartbeat.*",
+        );
+        assert_eq!(
+            subjects,
+            vec![
+                "tenant-*.clawdstrike.agent.heartbeat.*".to_string(),
+                "tenant-*.clawdstrike.approval.request.*".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn separate_stream_consumer_subjects_keep_single_filter() {
+        let subjects = stream_subjects_for_consumer(
+            "approval-ingress",
+            "tenant-*.clawdstrike.approval.request.*",
+            true,
+            "heartbeat-ingress",
+            "tenant-*.clawdstrike.agent.heartbeat.*",
+        );
+        assert_eq!(
+            subjects,
+            vec!["tenant-*.clawdstrike.approval.request.*".to_string()]
+        );
+    }
+
+    #[test]
+    fn shared_stream_does_not_add_sibling_subject_when_sibling_consumer_disabled() {
+        let subjects = stream_subjects_for_consumer(
+            "adaptive-ingress",
+            "tenant-*.clawdstrike.approval.request.*",
+            false,
+            "adaptive-ingress",
+            "tenant-*.clawdstrike.agent.heartbeat.*",
+        );
+        assert_eq!(
+            subjects,
+            vec!["tenant-*.clawdstrike.approval.request.*".to_string()]
+        );
     }
 }

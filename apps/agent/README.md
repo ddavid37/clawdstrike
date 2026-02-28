@@ -84,6 +84,8 @@ The agent also runs a local authenticated API (default `127.0.0.1:9878`) for:
 - desktop OpenClaw operations (`/api/v1/openclaw/*`)
 - health/settings control (`/api/v1/agent/*`)
 
+`POST /api/v1/openclaw/request` is policy-gated (fail-closed) before gateway relay when enforcement is enabled.
+
 Auth token file:
 
 - `~/.config/clawdstrike/agent-local-token`

@@ -69,7 +69,7 @@ pub struct MarketplaceDiscoveryEvent {
     pub announcement: MarketplaceDiscoveryAnnouncement,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct MarketplaceDiscoveryConfig {
     /// TCP port to listen on. If omitted, an ephemeral port is chosen.
     #[serde(default)]
@@ -80,16 +80,6 @@ pub struct MarketplaceDiscoveryConfig {
     /// Gossipsub topic to publish/subscribe to.
     #[serde(default)]
     pub topic: Option<String>,
-}
-
-impl Default for MarketplaceDiscoveryConfig {
-    fn default() -> Self {
-        Self {
-            listen_port: None,
-            bootstrap: Vec::new(),
-            topic: None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -271,13 +261,13 @@ struct DiscoveryBehaviour {
 
 #[derive(Debug)]
 enum DiscoveryBehaviourEvent {
-    Gossipsub(gossipsub::Event),
+    Gossipsub(Box<gossipsub::Event>),
     Mdns(mdns::Event),
 }
 
 impl From<gossipsub::Event> for DiscoveryBehaviourEvent {
     fn from(value: gossipsub::Event) -> Self {
-        Self::Gossipsub(value)
+        Self::Gossipsub(Box::new(value))
     }
 }
 
@@ -437,7 +427,7 @@ async fn run_discovery<R: Runtime>(
                     }
                 },
                 SwarmEvent::Behaviour(DiscoveryBehaviourEvent::Gossipsub(event)) => {
-                    if let gossipsub::Event::Message { propagation_source, message, .. } = event {
+                    if let gossipsub::Event::Message { propagation_source, message, .. } = *event {
                         handle_gossipsub_message(&app, &status, propagation_source, &message.data).await;
                     }
                 }

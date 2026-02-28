@@ -30,7 +30,7 @@ export class HttpClient {
   async post(
     path: string,
     body: unknown,
-    options: { headers?: Record<string, string> } = {}
+    options: { headers?: Record<string, string> } = {},
   ): Promise<Response> {
     return this.request("POST", path, body, options.headers);
   }
@@ -38,7 +38,7 @@ export class HttpClient {
   async put(
     path: string,
     body: unknown,
-    options: { headers?: Record<string, string> } = {}
+    options: { headers?: Record<string, string> } = {},
   ): Promise<Response> {
     return this.request("PUT", path, body, options.headers);
   }
@@ -47,7 +47,7 @@ export class HttpClient {
     method: string,
     path: string,
     body: unknown,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
   ): Promise<Response> {
     const url = new URL(path, this.baseUrl);
     const h: Record<string, string> = { ...this.headers, ...(headers ?? {}) };
@@ -62,7 +62,10 @@ export class HttpClient {
     };
 
     if (body !== undefined) {
-      init.body = typeof body === "string" || body instanceof Uint8Array ? (body as any) : JSON.stringify(body);
+      init.body =
+        typeof body === "string" || body instanceof Uint8Array
+          ? (body as any)
+          : JSON.stringify(body);
       if (!("Content-Type" in h) && typeof init.body === "string") {
         h["Content-Type"] = "application/json";
       }
@@ -79,4 +82,3 @@ export async function readResponseBody(response: Response): Promise<string> {
     return "";
   }
 }
-

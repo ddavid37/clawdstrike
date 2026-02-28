@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchPolicy } from "../api/client";
-import { validatePolicy, updatePolicy, type ValidateResult } from "../api/policyApi";
+import { updatePolicy, type ValidateResult, validatePolicy } from "../api/policyApi";
 import { YamlEditor } from "../components/policy/YamlEditor";
-import { NoiseGrain, GlassButton, Stamp } from "../components/ui";
+import { GlassButton, NoiseGrain, Stamp } from "../components/ui";
 
 export function PolicyEditor(_props: { windowId?: string }) {
   const [yaml, setYaml] = useState("");
@@ -174,10 +174,7 @@ export function PolicyEditor(_props: { windowId?: string }) {
                 </Stamp>
               </div>
               {validation.errors && validation.errors.length > 0 && (
-                <div
-                  className="glass-panel rounded-lg"
-                  style={{ padding: 12, marginTop: 8 }}
-                >
+                <div className="glass-panel rounded-lg" style={{ padding: 12, marginTop: 8 }}>
                   <NoiseGrain />
                   <ul
                     className="font-mono relative z-10"
@@ -199,10 +196,7 @@ export function PolicyEditor(_props: { windowId?: string }) {
           )}
 
           {savedHash && (
-            <div
-              className="glass-panel rounded-lg"
-              style={{ padding: 12 }}
-            >
+            <div className="glass-panel rounded-lg" style={{ padding: 12 }}>
               <NoiseGrain />
               <div className="relative z-10">
                 <div style={{ marginBottom: 6 }}>

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { processes, desktopIcons, pinnedAppIds } from "./processRegistry";
+import { describe, expect, it } from "vitest";
+import { desktopIcons, pinnedAppIds, processes } from "./processRegistry";
 
 describe("processRegistry", () => {
   it("every process has a unique id", () => {

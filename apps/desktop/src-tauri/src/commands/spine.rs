@@ -18,6 +18,7 @@ use crate::state::AppState;
 pub const DEFAULT_NATS_URL: &str = "nats://localhost:4222";
 
 /// Spine subscription status stored in AppState
+#[derive(Default)]
 pub struct SpineSubscription {
     pub active: bool,
     pub nats_url: Option<String>,
@@ -25,19 +26,6 @@ pub struct SpineSubscription {
     pub event_count: u64,
     pub last_event_at: Option<String>,
     pub last_error: Option<String>,
-}
-
-impl Default for SpineSubscription {
-    fn default() -> Self {
-        Self {
-            active: false,
-            nats_url: None,
-            cancel: None,
-            event_count: 0,
-            last_event_at: None,
-            last_error: None,
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

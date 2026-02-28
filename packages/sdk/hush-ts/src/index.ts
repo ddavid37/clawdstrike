@@ -6,192 +6,6 @@
 declare const __SDK_VERSION__: string;
 export const VERSION: string = __SDK_VERSION__;
 
-// Main entry point
-export {
-  Clawdstrike,
-  ClawdstrikeSession,
-  type ClawdstrikeConfig,
-  type Decision,
-  type DecisionStatus,
-  type PolicySpec,
-  type Ruleset,
-  type SessionOptions,
-  type SessionSummary,
-  type ToolSet,
-} from "./clawdstrike";
-
-// Crypto
-export {
-  sha256,
-  keccak256,
-  toHex,
-  fromHex,
-} from "./crypto/hash";
-export {
-  generateKeypair,
-  signMessage,
-  verifySignature,
-  type Keypair,
-} from "./crypto/sign";
-export {
-  getBackend,
-  setBackend,
-  initWasm,
-  isWasmBackend,
-  type CryptoBackend,
-} from "./crypto/backend";
-
-// Canonical JSON
-export { canonicalize, canonicalHash } from "./canonical";
-
-// Merkle tree
-export {
-  hashLeaf,
-  hashNode,
-  computeRoot,
-  generateProof,
-  MerkleTree,
-  MerkleProof,
-} from "./merkle";
-
-// Receipt
-export {
-  RECEIPT_SCHEMA_VERSION,
-  validateReceiptVersion,
-  Receipt,
-  SignedReceipt,
-  type Hash,
-  type PublicKey,
-  type PublicKeySet,
-  type ReceiptData,
-  type Signature,
-  type Signatures,
-  type VerificationResult,
-  type Verdict,
-  type Provenance,
-  type ViolationRef,
-} from "./receipt";
-
-// Guards
-export {
-  Severity,
-  GuardResult,
-  GuardContext,
-  GuardAction,
-  type Guard,
-  type GuardActionOptions,
-  type CanonicalSeverity,
-  toCanonicalSeverity,
-  fromCanonicalSeverity,
-  ForbiddenPathGuard,
-  type ForbiddenPathConfig,
-  EgressAllowlistGuard,
-  type EgressAllowlistConfig,
-  SecretLeakGuard,
-  type SecretLeakConfig,
-  PatchIntegrityGuard,
-  type PatchIntegrityConfig,
-  type PatchAnalysis,
-  type ForbiddenMatch,
-  McpToolGuard,
-  type McpToolConfig,
-  ToolDecision,
-  PromptInjectionGuard,
-  type PromptInjectionConfig,
-  JailbreakGuard,
-  type JailbreakGuardConfig,
-} from "./guards";
-
-// Prompt watermarking
-export {
-  PromptWatermarker,
-  WatermarkExtractor,
-  type EncodedWatermark,
-  type WatermarkConfig,
-  type WatermarkEncoding,
-  type WatermarkExtractionResult,
-  type WatermarkPayload,
-  type WatermarkVerifierConfig,
-  type WatermarkedPrompt,
-} from "./watermarking";
-
-// Instruction hierarchy
-export {
-  InstructionHierarchyEnforcer,
-  InstructionLevel,
-  type ConflictAction,
-  type ConflictSeverity,
-  type EnforcementAction,
-  type HierarchyConflict,
-  type HierarchyEnforcementResult,
-  type HierarchyEnforcerConfig,
-  type HierarchyMessage,
-  type MessageRole,
-} from "./instruction-hierarchy";
-
-// Jailbreak detection
-export {
-  JailbreakDetector,
-  type JailbreakCategory,
-  type JailbreakDetectionResult,
-  type JailbreakDetectorConfig,
-  type JailbreakLinearModelConfig,
-  type JailbreakSeverity,
-  type JailbreakSignal,
-  type LayerResult,
-} from "./jailbreak";
-
-// Output sanitization
-export {
-  OutputSanitizer,
-  SanitizationStream,
-  type AllowlistConfig,
-  type DenylistConfig,
-  type DetectorType,
-  type EntityFinding,
-  type EntityRecognizer,
-  type EntropyConfig,
-  type OutputSanitizerConfig,
-  type ProcessingStats,
-  type Redaction,
-  type RedactionStrategy,
-  type SanitizationResult,
-  type SensitiveCategory,
-  type SensitiveDataFinding,
-  type Span,
-  type StreamingConfig,
-} from "./output-sanitizer";
-
-// Certification + Compliance
-export {
-  verifyCertificationBadge,
-  type CertificationBadge,
-  type CertificationBadgeIssuer,
-  type CertificationBadgeSubject,
-  type CertificationBadgePolicyBinding,
-  type CertificationBadgeEvidenceBinding,
-  type CertificationBadgeCertificationBinding,
-  type CertificationTier,
-} from "./certification-badge";
-
-export {
-  ClawdstrikeClient,
-  ClawdstrikeError,
-  type ClawdstrikeClientOptions,
-  type V1Links,
-  type V1Meta,
-  type V1Response,
-  type V1ErrorBody,
-  type V1ErrorEnvelope,
-} from "./client";
-
-// SIEM/SOAR
-export * as siem from "./siem";
-
-// Adapters (merged from @clawdstrike/adapter-core)
-// For advanced use cases, these provide direct access to interceptors and adapters
-export * as adapters from "./adapters";
-
 // Re-export key adapter types at the top level for convenience
 export type {
   AdapterConfig,
@@ -212,7 +26,6 @@ export type {
   SessionSummary as AdapterSessionSummary,
   ToolInterceptor,
 } from "@clawdstrike/adapter-core";
-
 export {
   allowDecision,
   BaseToolInterceptor,
@@ -225,3 +38,175 @@ export {
   PolicyEventFactory,
   warnDecision,
 } from "@clawdstrike/adapter-core";
+// Adapters (merged from @clawdstrike/adapter-core)
+// For advanced use cases, these provide direct access to interceptors and adapters
+export * as adapters from "./adapters";
+// Canonical JSON
+export { canonicalHash, canonicalize } from "./canonical";
+// Certification + Compliance
+export {
+  type CertificationBadge,
+  type CertificationBadgeCertificationBinding,
+  type CertificationBadgeEvidenceBinding,
+  type CertificationBadgeIssuer,
+  type CertificationBadgePolicyBinding,
+  type CertificationBadgeSubject,
+  type CertificationTier,
+  verifyCertificationBadge,
+} from "./certification-badge";
+// Main entry point
+export {
+  Clawdstrike,
+  type ClawdstrikeConfig,
+  ClawdstrikeSession,
+  type Decision,
+  type DecisionStatus,
+  type PolicySpec,
+  type Ruleset,
+  type SessionOptions,
+  type SessionSummary,
+  type ToolSet,
+} from "./clawdstrike";
+export {
+  ClawdstrikeClient,
+  type ClawdstrikeClientOptions,
+  ClawdstrikeError,
+  type V1ErrorBody,
+  type V1ErrorEnvelope,
+  type V1Links,
+  type V1Meta,
+  type V1Response,
+} from "./client";
+export {
+  type CryptoBackend,
+  getBackend,
+  initWasm,
+  isWasmBackend,
+  setBackend,
+} from "./crypto/backend";
+// Crypto
+export {
+  fromHex,
+  keccak256,
+  sha256,
+  toHex,
+} from "./crypto/hash";
+export {
+  generateKeypair,
+  type Keypair,
+  signMessage,
+  verifySignature,
+} from "./crypto/sign";
+// Guards
+export {
+  type CanonicalSeverity,
+  type EgressAllowlistConfig,
+  EgressAllowlistGuard,
+  type ForbiddenMatch,
+  type ForbiddenPathConfig,
+  ForbiddenPathGuard,
+  fromCanonicalSeverity,
+  type Guard,
+  GuardAction,
+  type GuardActionOptions,
+  GuardContext,
+  GuardResult,
+  JailbreakGuard,
+  type JailbreakGuardConfig,
+  type McpToolConfig,
+  McpToolGuard,
+  type PatchAnalysis,
+  type PatchIntegrityConfig,
+  PatchIntegrityGuard,
+  type PromptInjectionConfig,
+  PromptInjectionGuard,
+  type SecretLeakConfig,
+  SecretLeakGuard,
+  Severity,
+  ToolDecision,
+  toCanonicalSeverity,
+} from "./guards";
+// Instruction hierarchy
+export {
+  type ConflictAction,
+  type ConflictSeverity,
+  type EnforcementAction,
+  type HierarchyConflict,
+  type HierarchyEnforcementResult,
+  type HierarchyEnforcerConfig,
+  type HierarchyMessage,
+  InstructionHierarchyEnforcer,
+  InstructionLevel,
+  type MessageRole,
+} from "./instruction-hierarchy";
+// Jailbreak detection
+export {
+  type JailbreakCategory,
+  type JailbreakDetectionResult,
+  JailbreakDetector,
+  type JailbreakDetectorConfig,
+  type JailbreakLinearModelConfig,
+  type JailbreakSeverity,
+  type JailbreakSignal,
+  type LayerResult,
+} from "./jailbreak";
+// Merkle tree
+export {
+  computeRoot,
+  generateProof,
+  hashLeaf,
+  hashNode,
+  MerkleProof,
+  MerkleTree,
+} from "./merkle";
+// Output sanitization
+export {
+  type AllowlistConfig,
+  type DenylistConfig,
+  type DetectorType,
+  type EntityFinding,
+  type EntityRecognizer,
+  type EntropyConfig,
+  OutputSanitizer,
+  type OutputSanitizerConfig,
+  type ProcessingStats,
+  type Redaction,
+  type RedactionStrategy,
+  type SanitizationResult,
+  SanitizationStream,
+  type SensitiveCategory,
+  type SensitiveDataFinding,
+  type Span,
+  type StreamingConfig,
+} from "./output-sanitizer";
+// Receipt
+export {
+  type Hash,
+  type Provenance,
+  type PublicKey,
+  type PublicKeySet,
+  RECEIPT_SCHEMA_VERSION,
+  Receipt,
+  type ReceiptData,
+  type Signature,
+  type Signatures,
+  SignedReceipt,
+  type Verdict,
+  type VerificationResult,
+  type ViolationRef,
+  validateReceiptVersion,
+} from "./receipt";
+// SIEM/SOAR
+export * as siem from "./siem";
+// Prompt watermarking
+export {
+  type EncodedWatermark,
+  PromptWatermarker,
+  type WatermarkConfig,
+  type WatermarkEncoding,
+  type WatermarkExtractionResult,
+  WatermarkExtractor,
+  type WatermarkedPrompt,
+  type WatermarkPayload,
+  type WatermarkVerifierConfig,
+} from "./watermarking";

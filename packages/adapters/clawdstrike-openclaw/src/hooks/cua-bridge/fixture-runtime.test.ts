@@ -1,21 +1,19 @@
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-import { describe, it, expect, beforeAll } from 'vitest';
-import { PolicyEventFactory } from '@clawdstrike/adapter-core';
-
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { PolicyEventFactory } from "@clawdstrike/adapter-core";
+import { beforeAll, describe, expect, it } from "vitest";
+import type { ToolCallEvent } from "../../types.js";
 import handler, {
-  initialize,
-  isCuaToolCall,
-  extractActionToken,
-  classifyCuaAction,
   buildCuaEvent,
   CUA_ERROR_CODES,
   type CuaActionKind,
-} from './handler.js';
-import type { ToolCallEvent } from '../../types.js';
+  classifyCuaAction,
+  extractActionToken,
+  initialize,
+  isCuaToolCall,
+} from "./handler.js";
 
 type BridgeCaseDoc = {
   cases: Array<{
@@ -25,9 +23,12 @@ type BridgeCaseDoc = {
   }>;
 };
 
-const THIS_DIR = fileURLToPath(new URL('.', import.meta.url));
-const CASES_PATH = resolve(THIS_DIR, '../../../../../../fixtures/policy-events/openclaw-bridge/v1/cases.json');
-const CASES = JSON.parse(readFileSync(CASES_PATH, 'utf8')) as BridgeCaseDoc;
+const THIS_DIR = fileURLToPath(new URL(".", import.meta.url));
+const CASES_PATH = resolve(
+  THIS_DIR,
+  "../../../../../../fixtures/policy-events/openclaw-bridge/v1/cases.json",
+);
+const CASES = JSON.parse(readFileSync(CASES_PATH, "utf8")) as BridgeCaseDoc;
 
 function makeToolCallEvent(
   toolName: string,
@@ -35,7 +36,7 @@ function makeToolCallEvent(
   sessionId: string,
 ): ToolCallEvent {
   return {
-    type: 'tool_call',
+    type: "tool_call",
     timestamp: new Date().toISOString(),
     context: {
       sessionId,
@@ -50,10 +51,10 @@ function makeToolCallEvent(
 }
 
 function expectedErrorCodeForCase(caseId: string): string {
-  if (caseId.includes('unknown_cua_action')) return CUA_ERROR_CODES.UNKNOWN_ACTION;
-  if (caseId.includes('missing_cua_metadata')) return CUA_ERROR_CODES.MISSING_METADATA;
-  if (caseId.includes('missing_session')) return CUA_ERROR_CODES.SESSION_MISSING;
-  return '';
+  if (caseId.includes("unknown_cua_action")) return CUA_ERROR_CODES.UNKNOWN_ACTION;
+  if (caseId.includes("missing_cua_metadata")) return CUA_ERROR_CODES.MISSING_METADATA;
+  if (caseId.includes("missing_session")) return CUA_ERROR_CODES.SESSION_MISSING;
+  return "";
 }
 
 function directFactoryEventForKind(
@@ -63,42 +64,44 @@ function directFactoryEventForKind(
   params: Record<string, unknown>,
 ) {
   switch (kind) {
-    case 'connect':
+    case "connect":
       return factory.createCuaConnectEvent(sessionId);
-    case 'disconnect':
+    case "disconnect":
       return factory.createCuaDisconnectEvent(sessionId);
-    case 'reconnect':
+    case "reconnect":
       return factory.createCuaReconnectEvent(sessionId, {
         continuityPrevSessionHash: params.continuityPrevSessionHash as string | undefined,
       });
-    case 'input_inject':
+    case "input_inject":
       return factory.createCuaInputInjectEvent(sessionId, {
         input_type: (params.input_type ?? params.inputType) as string | undefined,
       });
-    case 'clipboard_read':
-      return factory.createCuaClipboardEvent(sessionId, 'read');
-    case 'clipboard_write':
-      return factory.createCuaClipboardEvent(sessionId, 'write');
-    case 'file_upload':
-      return factory.createCuaFileTransferEvent(sessionId, 'upload');
-    case 'file_download':
-      return factory.createCuaFileTransferEvent(sessionId, 'download');
-    case 'session_share':
+    case "clipboard_read":
+      return factory.createCuaClipboardEvent(sessionId, "read");
+    case "clipboard_write":
+      return factory.createCuaClipboardEvent(sessionId, "write");
+    case "file_upload":
+      return factory.createCuaFileTransferEvent(sessionId, "upload");
+    case "file_download":
+      return factory.createCuaFileTransferEvent(sessionId, "download");
+    case "session_share":
       return factory.createCuaSessionShareEvent(sessionId);
-    case 'audio':
+    case "audio":
       return factory.createCuaAudioEvent(sessionId);
-    case 'drive_mapping':
+    case "drive_mapping":
       return factory.createCuaDriveMappingEvent(sessionId);
-    case 'printing':
+    case "printing":
       return factory.createCuaPrintingEvent(sessionId);
   }
 }
 
-describe('openclaw bridge runtime fixtures', () => {
+describe("openclaw bridge runtime fixtures", () => {
   beforeAll(() => {
-    const tempRoot = mkdtempSync(join(tmpdir(), 'clawdstrike-openclaw-bridge-fixtures-'));
-    const policyPath = join(tempRoot, 'fixture-policy.yaml');
-    writeFileSync(policyPath, `
+    const tempRoot = mkdtempSync(join(tmpdir(), "clawdstrike-openclaw-bridge-fixtures-"));
+    const policyPath = join(tempRoot, "fixture-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
 version: "1.2.0"
 guards:
   egress_allowlist:
@@ -131,7 +134,8 @@ guards:
   input_injection_capability:
     enabled: true
     require_postcondition_probe: false
-`);
+`,
+    );
 
     initialize({ policy: policyPath });
   });
@@ -142,10 +146,10 @@ guards:
     it(fixtureCase.id, async () => {
       const { query, expected, id } = fixtureCase;
 
-      if (query.source === 'parity') {
-        const sessionId = String(query.session_id ?? 'sess-parity');
+      if (query.source === "parity") {
+        const sessionId = String(query.session_id ?? "sess-parity");
         const params = (query.params ?? {}) as Record<string, unknown>;
-        const toolName = String(query.tool_name ?? '');
+        const toolName = String(query.tool_name ?? "");
 
         const actionToken = extractActionToken(toolName, params);
         expect(actionToken).not.toBeNull();
@@ -154,32 +158,37 @@ guards:
         expect(kind).not.toBeNull();
 
         const openClawEvent = buildCuaEvent(sessionId, kind as CuaActionKind, params);
-        const directEvent = directFactoryEventForKind(factory, kind as CuaActionKind, sessionId, params);
+        const directEvent = directFactoryEventForKind(
+          factory,
+          kind as CuaActionKind,
+          sessionId,
+          params,
+        );
 
         for (const parityField of query.parity_fields as string[]) {
-          if (parityField === 'eventType') {
+          if (parityField === "eventType") {
             expect(openClawEvent.eventType).toBe(directEvent.eventType);
-          } else if (parityField === 'data.type') {
+          } else if (parityField === "data.type") {
             expect(openClawEvent.data.type).toBe(directEvent.data.type);
-          } else if (parityField === 'data.cuaAction') {
-            if (openClawEvent.data.type === 'cua' && directEvent.data.type === 'cua') {
+          } else if (parityField === "data.cuaAction") {
+            if (openClawEvent.data.type === "cua" && directEvent.data.type === "cua") {
               expect(openClawEvent.data.cuaAction).toBe(directEvent.data.cuaAction);
             } else {
-              throw new Error('Expected CUA data types for parity comparison');
+              throw new Error("Expected CUA data types for parity comparison");
             }
           }
         }
 
-        expect(expected.result).toBe('pass');
+        expect(expected.result).toBe("pass");
         return;
       }
 
-      const toolName = String(query.tool_name ?? '');
+      const toolName = String(query.tool_name ?? "");
       const params = (query.params ?? {}) as Record<string, unknown>;
-      const sessionId = String(query.session_id ?? '');
+      const sessionId = String(query.session_id ?? "");
       const event = makeToolCallEvent(toolName, params, sessionId);
 
-      if (expected.result === 'fail') {
+      if (expected.result === "fail") {
         await handler(event);
         expect(event.preventDefault).toBe(true);
 
@@ -188,7 +197,7 @@ guards:
         if (errorCode && inferredCode) {
           expect(errorCode).toBe(inferredCode);
         }
-        expect(event.messages.join('\n')).toContain(errorCode);
+        expect(event.messages.join("\n")).toContain(errorCode);
         return;
       }
 
@@ -204,10 +213,10 @@ guards:
 
       await handler(event);
       expect(event.preventDefault).toBe(false);
-      expect(event.messages.some((m) => m.includes('allowed'))).toBe(true);
+      expect(event.messages.some((m) => m.includes("allowed"))).toBe(true);
 
       expect(canonicalEvent.eventType).toBe(query.expected_event_type);
-      if (canonicalEvent.data.type === 'cua') {
+      if (canonicalEvent.data.type === "cua") {
         expect(canonicalEvent.data.cuaAction).toBe(query.expected_cua_action);
 
         if (query.expected_direction !== undefined) {
@@ -227,10 +236,12 @@ guards:
         }
 
         if (query.expected_continuity_hash !== undefined) {
-          expect(canonicalEvent.data.continuityPrevSessionHash).toBe(query.expected_continuity_hash);
+          expect(canonicalEvent.data.continuityPrevSessionHash).toBe(
+            query.expected_continuity_hash,
+          );
         }
       } else {
-        throw new Error('Expected canonical CUA event data');
+        throw new Error("Expected canonical CUA event data");
       }
     });
   }

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.4/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "apps/desktop/src/**/*.{ts,tsx}",
+      "apps/desktop/*.{ts,js,json}",
+      "apps/cloud-dashboard/src/**/*.{ts,tsx}",
+      "packages/sdk/hush-ts/src/**/*.ts",
+      "packages/sdk/clawdstrike/**/*.ts",
+      "packages/policy/clawdstrike-policy/src/**/*.ts",
+      "packages/adapters/*/src/**/*.ts"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": false
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "json": {
+    "formatter": {
+      "enabled": true
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}

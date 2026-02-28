@@ -6,25 +6,26 @@
  * - Augments with live exec approvals from gateway events.
  * - Keeps a sliding live window so actions "flow" as time advances.
  */
+
+import { RiverView as River } from "@backbay/glia-three/three";
+import { clsx } from "clsx";
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { clsx } from "clsx";
-import { RiverView as River } from "@backbay/glia-three/three";
-import { useOpenClaw, type OpenClawGatewayRuntime } from "@/context/OpenClawContext";
 import { useConnection } from "@/context/ConnectionContext";
+import { type OpenClawGatewayRuntime, useOpenClaw } from "@/context/OpenClawContext";
+import { NexusAppRail } from "@/features/cyber-nexus/components/NexusAppRail";
+import { NexusControlStrip } from "@/features/cyber-nexus/components/NexusControlStrip";
+import type { NexusLayoutMode, Strikecell, StrikecellDomainId } from "@/features/cyber-nexus/types";
+import { AgentGlyphOverlay } from "@/features/forensics/components/AgentGlyphOverlay";
+import { AgentOrbHud } from "@/features/forensics/components/AgentOrbHud";
+import { useAgentCognitionState } from "@/features/forensics/hooks/useAgentCognitionState";
+import { isTauri, openclawGatewayProbe } from "@/services/tauri";
 import {
   dispatchShellOpenCommandPalette,
   SHELL_FOCUS_AGENT_SESSION_EVENT,
   type ShellFocusAgentSessionDetail,
 } from "@/shell/events";
 import { useActiveSession, useSessionActions, useSessions } from "@/shell/sessions";
-import { NexusControlStrip } from "@/features/cyber-nexus/components/NexusControlStrip";
-import { NexusAppRail } from "@/features/cyber-nexus/components/NexusAppRail";
-import type { NexusLayoutMode, Strikecell, StrikecellDomainId } from "@/features/cyber-nexus/types";
-import { AgentGlyphOverlay } from "@/features/forensics/components/AgentGlyphOverlay";
-import { AgentOrbHud } from "@/features/forensics/components/AgentOrbHud";
-import { useAgentCognitionState } from "@/features/forensics/hooks/useAgentCognitionState";
-import { isTauri, openclawGatewayProbe } from "@/services/tauri";
 
 type Agent = { id: string; label: string; color?: string };
 type RiverAction = River.RiverAction;
@@ -166,13 +167,13 @@ const RUNTIME_SESSION_FALLBACK_KEYS = [
 const RUNTIME_SESSION_FALLBACK_KEY_SET = new Set<string>(RUNTIME_SESSION_FALLBACK_KEYS);
 
 function isRuntimeFallbackKey(
-  value: string
+  value: string,
 ): value is (typeof RUNTIME_SESSION_FALLBACK_KEYS)[number] {
   return RUNTIME_SESSION_FALLBACK_KEY_SET.has(value);
 }
 
 function resolveRuntimeFallbackSelection(
-  selectedSessionKey: string
+  selectedSessionKey: string,
 ): Array<(typeof RUNTIME_SESSION_FALLBACK_KEYS)[number]> {
   if (selectedSessionKey === "__all__") return [...RUNTIME_SESSION_FALLBACK_KEYS];
   if (isRuntimeFallbackKey(selectedSessionKey)) return [selectedSessionKey];
@@ -181,20 +182,70 @@ function resolveRuntimeFallbackSelection(
 
 function demoPolicies(): PolicySegment[] {
   return [
-    { id: "pol-1", label: "Network Egress", startT: 0, endT: 0.25, side: "both", type: "hard-deny" },
+    {
+      id: "pol-1",
+      label: "Network Egress",
+      startT: 0,
+      endT: 0.25,
+      side: "both",
+      type: "hard-deny",
+    },
     { id: "pol-2", label: "FS Read-Only", startT: 0.2, endT: 0.5, side: "left", type: "soft" },
-    { id: "pol-3", label: "Exec Sandbox", startT: 0.45, endT: 0.75, side: "right", type: "hard-deny" },
+    {
+      id: "pol-3",
+      label: "Exec Sandbox",
+      startT: 0.45,
+      endT: 0.75,
+      side: "right",
+      type: "hard-deny",
+    },
     { id: "pol-4", label: "Audit Zone", startT: 0.7, endT: 0.9, side: "both", type: "record-only" },
-    { id: "pol-gap", label: "UNCOVERED", startT: 0.9, endT: 1, side: "both", type: "soft", coverageGap: true },
+    {
+      id: "pol-gap",
+      label: "UNCOVERED",
+      startT: 0.9,
+      endT: 1,
+      side: "both",
+      type: "soft",
+      coverageGap: true,
+    },
   ];
 }
 
 function demoDetectors(): DetectorData[] {
   return [
-    { id: "detector-0", label: "Heuristic Scanner", type: "heuristic", position: [-5, 0, 2.5], active: true, signalCount: 3 },
-    { id: "detector-1", label: "ML Anomaly Model", type: "model", position: [-1, 0, -2.5], active: true, signalCount: 5 },
-    { id: "detector-2", label: "Signature DB", type: "signature", position: [3, 0, 2.5], active: false, signalCount: 0 },
-    { id: "detector-3", label: "Behavior Monitor", type: "behavioral", position: [6, 0, -2.5], active: true, signalCount: 2 },
+    {
+      id: "detector-0",
+      label: "Heuristic Scanner",
+      type: "heuristic",
+      position: [-5, 0, 2.5],
+      active: true,
+      signalCount: 3,
+    },
+    {
+      id: "detector-1",
+      label: "ML Anomaly Model",
+      type: "model",
+      position: [-1, 0, -2.5],
+      active: true,
+      signalCount: 5,
+    },
+    {
+      id: "detector-2",
+      label: "Signature DB",
+      type: "signature",
+      position: [3, 0, 2.5],
+      active: false,
+      signalCount: 0,
+    },
+    {
+      id: "detector-3",
+      label: "Behavior Monitor",
+      type: "behavioral",
+      position: [6, 0, -2.5],
+      active: true,
+      signalCount: 2,
+    },
   ];
 }
 
@@ -215,7 +266,10 @@ function parseAgentIdFromSessionKey(sessionKey: string): string {
 }
 
 function normalizeAgentIdentity(value: string): string {
-  return value.trim().replace(/^agent\s+/i, "").toLowerCase();
+  return value
+    .trim()
+    .replace(/^agent\s+/i, "")
+    .toLowerCase();
 }
 
 function matchesFocusedAgent(agentId: string, focusedAgentId: string | null): boolean {
@@ -291,11 +345,7 @@ function parseProbeSessionRows(payload: unknown): ProbeSessionRow[] {
               : "";
     if (!key) return;
 
-    let updatedAt =
-      asNumber(row.updatedAt) ??
-      asNumber(row.updated_at) ??
-      asNumber(row.ts) ??
-      null;
+    let updatedAt = asNumber(row.updatedAt) ?? asNumber(row.updated_at) ?? asNumber(row.ts) ?? null;
     if (updatedAt === null) {
       const ageMs = asNumber(row.age);
       if (ageMs !== null) updatedAt = Date.now() - Math.max(0, ageMs);
@@ -418,17 +468,14 @@ function deriveActionsFromProbeRows(args: {
     const id = `probe:session:${row.key}`;
     const fallbackTimestamp = Math.max(
       args.windowStartMs,
-      (row.updatedAt ?? args.nowMs) - index * 420
+      (row.updatedAt ?? args.nowMs) - index * 420,
     );
     const timestamp = args.clock.get(id) ?? fallbackTimestamp;
     args.clock.set(id, timestamp);
     if (timestamp < args.windowStartMs) return;
 
     const percentUsed = row.percentUsed ?? null;
-    const riskScore =
-      percentUsed !== null
-        ? clamp01(percentUsed / 100 * 0.88 + 0.08)
-        : 0.26;
+    const riskScore = percentUsed !== null ? clamp01((percentUsed / 100) * 0.88 + 0.08) : 0.26;
     const noveltyScore =
       row.outputTokens !== undefined
         ? clamp01(Math.log10(Math.max(1, row.outputTokens) + 10) / 4)
@@ -462,7 +509,8 @@ function deriveActionsFromProbeRows(args: {
 }
 
 function isMethodUnavailableError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   return (
     message.includes("unknown method") ||
     message.includes("method not found") ||
@@ -470,7 +518,9 @@ function isMethodUnavailableError(error: unknown): boolean {
   );
 }
 
-function runtimeSessionRows(runtime: OpenClawGatewayRuntime | undefined): Array<{ key: string; label: string; updatedAt?: number }> {
+function runtimeSessionRows(
+  runtime: OpenClawGatewayRuntime | undefined,
+): Array<{ key: string; label: string; updatedAt?: number }> {
   const rows: Array<{ key: string; label: string; updatedAt?: number }> = [];
   const updatedAt = runtime?.lastMessageAtMs ?? runtime?.connectedAtMs ?? Date.now();
   const connectedNodes = (runtime?.nodes ?? []).filter((node) => node.connected !== false);
@@ -533,17 +583,19 @@ function deriveActionsFromRuntimeState(args: {
   }
 
   if (includeNodes) {
-    const connectedNodes = (runtime.nodes ?? []).filter((node) => node.connected !== false).slice(0, 18);
+    const connectedNodes = (runtime.nodes ?? [])
+      .filter((node) => node.connected !== false)
+      .slice(0, 18);
     connectedNodes.forEach((node, index) => {
       const nodeId = normalizeRuntimeLabel(node.nodeId, `node-${index + 1}`);
       const label = normalizeRuntimeLabel(node.displayName ?? node.nodeId, `Node ${index + 1}`);
       const consequenceParts = [node.platform, node.version].filter(
-        (value): value is string => typeof value === "string" && value.trim().length > 0
+        (value): value is string => typeof value === "string" && value.trim().length > 0,
       );
       const id = `runtime:node:${nodeId}`;
       const fallbackTimestamp = Math.max(
         args.windowStartMs,
-        (typeof node.connectedAtMs === "number" ? node.connectedAtMs : baseTimestamp) - index * 280
+        (typeof node.connectedAtMs === "number" ? node.connectedAtMs : baseTimestamp) - index * 280,
       );
       const timestamp = stamp(id, fallbackTimestamp);
       if (timestamp < args.windowStartMs) return;
@@ -726,12 +778,14 @@ function deriveActionsFromPreview(args: {
       const next = args.items[i + 1];
       const nextRole = typeof next?.role === "string" ? next.role : null;
       const nextText = typeof next?.text === "string" ? next.text : null;
-      const outputText = nextRole === "tool" && nextText && !nextText.trim().toLowerCase().startsWith("call ")
-        ? nextText
-        : null;
+      const outputText =
+        nextRole === "tool" && nextText && !nextText.trim().toLowerCase().startsWith("call ")
+          ? nextText
+          : null;
       if (outputText) i += 1;
 
-      let kind: RiverAction["kind"] = tool === "exec" ? "exec" : tool.includes("policy") ? "query" : "message";
+      let kind: RiverAction["kind"] =
+        tool === "exec" ? "exec" : tool.includes("policy") ? "query" : "message";
       let policyStatus: RiverAction["policyStatus"] = cachedPolicyStatus ?? "allowed";
       let riskScore = cachedPolicyRisk;
       let consequence: string | undefined;
@@ -753,7 +807,8 @@ function deriveActionsFromPreview(args: {
       pushAction({
         id,
         kind,
-        label: tool === "policy_check" ? "Policy Check" : tool === "exec" ? "Exec" : `Tool · ${tool}`,
+        label:
+          tool === "policy_check" ? "Policy Check" : tool === "exec" ? "Exec" : `Tool · ${tool}`,
         agentId,
         timestamp,
         policyStatus,
@@ -810,7 +865,9 @@ export function ForensicsRiverView() {
 
   const [mode, setMode] = React.useState<"live" | "replay">("live");
   const [windowMs, setWindowMs] = React.useState(120_000);
-  const [sessions, setSessions] = React.useState<Array<{ key: string; label: string; updatedAt?: number }>>([]);
+  const [sessions, setSessions] = React.useState<
+    Array<{ key: string; label: string; updatedAt?: number }>
+  >([]);
   const [selectedSessionKey, setSelectedSessionKey] = React.useState<string>("__all__");
   const [sessionMenuOpen, setSessionMenuOpen] = React.useState(false);
   const [windowMenuOpen, setWindowMenuOpen] = React.useState(false);
@@ -885,14 +942,11 @@ export function ForensicsRiverView() {
       }
     };
 
-    window.addEventListener(
-      SHELL_FOCUS_AGENT_SESSION_EVENT,
-      onFocusAgentSession as EventListener
-    );
+    window.addEventListener(SHELL_FOCUS_AGENT_SESSION_EVENT, onFocusAgentSession as EventListener);
     return () =>
       window.removeEventListener(
         SHELL_FOCUS_AGENT_SESSION_EVENT,
-        onFocusAgentSession as EventListener
+        onFocusAgentSession as EventListener,
       );
   }, []);
 
@@ -904,21 +958,29 @@ export function ForensicsRiverView() {
     return next;
   }, []);
 
-  const [datasetByGatewayId, setDatasetByGatewayId] = React.useState<Record<string, RiverDataset>>({});
+  const [datasetByGatewayId, setDatasetByGatewayId] = React.useState<Record<string, RiverDataset>>(
+    {},
+  );
 
-  const statusLabel = rt?.status === "connected" ? "OPENCLAW LIVE" : rt?.status === "error" ? "OFFLINE (ERROR)" : "OFFLINE";
+  const statusLabel =
+    rt?.status === "connected"
+      ? "OPENCLAW LIVE"
+      : rt?.status === "error"
+        ? "OFFLINE (ERROR)"
+        : "OFFLINE";
 
-  const activeDataset = datasetByGatewayId[oc.activeGatewayId] ?? {
-    actions: [],
-    agents: [],
-    policies: demoPolicies(),
-    signals: [],
-    incidents: [],
-    detectors: demoDetectors(),
-    causalLinks: [],
-    timeRange: [Date.now() - windowMs, Date.now()] as [number, number],
-  };
   const telemetryDataset = React.useMemo<RiverDataset>(() => {
+    const activeDataset = datasetByGatewayId[oc.activeGatewayId] ?? {
+      actions: [],
+      agents: [],
+      policies: demoPolicies(),
+      signals: [],
+      incidents: [],
+      detectors: demoDetectors(),
+      causalLinks: [],
+      timeRange: [Date.now() - windowMs, Date.now()] as [number, number],
+    };
+
     if (activeDataset.actions.length > 0) return activeDataset;
     if (probeSessionRows.length === 0) return activeDataset;
 
@@ -935,14 +997,14 @@ export function ForensicsRiverView() {
     if (probeDerived.actions.length === 0) return activeDataset;
 
     const dedupedActions = Array.from(
-      new Map(probeDerived.actions.map((action) => [action.id, action])).values()
+      new Map(probeDerived.actions.map((action) => [action.id, action])).values(),
     ).sort((a, b) => a.timestamp - b.timestamp);
     const agents: Agent[] = Array.from(new Set(dedupedActions.map((action) => action.agentId))).map(
       (id) => ({
         id,
         label: id,
         color: River.AGENT_COLORS[hashToIndex(id, River.AGENT_COLORS.length)],
-      })
+      }),
     );
     const signals: SignalData[] = dedupedActions.map((action) => ({
       id: `signal:${action.id}`,
@@ -968,7 +1030,7 @@ export function ForensicsRiverView() {
       timeRange: [windowStartMs, nowMs + LIVE_TIME_RANGE_LEAD_MS],
     };
   }, [
-    activeDataset,
+    datasetByGatewayId,
     getClock,
     oc.activeGatewayId,
     probeSessionRows,
@@ -977,7 +1039,7 @@ export function ForensicsRiverView() {
   ]);
   const activeStrikecell = React.useMemo(
     () => NEXUS_RAIL_STRIKECELLS.find((strikecell) => strikecell.id === openAppId) ?? null,
-    [openAppId]
+    [openAppId],
   );
   const sessionRows = React.useMemo(() => {
     if (sessions.length > 0) return sessions;
@@ -995,7 +1057,7 @@ export function ForensicsRiverView() {
       { value: "__all__", label: "ALL (top 3)" },
       ...sessionRows.map((session) => ({ value: session.key, label: session.label })),
     ],
-    [sessionRows]
+    [sessionRows],
   );
   const windowOptions = React.useMemo(
     () => [
@@ -1003,7 +1065,7 @@ export function ForensicsRiverView() {
       { value: "120000", label: "2m" },
       { value: "300000", label: "5m" },
     ],
-    []
+    [],
   );
   const sceneMeta = SCENE_META[sceneMode];
 
@@ -1014,7 +1076,7 @@ export function ForensicsRiverView() {
           action.kind === "exec" ||
           action.policyStatus === "approval-required" ||
           action.policyStatus === "denied" ||
-          action.policyStatus === "exception"
+          action.policyStatus === "exception",
       );
       const attackSeed = focusActions.length > 0 ? focusActions : telemetryDataset.actions;
       return {
@@ -1027,7 +1089,7 @@ export function ForensicsRiverView() {
                 blastRadius: clamp01(action.blastRadius + 0.16),
                 riskScore: clamp01(action.riskScore + 0.08),
               }
-            : action
+            : action,
         ),
       };
     }
@@ -1037,7 +1099,9 @@ export function ForensicsRiverView() {
         .filter((action) => action.policyStatus !== "allowed" || action.riskScore >= 0.45)
         .slice(-54);
       const threatSignals = telemetryDataset.signals
-        .filter((signal) => signal.score >= 0.45 || signal.type === "anomaly" || signal.type === "risk")
+        .filter(
+          (signal) => signal.score >= 0.45 || signal.type === "anomaly" || signal.type === "risk",
+        )
         .slice(-60);
       return {
         ...telemetryDataset,
@@ -1124,7 +1188,7 @@ export function ForensicsRiverView() {
 
   const focusedGlyph = React.useMemo(
     () => agentGlyphs.find((glyph) => glyph.isFocused) ?? null,
-    [agentGlyphs]
+    [agentGlyphs],
   );
 
   const handleClearFocus = React.useCallback(() => {
@@ -1140,7 +1204,7 @@ export function ForensicsRiverView() {
       showDetectors: sceneMode !== "attack",
       showIncidents: sceneMode === "threat" ? true : sceneDataset.incidents.length > 0,
     }),
-    [sceneDataset.incidents.length, sceneMode]
+    [sceneDataset.incidents.length, sceneMode],
   );
 
   React.useEffect(() => {
@@ -1190,7 +1254,11 @@ export function ForensicsRiverView() {
       try {
         if (sessionsListUnavailableRef.current) {
           if (!cancelled) setSessions(runtimeRows);
-          if (!cancelled && selectedSessionKey !== "__all__" && !runtimeRows.some((s) => s.key === selectedSessionKey)) {
+          if (
+            !cancelled &&
+            selectedSessionKey !== "__all__" &&
+            !runtimeRows.some((s) => s.key === selectedSessionKey)
+          ) {
             setSelectedSessionKey(runtimeRows[0]?.key ?? "__all__");
           }
           return;
@@ -1208,7 +1276,11 @@ export function ForensicsRiverView() {
         normalized.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
         const nextRows = normalized.length > 0 ? normalized : runtimeRows;
         if (!cancelled) setSessions(nextRows);
-        if (!cancelled && selectedSessionKey !== "__all__" && !nextRows.some((s) => s.key === selectedSessionKey)) {
+        if (
+          !cancelled &&
+          selectedSessionKey !== "__all__" &&
+          !nextRows.some((s) => s.key === selectedSessionKey)
+        ) {
           setSelectedSessionKey(nextRows[0]?.key ?? "__all__");
         }
       } catch (error) {
@@ -1216,7 +1288,11 @@ export function ForensicsRiverView() {
           sessionsListUnavailableRef.current = true;
         }
         if (!cancelled) setSessions(runtimeRows);
-        if (!cancelled && selectedSessionKey !== "__all__" && !runtimeRows.some((s) => s.key === selectedSessionKey)) {
+        if (
+          !cancelled &&
+          selectedSessionKey !== "__all__" &&
+          !runtimeRows.some((s) => s.key === selectedSessionKey)
+        ) {
           setSelectedSessionKey(runtimeRows[0]?.key ?? "__all__");
         }
       } finally {
@@ -1321,12 +1397,12 @@ export function ForensicsRiverView() {
         causalLinks.push(...runtimeDerived.causalLinks);
 
         const dedupedActions = Array.from(
-          new Map(actions.map((action) => [action.id, action])).values()
+          new Map(actions.map((action) => [action.id, action])).values(),
         );
         const dedupedCausalLinks = Array.from(
           new Map(
-            causalLinks.map((link) => [`${link.fromId}:${link.toId}:${link.type}`, link])
-          ).values()
+            causalLinks.map((link) => [`${link.fromId}:${link.toId}:${link.type}`, link]),
+          ).values(),
         );
         dedupedActions.sort((a, b) => a.timestamp - b.timestamp);
 
@@ -1452,16 +1528,10 @@ export function ForensicsRiverView() {
 
         <div className="absolute top-[72px] left-0 right-0 z-20 px-4 py-2 pointer-events-none">
           <div className="pointer-events-auto flex items-center gap-2">
-            <button
-              onClick={() => setMode("live")}
-              className={cls(mode === "live")}
-            >
+            <button onClick={() => setMode("live")} className={cls(mode === "live")}>
               LIVE
             </button>
-            <button
-              onClick={() => setMode("replay")}
-              className={cls(mode === "replay")}
-            >
+            <button onClick={() => setMode("replay")} className={cls(mode === "replay")}>
               REPLAY
             </button>
             <div className="ml-2 text-xs font-mono text-white/35">{statusLabel}</div>
@@ -1491,14 +1561,21 @@ export function ForensicsRiverView() {
               title="Live window"
             />
             <div className="ml-3 text-sm text-white/50">
-              {focusedSceneDataset.actions.length} actions · {Math.max(focusedSceneDataset.agents.length, agentGlyphs.length)} agents · {focusedSceneDataset.signals.length} signals · {focusedSceneDataset.incidents.length} incidents
+              {focusedSceneDataset.actions.length} actions ·{" "}
+              {Math.max(focusedSceneDataset.agents.length, agentGlyphs.length)} agents ·{" "}
+              {focusedSceneDataset.signals.length} signals · {focusedSceneDataset.incidents.length}{" "}
+              incidents
             </div>
           </div>
 
           <div className="pointer-events-auto mt-2 inline-flex max-w-[720px] items-start gap-3 rounded-lg border border-[rgba(213,173,87,0.26)] bg-[linear-gradient(180deg,rgba(10,13,20,0.92)_0%,rgba(6,9,15,0.95)_100%)] px-3 py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
-            <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-[rgba(213,173,87,0.9)]">Scene</div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-[rgba(213,173,87,0.9)]">
+              Scene
+            </div>
             <div className="min-w-0">
-              <div className="text-xs font-mono uppercase tracking-[0.1em] text-sdr-text-primary">{sceneMeta.title}</div>
+              <div className="text-xs font-mono uppercase tracking-[0.1em] text-sdr-text-primary">
+                {sceneMeta.title}
+              </div>
               <div className="mt-0.5 text-xs text-sdr-text-secondary">{sceneMeta.subtitle}</div>
             </div>
           </div>
@@ -1560,7 +1637,9 @@ export function ForensicsRiverView() {
 
 function cls(active: boolean) {
   return `text-xs font-mono px-2 py-1 border rounded ${
-    active ? "border-white/30 text-white/80 bg-white/5" : "border-white/10 text-white/40 hover:text-white/70"
+    active
+      ? "border-white/30 text-white/80 bg-white/5"
+      : "border-white/10 text-white/40 hover:text-white/70"
   }`;
 }
 
@@ -1614,7 +1693,7 @@ function InlineMenuSelect({
         onClick={onToggle}
         className={clsx(
           "origin-focus-ring premium-chip premium-chip--control flex items-center gap-2 px-2 py-1 text-xs font-mono",
-          open ? "text-[color:var(--origin-gold)]" : "text-sdr-text-secondary"
+          open ? "text-[color:var(--origin-gold)]" : "text-sdr-text-secondary",
         )}
         title={title}
         aria-label={title}
@@ -1635,7 +1714,7 @@ function InlineMenuSelect({
                 "origin-focus-ring flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[11px] font-mono transition",
                 option.value === value
                   ? "bg-[rgba(213,173,87,0.15)] text-[color:var(--origin-gold)]"
-                  : "text-sdr-text-secondary hover:bg-[rgba(213,173,87,0.08)] hover:text-sdr-text-primary"
+                  : "text-sdr-text-secondary hover:bg-[rgba(213,173,87,0.08)] hover:text-sdr-text-primary",
               )}
             >
               <span>{option.label}</span>
