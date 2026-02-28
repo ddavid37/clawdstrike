@@ -48,6 +48,8 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/seal-dark.svg"><img src=".github/assets/sigils/seal-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Tool-boundary enforcement
   <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
   <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/plugin-dark.svg"><img src=".github/assets/sigils/plugin-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;Swarm-native security
+  <span style="opacity:0.55;">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>
+  <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/sigils/registry-dark.svg"><img src=".github/assets/sigils/registry-light.svg" width="16" height="16" alt=""  style="vertical-align:-3px;" ></picture>&nbsp;AgentSec Registry
 </p>
 
 <p align="center">
