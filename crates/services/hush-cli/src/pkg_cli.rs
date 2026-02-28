@@ -1066,10 +1066,7 @@ fn cmd_pkg_install_registry(
             let info: serde_json::Value = match info_resp.json() {
                 Ok(v) => v,
                 Err(e) => {
-                    let _ = writeln!(
-                        stderr,
-                        "Error: invalid package info response: {e}"
-                    );
+                    let _ = writeln!(stderr, "Error: invalid package info response: {e}");
                     return ExitCode::RuntimeError;
                 }
             };

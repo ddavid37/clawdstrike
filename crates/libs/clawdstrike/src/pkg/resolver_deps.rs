@@ -425,9 +425,7 @@ fn comparator_to_range(comp: &semver::Comparator) -> std::result::Result<VS, Res
             // <=I.J   → strictly_lower_than(I.(J+1).0)
             // <=I     → strictly_lower_than((I+1).0.0)
             let hi = match (minor, patch) {
-                (Some(min_val), Some(pat_val)) => {
-                    semver::Version::new(major, min_val, pat_val + 1)
-                }
+                (Some(min_val), Some(pat_val)) => semver::Version::new(major, min_val, pat_val + 1),
                 (Some(min_val), None) => semver::Version::new(major, min_val + 1, 0),
                 _ => semver::Version::new(major + 1, 0, 0),
             };
@@ -466,15 +464,11 @@ fn comparator_to_range(comp: &semver::Comparator) -> std::result::Result<VS, Res
                         // ^0 → [0.0.0, 1.0.0)
                         semver::Version::new(1, 0, 0)
                     }
-                    Some(min_val) if min_val > 0 => {
-                        semver::Version::new(0, min_val + 1, 0)
-                    }
+                    Some(min_val) if min_val > 0 => semver::Version::new(0, min_val + 1, 0),
                     Some(_) => {
                         // minor == 0
                         match patch {
-                            Some(pat_val) => {
-                                semver::Version::new(0, 0, pat_val + 1)
-                            }
+                            Some(pat_val) => semver::Version::new(0, 0, pat_val + 1),
                             None => {
                                 // ^0.0 → [0.0.0, 0.1.0)
                                 semver::Version::new(0, 1, 0)

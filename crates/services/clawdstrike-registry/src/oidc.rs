@@ -114,11 +114,7 @@ impl JwksCache {
         }
     }
 
-    fn get_or_fetch(
-        &mut self,
-        provider: &str,
-        jwks_url: &str,
-    ) -> Result<JwkSet, RegistryError> {
+    fn get_or_fetch(&mut self, provider: &str, jwks_url: &str) -> Result<JwkSet, RegistryError> {
         let is_valid = self
             .entries
             .get(provider)
