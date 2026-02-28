@@ -326,7 +326,7 @@ conditions:
     bind: file_access
   - source: [receipt, hubble]
     action_type: egress
-    not_target_pattern: "^(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.[0-9]{1,3}\\.|192\\.168\\.)"
+    not_target_pattern: "(^|->\\s*)(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.[0-9]{1,3}\\.|192\\.168\\.)"
     after: file_access
     within: 30s
     bind: egress_event
@@ -406,8 +406,20 @@ output:
 
         assert!(re.is_match("172.16.0.1"), "RFC1918 172.16/12 must match");
         assert!(
+            re.is_match("egress TCP 10.0.0.1:8080 -> 172.16.0.1:443"),
+            "private destination in real Hubble-style summary must match"
+        );
+        assert!(
             !re.is_match("172.160.0.1"),
             "public 172.160.x.x must not be treated as private"
+        );
+        assert!(
+            !re.is_match("egress TCP 10.0.0.1:8080 -> 172.160.0.1:443"),
+            "public 172.160.x.x destination must not be treated as private"
+        );
+        assert!(
+            !re.is_match("egress TCP 10.0.0.1:8080 -> 93.184.216.34:443"),
+            "public destination should not be excluded just because source is private"
         );
     }
 

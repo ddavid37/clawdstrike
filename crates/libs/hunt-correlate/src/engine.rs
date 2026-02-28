@@ -424,7 +424,7 @@ conditions:
     bind: file_access
   - source: [receipt, hubble]
     action_type: egress
-    not_target_pattern: "^(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.[0-9]{1,3}\\.|192\\.168\\.)"
+    not_target_pattern: "(^|->\\s*)(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.[0-9]{1,3}\\.|192\\.168\\.)"
     after: file_access
     within: 30s
     bind: egress_event
@@ -525,7 +525,7 @@ output:
             EventSource::Receipt,
             "egress",
             NormalizedVerdict::Allow,
-            "evil.com:443",
+            "egress TCP 10.0.0.1:8080 -> 93.184.216.34:443",
             ts2,
         );
         let alerts = engine.process_event(&e2);
@@ -556,7 +556,7 @@ output:
             EventSource::Receipt,
             "egress",
             NormalizedVerdict::Allow,
-            "192.168.1.1:8080",
+            "egress TCP 10.0.0.1:8080 -> 192.168.1.1:8080",
             ts2,
         );
         let alerts = engine.process_event(&e2);
@@ -589,7 +589,7 @@ output:
             EventSource::Receipt,
             "egress",
             NormalizedVerdict::Allow,
-            "172.25.0.1:8080",
+            "egress TCP 10.0.0.1:8080 -> 172.25.0.1:8080",
             ts2,
         );
         let alerts = engine.process_event(&e2);
@@ -622,7 +622,7 @@ output:
             EventSource::Receipt,
             "egress",
             NormalizedVerdict::Allow,
-            "172.2.0.1:8080",
+            "egress TCP 10.0.0.1:8080 -> 172.2.0.1:8080",
             ts2,
         );
         let alerts = engine.process_event(&e2);
