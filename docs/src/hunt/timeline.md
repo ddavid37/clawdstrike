@@ -31,7 +31,7 @@ clawdstrike hunt timeline [OPTIONS]
 | `--local-dir <path>` | Local directories for offline/fallback query (repeatable) | built-in defaults |
 | `--verify` | Verify envelope signatures while parsing | `false` |
 | `--json` | Emit JSON envelope output | `false` |
-| `--jsonl` | Emit one JSON event per line | `false` |
+| `--jsonl` | Emit one JSON event per line (no text header) | `false` |
 | `--no-color` | Disable colored text output | `false` |
 
 ## Examples

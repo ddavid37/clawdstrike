@@ -31,13 +31,14 @@ clawdstrike hunt correlate --rules <path> [--rules <path> ...] [OPTIONS]
 | `--local-dir <path>` | Local directories for offline/fallback query (repeatable) | built-in defaults |
 | `--verify` | Verify envelope signatures while parsing | `false` |
 | `--json` | Emit JSON envelope output | `false` |
-| `--jsonl` | Emit event stream JSON lines (query/render mode) | `false` |
+| `--jsonl` | Emit one alert JSON object per line (no text summary) | `false` |
 | `--no-color` | Disable colored text output | `false` |
 
 ## Behavior
 
 - Events are queried first, merged into timeline order, then fed through `CorrelationEngine`.
 - Alerts produced during stream processing and final window flush are returned.
+- `--jsonl` outputs alert objects only; it does not print human summary lines.
 - Exit code is warning (`1`) when alerts are present.
 
 ## Examples

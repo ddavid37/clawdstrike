@@ -10,7 +10,7 @@ Top-level result per config file path. One `ScanPathResult` per discovered confi
 
 **Origin:** `models.py:359`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanPathResult {
     pub client: Option<String>,
@@ -32,7 +32,7 @@ One per MCP server within a config file.
 
 **Origin:** `models.py:327`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerScanResult {
     pub name: Option<String>,
@@ -48,7 +48,7 @@ The complete output of a successful server introspection. Contains the `initiali
 
 **Origin:** `models.py:315`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerSignature {
     pub metadata: serde_json::Value, // MCP InitializeResult
@@ -73,7 +73,7 @@ A vulnerability finding with severity.
 
 **Origin:** `models.py:303`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Issue {
     pub code: String,
@@ -90,7 +90,7 @@ Per-tool risk labels assigned by the analysis API.
 
 **Origin:** `models.py:136`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScalarToolLabels {
     pub is_public_sink: f64,
@@ -108,7 +108,7 @@ A process-spawning MCP server.
 
 **Origin:** `models.py:153`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StdioServer {
     pub command: String,
@@ -128,7 +128,7 @@ An HTTP or SSE MCP server.
 
 **Origin:** `models.py:146`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteServer {
     pub url: String,
@@ -145,7 +145,7 @@ A skills directory reference.
 
 **Origin:** `models.py:168`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillServer {
     pub path: String,
@@ -160,7 +160,7 @@ A synthetic server with pre-defined tool signatures (used for built-in IDE tools
 
 **Origin:** `models.py:174`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaticToolsServer {
     pub name: String,
@@ -176,7 +176,7 @@ The server config union type, discriminated by the `type` field.
 
 **Origin:** Python union `StdioServer | RemoteServer | StaticToolsServer | SkillServer`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ServerConfig {
@@ -203,7 +203,7 @@ Union of all MCP entity types returned by introspection.
 
 **Origin:** `models.py:37`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Entity {
@@ -233,7 +233,7 @@ A stored entity record for change detection.
 
 **Origin:** `models.py:111`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScannedEntity {
     pub hash: String,
@@ -250,7 +250,7 @@ Map of all known entities, keyed by `"{server_name}.{entity_type}.{entity_name}"
 
 **Origin:** `models.py:143`
 
-```rust
+```rust,ignore
 pub type ScannedEntities = HashMap<String, ScannedEntity>;
 ```
 
@@ -260,7 +260,7 @@ pub type ScannedEntities = HashMap<String, ScannedEntity>;
 
 **Origin:** `models.py:25-33`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCategory {
@@ -294,7 +294,7 @@ impl ErrorCategory {
 
 **Origin:** `models.py:271`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanError {
     pub message: Option<String>,
@@ -335,7 +335,7 @@ User identity for the verification API request.
 
 **Origin:** `models.py:390`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanUserInfo {
     pub hostname: Option<String>,
@@ -352,7 +352,7 @@ Request **and** response body for the verification API. The response merges `iss
 
 **Origin:** `models.py:466`
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanPathResultsCreate {
     pub scan_path_results: Vec<ScanPathResult>,
@@ -369,7 +369,7 @@ These models represent the different MCP config file formats that the scanner pa
 
 **Origin:** `models.py:202`
 
-```rust
+```rust,ignore
 /// { "mcpServers": { "<name>": StdioServer | RemoteServer } }
 /// Used by: Claude Desktop, Cursor, most clients
 pub struct ClaudeConfigFile {
@@ -382,7 +382,7 @@ pub struct ClaudeConfigFile {
 
 **Origin:** `models.py:213`
 
-```rust
+```rust,ignore
 /// { "projects": { "<key>": ClaudeConfigFile } }
 /// Used by: Claude Code (.claude.json)
 pub struct ClaudeCodeConfigFile {
@@ -394,7 +394,7 @@ pub struct ClaudeCodeConfigFile {
 
 **Origin:** `models.py:227`
 
-```rust
+```rust,ignore
 /// { "servers": { "<name>": ... } }
 /// Used by: VS Code .vscode/mcp.json
 pub struct VSCodeMCPConfig {
@@ -408,7 +408,7 @@ pub struct VSCodeMCPConfig {
 
 **Origin:** `models.py:240`
 
-```rust
+```rust,ignore
 /// { "mcp": { "inputs": [...], "servers": { ... } } }
 /// Used by: VS Code settings.json
 pub struct VSCodeConfigFile {
@@ -426,7 +426,7 @@ Fallback model that accepts any JSON and returns an empty server set. In Rust, t
 
 All config models implement `get_servers() -> HashMap<String, ServerConfig>` and `set_servers()`. In Rust, define a trait:
 
-```rust
+```rust,ignore
 pub trait MCPConfig {
     fn get_servers(&self) -> HashMap<String, ServerConfig>;
     fn set_servers(&mut self, servers: HashMap<String, ServerConfig>);
@@ -447,7 +447,7 @@ The Python implementation uses a Lark grammar that tokenizes respecting single a
 
 **Origin:** `models.py:85-91`
 
-```
+```text
 hash = md5(entity.description.encode()).hexdigest()
 ```
 

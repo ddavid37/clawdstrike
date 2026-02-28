@@ -332,8 +332,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("history.json");
 
-        let mut history = ScanHistory::default();
-        history.last_scan = Some(Utc::now());
+        let mut history = ScanHistory {
+            last_scan: Some(Utc::now()),
+            ..ScanHistory::default()
+        };
         history.servers.insert(
             "test::server".into(),
             ScanRecord {

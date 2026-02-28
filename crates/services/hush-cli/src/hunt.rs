@@ -1237,14 +1237,17 @@ async fn cmd_hunt_timeline(
         }
     } else {
         let effective = query.effective_sources();
-        if let Err(e) = hunt_query::render::render_timeline_header(
-            entity.as_deref(),
-            timeline.len(),
-            &effective,
-            stdout,
-        ) {
-            let _ = writeln!(stderr, "Render error: {e}");
-            return ExitCode::RuntimeError;
+        // In JSONL mode, keep stdout machine-parseable and avoid text headers.
+        if !args.jsonl {
+            if let Err(e) = hunt_query::render::render_timeline_header(
+                entity.as_deref(),
+                timeline.len(),
+                &effective,
+                stdout,
+            ) {
+                let _ = writeln!(stderr, "Render error: {e}");
+                return ExitCode::RuntimeError;
+            }
         }
         if let Err(e) = hunt_query::render::render_events(&timeline, &config, stdout) {
             let _ = writeln!(stderr, "Render error: {e}");
@@ -1424,31 +1427,7 @@ async fn cmd_hunt_watch(
 
     match hunt_correlate::watch::run_watch(config, stdout, stderr).await {
         Ok(stats) => {
-            if is_json {
-                let output = HuntJsonOutput::<HuntCorrelateData> {
-                    version: CLI_JSON_VERSION,
-                    command: "hunt watch",
-                    exit_code: ExitCode::Ok.as_i32(),
-                    error: None,
-                    data: Some(HuntCorrelateData {
-                        alerts: vec![],
-                        summary: HuntCorrelateSummary {
-                            events_processed: stats.events_processed as usize,
-                            alerts_generated: stats.alerts_triggered as usize,
-                            rules_loaded,
-                        },
-                    }),
-                };
-                if let Ok(json_str) = serde_json::to_string_pretty(&output) {
-                    let _ = writeln!(stdout, "{json_str}");
-                }
-            } else {
-                let _ = writeln!(
-                    stdout,
-                    "Watch session ended: {} events processed, {} alerts",
-                    stats.events_processed, stats.alerts_triggered
-                );
-            }
+            emit_watch_session_summary(is_json, &stats, rules_loaded, stdout, stderr);
             ExitCode::Ok
         }
         Err(e) => emit_hunt_error(
@@ -1460,6 +1439,30 @@ async fn cmd_hunt_watch(
             &format!("Watch failed: {e}"),
             ExitCode::RuntimeError,
         ),
+    }
+}
+
+fn emit_watch_session_summary(
+    is_json: bool,
+    stats: &hunt_correlate::watch::WatchStats,
+    rules_loaded: usize,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) {
+    if is_json {
+        // `run_watch` already emits one JSON object per alert on stdout.
+        // Keep stdout as a pure alert stream and emit session summary to stderr.
+        let _ = writeln!(
+            stderr,
+            "watch: {} events processed, {} alerts from {} rules",
+            stats.events_processed, stats.alerts_triggered, rules_loaded
+        );
+    } else {
+        let _ = writeln!(
+            stdout,
+            "Watch session ended: {} events processed, {} alerts",
+            stats.events_processed, stats.alerts_triggered
+        );
     }
 }
 
@@ -1600,6 +1603,19 @@ async fn cmd_hunt_correlate(
         };
         if let Ok(json_str) = serde_json::to_string_pretty(&output) {
             let _ = writeln!(stdout, "{json_str}");
+        }
+    } else if args.jsonl {
+        // JSONL mode emits one alert JSON object per line with no text summary.
+        for alert in &all_alerts {
+            match serde_json::to_string(alert) {
+                Ok(line) => {
+                    let _ = writeln!(stdout, "{line}");
+                }
+                Err(e) => {
+                    let _ = writeln!(stderr, "Render error: {e}");
+                    return ExitCode::RuntimeError;
+                }
+            }
         }
     } else {
         let _ = writeln!(
@@ -2152,6 +2168,76 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn hunt_timeline_jsonl_has_no_text_header() {
+        let args = HuntQueryArgs {
+            source: None,
+            verdict: None,
+            start: None,
+            end: None,
+            action_type: None,
+            process: None,
+            namespace: None,
+            pod: None,
+            limit: 0,
+            nl: None,
+            nats_url: "nats://localhost:4222".to_string(),
+            nats_creds: None,
+            offline: true,
+            local_dir: Some(vec!["/nonexistent".to_string()]),
+            verify: false,
+            json: false,
+            jsonl: true,
+            no_color: true,
+            entity: None,
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let _ = cmd_hunt_timeline(args, &mut stdout, &mut stderr).await;
+        let output = String::from_utf8_lossy(&stdout);
+        assert!(
+            !output.contains("Events:"),
+            "JSONL timeline output must not include text header, got: {output}"
+        );
+        assert!(
+            !output.contains("Sources:"),
+            "JSONL timeline output must not include text header, got: {output}"
+        );
+    }
+
+    #[tokio::test]
+    async fn hunt_timeline_text_mode_includes_header() {
+        let args = HuntQueryArgs {
+            source: None,
+            verdict: None,
+            start: None,
+            end: None,
+            action_type: None,
+            process: None,
+            namespace: None,
+            pod: None,
+            limit: 0,
+            nl: None,
+            nats_url: "nats://localhost:4222".to_string(),
+            nats_creds: None,
+            offline: true,
+            local_dir: Some(vec!["/nonexistent".to_string()]),
+            verify: false,
+            json: false,
+            jsonl: false,
+            no_color: true,
+            entity: None,
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let _ = cmd_hunt_timeline(args, &mut stdout, &mut stderr).await;
+        let output = String::from_utf8_lossy(&stdout);
+        assert!(
+            output.contains("Events:"),
+            "text timeline output should include header, got: {output}"
+        );
+    }
+
     // -----------------------------------------------------------------------
     // Fix 2: Policy load failure returns error exit code
     // -----------------------------------------------------------------------
@@ -2300,5 +2386,113 @@ mod tests {
         assert!(record.tool_names.iter().any(|t| t == "beta_tool"));
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn hunt_correlate_jsonl_omits_text_summary() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let tmp = std::env::temp_dir().join(format!("hush-correlate-jsonl-test-{nonce}"));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let rule_path = tmp.join("rule.yaml");
+        let local_dir = tmp.join("events");
+        std::fs::create_dir_all(&local_dir).unwrap();
+
+        std::fs::write(
+            &rule_path,
+            r#"
+schema: clawdstrike.hunt.correlation.v1
+name: "Test"
+severity: low
+description: "test"
+window: 1m
+conditions:
+  - source: receipt
+    bind: evt
+output:
+  title: "test"
+  evidence:
+    - evt
+"#,
+        )
+        .unwrap();
+
+        let args = HuntCorrelateArgs {
+            rules: vec![rule_path.to_string_lossy().to_string()],
+            source: None,
+            verdict: None,
+            start: None,
+            end: None,
+            action_type: None,
+            process: None,
+            namespace: None,
+            pod: None,
+            limit: 0,
+            nl: None,
+            nats_url: "nats://localhost:4222".to_string(),
+            nats_creds: None,
+            offline: true,
+            local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
+            verify: false,
+            json: false,
+            jsonl: true,
+            no_color: true,
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = cmd_hunt_correlate(args, &mut stdout, &mut stderr).await;
+        assert_eq!(code, ExitCode::Ok);
+
+        let output = String::from_utf8_lossy(&stdout);
+        assert!(
+            !output.contains("events processed"),
+            "JSONL correlate output must not include text summary, got: {output}"
+        );
+        assert!(
+            output.trim().is_empty(),
+            "expected no alerts, got: {output}"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn watch_summary_json_mode_writes_to_stderr_only() {
+        let stats = hunt_correlate::watch::WatchStats {
+            events_processed: 7,
+            alerts_triggered: 2,
+            start_time: chrono::Utc::now(),
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        emit_watch_session_summary(true, &stats, 3, &mut stdout, &mut stderr);
+        assert!(
+            stdout.is_empty(),
+            "JSON watch summary should not write to stdout"
+        );
+        let err = String::from_utf8_lossy(&stderr);
+        assert!(err.contains("7 events processed"));
+        assert!(err.contains("2 alerts"));
+        assert!(err.contains("3 rules"));
+    }
+
+    #[test]
+    fn watch_summary_text_mode_writes_to_stdout() {
+        let stats = hunt_correlate::watch::WatchStats {
+            events_processed: 5,
+            alerts_triggered: 1,
+            start_time: chrono::Utc::now(),
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        emit_watch_session_summary(false, &stats, 2, &mut stdout, &mut stderr);
+        assert!(
+            stderr.is_empty(),
+            "text watch summary should not write to stderr"
+        );
+        let out = String::from_utf8_lossy(&stdout);
+        assert!(out.contains("Watch session ended: 5 events processed, 1 alerts"));
     }
 }

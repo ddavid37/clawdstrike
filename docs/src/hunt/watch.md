@@ -18,7 +18,7 @@ clawdstrike hunt watch --rules <path> [--rules <path> ...] [OPTIONS]
 | `--nats-url <url>` | NATS URL | `nats://localhost:4222` |
 | `--nats-creds <path>` | NATS credentials file | none |
 | `--max-window <duration>` | Sliding window eviction cap (e.g. `5m`, `1h`) | `5m` |
-| `--json` | Emit JSON alert output | `false` |
+| `--json` | Emit one JSON object per alert on stdout | `false` |
 | `--no-color` | Disable colored text output | `false` |
 
 ## Behavior
@@ -26,6 +26,7 @@ clawdstrike hunt watch --rules <path> [--rules <path> ...] [OPTIONS]
 - Subscribes to `clawdstrike.sdr.fact.>` and parses envelopes into timeline events.
 - Feeds events into `CorrelationEngine` and emits alerts as rules match.
 - Flushes remaining alerts on shutdown (Ctrl+C).
+- In `--json` mode, stdout remains a pure alert stream; session summary is written to stderr.
 
 ## Examples
 

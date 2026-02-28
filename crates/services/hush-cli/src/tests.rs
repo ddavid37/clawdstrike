@@ -2945,7 +2945,11 @@ mod remote_extends_contract {
                         Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
                             continue;
                         }
-                        Err(_) => break,
+                        Err(_) => {
+                            // Keep the harness alive through transient accept errors so
+                            // chained fetches in the same test don't fail spuriously.
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
                     }
                 }
             });
