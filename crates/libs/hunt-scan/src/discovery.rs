@@ -93,10 +93,10 @@ fn macos_clients() -> Vec<CandidateClient> {
             skills_dirs: expand_paths(&["~/.gemini/skills"]),
         },
         CandidateClient {
-            name: "clawdbot".into(),
-            client_exists_paths: expand_paths(&["~/.clawdbot"]),
+            name: "openclaw".into(),
+            client_exists_paths: expand_paths(&["~/.clawdbot", "~/.openclaw"]),
             config_paths: Vec::new(),
-            skills_dirs: expand_paths(&["~/.clawdbot/skills"]),
+            skills_dirs: expand_paths(&["~/.clawdbot/skills", "~/.openclaw/skills"]),
         },
         CandidateClient {
             name: "kiro".into(),
@@ -210,11 +210,11 @@ fn windows_clients() -> Vec<CandidateClient> {
         },
         CandidateClient {
             name: "vscode".into(),
-            client_exists_paths: expand_paths(&["~/.vscode", "~/.config/Code"]),
+            client_exists_paths: expand_paths(&["~/.vscode", "~/AppData/Roaming/Code"]),
             config_paths: expand_paths(&[
-                "~/.config/Code/User/settings.json",
+                "~/AppData/Roaming/Code/User/settings.json",
                 "~/.vscode/mcp.json",
-                "~/.config/Code/User/mcp.json",
+                "~/AppData/Roaming/Code/User/mcp.json",
             ]),
             skills_dirs: expand_paths(&["~/.copilot/skills"]),
         },

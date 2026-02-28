@@ -485,43 +485,74 @@ async fn introspect_http(
         });
 
     // 2. Send notifications/initialized (fire-and-forget over HTTP)
-    let notif_req = session.build_request("notifications/initialized", None);
-    let _ = http_rpc(client, url, &notif_req).await;
+    // Use a notification (no `id` field) per JSON-RPC 2.0 spec.
+    let notif = McpSession::build_notification("notifications/initialized");
+    let _ = client
+        .post(url)
+        .header("Content-Type", "application/json")
+        .json(&notif)
+        .send()
+        .await;
+
+    // Wrap all list calls in a single timeout to prevent hanging on
+    // malicious/slow servers (mirrors the stdio transport behavior).
+    let list_timeout = std::time::Duration::from_secs(timeout_secs);
 
     // 3. List prompts (if capabilities.prompts)
     let prompts = if init.capabilities.prompts.is_some() {
-        list_call_http(client, url, &session, "prompts/list", "prompts")
-            .await
-            .unwrap_or_else(|e| {
-                warn!("prompts/list failed: {}", e);
-                Vec::new()
-            })
+        tokio::time::timeout(
+            list_timeout,
+            list_call_http(client, url, &session, "prompts/list", "prompts"),
+        )
+        .await
+        .unwrap_or_else(|_| {
+            warn!("prompts/list timed out after {}s", timeout_secs);
+            Ok(Vec::new())
+        })
+        .unwrap_or_else(|e| {
+            warn!("prompts/list failed: {}", e);
+            Vec::new()
+        })
     } else {
         Vec::new()
     };
 
     // 4. List resources (if capabilities.resources)
     let resources = if init.capabilities.resources.is_some() {
-        list_call_http(client, url, &session, "resources/list", "resources")
-            .await
-            .unwrap_or_else(|e| {
-                warn!("resources/list failed: {}", e);
-                Vec::new()
-            })
+        tokio::time::timeout(
+            list_timeout,
+            list_call_http(client, url, &session, "resources/list", "resources"),
+        )
+        .await
+        .unwrap_or_else(|_| {
+            warn!("resources/list timed out after {}s", timeout_secs);
+            Ok(Vec::new())
+        })
+        .unwrap_or_else(|e| {
+            warn!("resources/list failed: {}", e);
+            Vec::new()
+        })
     } else {
         Vec::new()
     };
 
     // 5. List resource templates (if capabilities.resources)
     let resource_templates = if init.capabilities.resources.is_some() {
-        list_call_http(
-            client,
-            url,
-            &session,
-            "resources/templates/list",
-            "resourceTemplates",
+        tokio::time::timeout(
+            list_timeout,
+            list_call_http(
+                client,
+                url,
+                &session,
+                "resources/templates/list",
+                "resourceTemplates",
+            ),
         )
         .await
+        .unwrap_or_else(|_| {
+            warn!("resources/templates/list timed out after {}s", timeout_secs);
+            Ok(Vec::new())
+        })
         .unwrap_or_else(|e| {
             warn!("resources/templates/list failed: {}", e);
             Vec::new()
@@ -532,12 +563,19 @@ async fn introspect_http(
 
     // 6. List tools (if capabilities.tools)
     let tools_raw = if init.capabilities.tools.is_some() {
-        list_call_http(client, url, &session, "tools/list", "tools")
-            .await
-            .unwrap_or_else(|e| {
-                warn!("tools/list failed: {}", e);
-                Vec::new()
-            })
+        tokio::time::timeout(
+            list_timeout,
+            list_call_http(client, url, &session, "tools/list", "tools"),
+        )
+        .await
+        .unwrap_or_else(|_| {
+            warn!("tools/list timed out after {}s", timeout_secs);
+            Ok(Vec::new())
+        })
+        .unwrap_or_else(|e| {
+            warn!("tools/list failed: {}", e);
+            Vec::new()
+        })
     } else {
         Vec::new()
     };
@@ -615,7 +653,7 @@ async fn discover_sse_endpoint(
     url: &str,
     timeout_secs: u64,
 ) -> Result<String, McpError> {
-    let resp = tokio::time::timeout(
+    let mut resp = tokio::time::timeout(
         std::time::Duration::from_secs(timeout_secs.min(10)),
         client.get(url).header("Accept", "text/event-stream").send(),
     )
@@ -630,26 +668,35 @@ async fn discover_sse_endpoint(
         )));
     }
 
-    let body = tokio::time::timeout(std::time::Duration::from_secs(10), resp.text())
-        .await
-        .map_err(|_| McpError::Timeout(10))?
-        .map_err(McpError::Http)?;
+    // Read the SSE stream incrementally (chunk by chunk) instead of waiting
+    // for EOF, since SSE connections are typically long-lived.
+    let sse_timeout = std::time::Duration::from_secs(timeout_secs.min(10));
+    let result = tokio::time::timeout(sse_timeout, async {
+        let mut buffer = String::new();
 
-    // Parse SSE events: look for "event: endpoint" or data containing a URL
-    for line in body.lines() {
-        let line = line.trim();
-        if let Some(data) = line.strip_prefix("data:") {
-            let data = data.trim();
-            // The server typically sends the endpoint URL as the data of an event
-            if !data.is_empty() && (data.starts_with('/') || data.starts_with("http")) {
-                return Ok(data.to_string());
+        while let Some(chunk) = resp.chunk().await.map_err(McpError::Http)? {
+            buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+            // Scan accumulated buffer for endpoint data
+            for line in buffer.lines() {
+                let line = line.trim();
+                if let Some(data) = line.strip_prefix("data:") {
+                    let data = data.trim();
+                    if !data.is_empty() && (data.starts_with('/') || data.starts_with("http")) {
+                        return Ok::<String, McpError>(data.to_string());
+                    }
+                }
             }
         }
-    }
 
-    Err(McpError::Other(
-        "no endpoint found in SSE stream".to_string(),
-    ))
+        Err(McpError::Other(
+            "no endpoint found in SSE stream".to_string(),
+        ))
+    })
+    .await
+    .map_err(|_| McpError::Timeout(timeout_secs.min(10)))?;
+
+    result
 }
 
 // ---------------------------------------------------------------------------

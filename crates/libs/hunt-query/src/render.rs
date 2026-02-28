@@ -146,7 +146,13 @@ fn truncate_str(s: &str, max_len: usize) -> &str {
     if s.len() <= max_len {
         s
     } else {
-        &s[..max_len]
+        // Find a char boundary at or before max_len to avoid panicking on
+        // multi-byte UTF-8 sequences.
+        let mut end = max_len;
+        while end > 0 && !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        &s[..end]
     }
 }
 
@@ -377,6 +383,22 @@ mod tests {
     #[test]
     fn truncate_str_long() {
         assert_eq!(truncate_str("hello world", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_str_multibyte_utf8() {
+        // "café" is 5 bytes (é = 2 bytes), truncating at byte 4 would
+        // land inside the multi-byte sequence and panic without the fix.
+        let result = truncate_str("café", 4);
+        assert_eq!(result, "caf");
+
+        // CJK characters are 3 bytes each
+        let result = truncate_str("日本語テスト", 5);
+        assert_eq!(result, "日"); // only first char (3 bytes) fits within 5
+
+        // Emoji (4 bytes each)
+        let result = truncate_str("🚀🎉", 5);
+        assert_eq!(result, "🚀"); // only first emoji (4 bytes) fits within 5
     }
 
     #[test]

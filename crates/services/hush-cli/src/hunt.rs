@@ -503,66 +503,8 @@ async fn cmd_hunt_scan(
         });
     }
 
-    // 4. Run local analysis on all collected tools
-    let all_tools: Vec<Tool> = scan_results
-        .iter()
-        .flat_map(|r| {
-            r.servers
-                .as_ref()
-                .into_iter()
-                .flat_map(|servers| {
-                    servers
-                        .iter()
-                        .filter_map(|s| s.signature.as_ref().map(|sig| sig.tools.clone()))
-                })
-                .flatten()
-        })
-        .collect();
-
-    let mut all_issues = analysis::check_descriptions_for_injection(&all_tools);
-    all_issues.extend(analysis::check_tool_name_shadowing(&all_tools, &[]));
-
-    // Distribute issues to the first scan result that has servers
-    if !all_issues.is_empty() {
-        if let Some(result) = scan_results.iter_mut().find(|r| r.servers.is_some()) {
-            result.issues.extend(all_issues);
-        }
-    }
-
-    // 5. Remote analysis (if --analysis-url)
-    if let Some(ref url) = args.analysis_url {
-        // Redact before upload
-        let mut redacted_results = scan_results.clone();
-        redact::redact_scan_results(&mut redacted_results);
-
-        let user_info = ScanUserInfo {
-            hostname: std::env::var("HOSTNAME")
-                .or_else(|_| std::env::var("COMPUTERNAME"))
-                .ok(),
-            username: std::env::var("USER")
-                .or_else(|_| std::env::var("USERNAME"))
-                .ok(),
-            identifier: None,
-            ip_address: None,
-            anonymous_identifier: None,
-        };
-
-        let client = AnalysisClient::new(url.clone(), args.skip_ssl_verify);
-        match client.verify(&mut redacted_results, &user_info).await {
-            Ok(()) => {
-                // Merge back issues and labels from the API response
-                for (orig, redacted) in scan_results.iter_mut().zip(redacted_results.iter()) {
-                    orig.issues.clone_from(&redacted.issues);
-                    orig.labels.clone_from(&redacted.labels);
-                }
-            }
-            Err(e) => {
-                let _ = writeln!(stderr, "Warning: analysis API error: {e}");
-            }
-        }
-    }
-
-    // 6. Skills scanning (if --skills)
+    // 4. Skills scanning (if --skills) — run before local analysis so that
+    //    skill-derived tools also get injection/shadowing checks.
     if let Some(ref skills_dirs) = args.skills {
         for dir in skills_dirs {
             let dir_path = PathBuf::from(dir);
@@ -602,6 +544,73 @@ async fn cmd_hunt_scan(
                         error: Some(ScanError::skill_scan_error(e.to_string())),
                     });
                 }
+            }
+        }
+    }
+
+    // 5. Run local analysis per scan result so issues are attributed to the
+    //    correct config rather than flattened into the first result.
+    for result in scan_results.iter_mut() {
+        let tools: Vec<Tool> = result
+            .servers
+            .as_ref()
+            .into_iter()
+            .flat_map(|servers| {
+                servers
+                    .iter()
+                    .filter_map(|s| s.signature.as_ref().map(|sig| sig.tools.clone()))
+            })
+            .flatten()
+            .collect();
+
+        if tools.is_empty() {
+            continue;
+        }
+
+        let mut issues = analysis::check_descriptions_for_injection(&tools);
+        issues.extend(analysis::check_tool_name_shadowing(&tools, &[]));
+        result.issues.extend(issues);
+    }
+
+    // 6. Remote analysis (if --analysis-url) — runs after local analysis so
+    //    that remote issues merge into (not replace) locally detected ones.
+    if let Some(ref url) = args.analysis_url {
+        // Redact before upload
+        let mut redacted_results = scan_results.clone();
+        redact::redact_scan_results(&mut redacted_results);
+
+        let user_info = ScanUserInfo {
+            hostname: std::env::var("HOSTNAME")
+                .or_else(|_| std::env::var("COMPUTERNAME"))
+                .ok(),
+            username: std::env::var("USER")
+                .or_else(|_| std::env::var("USERNAME"))
+                .ok(),
+            identifier: None,
+            ip_address: None,
+            anonymous_identifier: None,
+        };
+
+        let client = AnalysisClient::new(url.clone(), args.skip_ssl_verify);
+        match client.verify(&mut redacted_results, &user_info).await {
+            Ok(()) => {
+                // Merge remote issues/labels into the originals, preserving
+                // any locally detected issues that were already attached.
+                for (orig, redacted) in scan_results.iter_mut().zip(redacted_results.iter()) {
+                    for issue in &redacted.issues {
+                        if !orig.issues.iter().any(|i| {
+                            i.code == issue.code
+                                && i.message == issue.message
+                                && i.reference == issue.reference
+                        }) {
+                            orig.issues.push(issue.clone());
+                        }
+                    }
+                    orig.labels.clone_from(&redacted.labels);
+                }
+            }
+            Err(e) => {
+                let _ = writeln!(stderr, "Warning: analysis API error: {e}");
             }
         }
     }
@@ -703,11 +712,8 @@ fn compute_summary(results: &[ScanPathResult]) -> HuntScanSummary {
 }
 
 fn determine_exit_code(results: &[ScanPathResult], summary: &HuntScanSummary) -> ExitCode {
-    if summary.issues_found == 0 {
-        return ExitCode::Ok;
-    }
-
-    // Check for any failure-level errors in scan results
+    // Check for any failure-level errors in scan results (server startup
+    // failures, config parse errors, etc.)
     let has_failure = results.iter().any(|r| {
         r.error.as_ref().is_some_and(|e| e.is_failure)
             || r.servers.as_ref().is_some_and(|servers| {
@@ -719,8 +725,10 @@ fn determine_exit_code(results: &[ScanPathResult], summary: &HuntScanSummary) ->
 
     if has_failure {
         ExitCode::Fail
-    } else {
+    } else if summary.issues_found > 0 {
         ExitCode::Warn
+    } else {
+        ExitCode::Ok
     }
 }
 
