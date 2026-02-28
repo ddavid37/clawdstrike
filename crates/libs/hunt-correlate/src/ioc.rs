@@ -370,7 +370,7 @@ fn parse_csv_line(line: &str) -> Option<IocEntry> {
     }
 
     let ioc_type = if fields.len() > 1 && !fields[1].is_empty() {
-        parse_ioc_type_str(&fields[1])?
+        parse_ioc_type_str(&fields[1]).or_else(|| detect_ioc_type(&indicator))?
     } else {
         detect_ioc_type(&indicator)?
     };
@@ -775,6 +775,23 @@ mod tests {
 
         let db = IocDatabase::load_csv_file(&path).unwrap();
         assert_eq!(db.len(), 2);
+    }
+
+    #[test]
+    fn load_csv_file_unknown_type_falls_back_to_auto_detect() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("iocs_unknown_type.csv");
+        {
+            let mut f = std::fs::File::create(&path).unwrap();
+            writeln!(f, "indicator,type,description,source").unwrap();
+            writeln!(f, "{},hash,Malware hash,Feed1", "a".repeat(64)).unwrap();
+            writeln!(f, "evil.com,hostname,C2 domain,Feed2").unwrap();
+        }
+
+        let db = IocDatabase::load_csv_file(&path).unwrap();
+        assert_eq!(db.len(), 2);
+        assert_eq!(db.entries[0].ioc_type, IocType::Sha256);
+        assert_eq!(db.entries[1].ioc_type, IocType::Domain);
     }
 
     #[test]

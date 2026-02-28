@@ -364,6 +364,8 @@ async fn cmd_hunt_scan_inner(
         );
     }
 
+    let explicit_targets = args.target.is_some();
+
     // 2. Scan each config path
     let mut scan_results: Vec<ScanPathResult> = Vec::new();
 
@@ -382,6 +384,8 @@ async fn cmd_hunt_scan_inner(
                     } else {
                         ScanError::unknown_config(&err_str)
                     }
+                } else if explicit_targets {
+                    ScanError::parse_error(format!("config file not found: {}", path.display()))
                 } else {
                     ScanError::file_not_found(format!("{}", path.display()))
                 };
@@ -1071,22 +1075,34 @@ fn render_config(args: &HuntQueryArgs) -> RenderConfig {
 async fn fetch_events(
     args: &HuntQueryArgs,
     query: &HuntQuery,
-    stderr: &mut dyn Write,
-) -> Vec<TimelineEvent> {
-    if args.offline {
-        // Offline mode: local files only
-        let dirs = if let Some(ref local_dirs) = args.local_dir {
+    _stderr: &mut dyn Write,
+) -> std::result::Result<Vec<TimelineEvent>, String> {
+    let local_dirs = || {
+        if let Some(ref local_dirs) = args.local_dir {
             local_dirs.iter().map(PathBuf::from).collect()
         } else {
             hunt_query::local::default_local_dirs()
-        };
-        match hunt_query::local::query_local_files(query, &dirs, args.verify) {
-            Ok(events) => events,
-            Err(e) => {
-                let _ = writeln!(stderr, "Warning: local file query error: {e}");
-                Vec::new()
-            }
         }
+    };
+    let query_local = |dirs: &[PathBuf]| -> std::result::Result<Vec<TimelineEvent>, String> {
+        let readable_dirs: Vec<&PathBuf> = dirs.iter().filter(|dir| dir.is_dir()).collect();
+        if readable_dirs.is_empty() {
+            if dirs.is_empty() {
+                return Err("no local event directories found".to_string());
+            }
+            let listed = dirs
+                .iter()
+                .map(|dir| dir.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!("no readable local event directories: {listed}"));
+        }
+        hunt_query::local::query_local_files(query, dirs, args.verify)
+            .map_err(|e| format!("local file query error: {e}"))
+    };
+
+    if args.offline {
+        query_local(&local_dirs())
     } else {
         // Try NATS first, fallback to local
         match hunt_query::replay::replay_all(
@@ -1097,24 +1113,14 @@ async fn fetch_events(
         )
         .await
         {
-            Ok(events) => events,
+            Ok(events) => Ok(events),
             Err(e) => {
-                let _ = writeln!(
-                    stderr,
-                    "Warning: NATS connection failed ({e}), falling back to local files"
-                );
-                let dirs = if let Some(ref local_dirs) = args.local_dir {
-                    local_dirs.iter().map(PathBuf::from).collect()
-                } else {
-                    hunt_query::local::default_local_dirs()
-                };
-                match hunt_query::local::query_local_files(query, &dirs, args.verify) {
-                    Ok(events) => events,
-                    Err(e2) => {
-                        let _ = writeln!(stderr, "Warning: local file query error: {e2}");
-                        Vec::new()
-                    }
-                }
+                let dirs = local_dirs();
+                query_local(&dirs).map_err(|local_err| {
+                    format!(
+                        "NATS connection failed ({e}); fallback local query failed: {local_err}"
+                    )
+                })
             }
         }
     }
@@ -1152,7 +1158,20 @@ async fn cmd_hunt_query(
         .iter()
         .map(|s| s.to_string())
         .collect();
-    let events = fetch_events(&args, &query, stderr).await;
+    let events = match fetch_events(&args, &query, stderr).await {
+        Ok(events) => events,
+        Err(msg) => {
+            return emit_hunt_error(
+                is_json,
+                "hunt query",
+                stdout,
+                stderr,
+                "runtime_error",
+                &msg,
+                ExitCode::RuntimeError,
+            );
+        }
+    };
 
     if is_json {
         let output = HuntJsonOutput::<HuntQueryData> {
@@ -1219,7 +1238,20 @@ async fn cmd_hunt_timeline(
         .iter()
         .map(|s| s.to_string())
         .collect();
-    let events = fetch_events(&args, &query, stderr).await;
+    let events = match fetch_events(&args, &query, stderr).await {
+        Ok(events) => events,
+        Err(msg) => {
+            return emit_hunt_error(
+                is_json,
+                "hunt timeline",
+                stdout,
+                stderr,
+                "runtime_error",
+                &msg,
+                ExitCode::RuntimeError,
+            );
+        }
+    };
     let timeline = hunt_query::timeline::merge_timeline(events);
 
     if is_json {
@@ -1550,7 +1582,20 @@ async fn cmd_hunt_correlate(
         }
     };
 
-    let events = fetch_events(&query_args, &query, stderr).await;
+    let events = match fetch_events(&query_args, &query, stderr).await {
+        Ok(events) => events,
+        Err(msg) => {
+            return emit_hunt_error(
+                is_json,
+                "hunt correlate",
+                stdout,
+                stderr,
+                "runtime_error",
+                &msg,
+                ExitCode::RuntimeError,
+            );
+        }
+    };
     let events_count = events.len();
 
     // Merge into timeline for chronological ordering
@@ -1757,7 +1802,20 @@ async fn cmd_hunt_ioc(
         }
     };
 
-    let events = fetch_events(&query_args, &query, stderr).await;
+    let events = match fetch_events(&query_args, &query, stderr).await {
+        Ok(events) => events,
+        Err(msg) => {
+            return emit_hunt_error(
+                is_json,
+                "hunt ioc",
+                stdout,
+                stderr,
+                "runtime_error",
+                &msg,
+                ExitCode::RuntimeError,
+            );
+        }
+    };
     let events_count = events.len();
 
     // Match events against IOC database
@@ -2099,12 +2157,29 @@ mod tests {
         assert!(msg.contains("bogus"), "msg: {msg}");
     }
 
+    fn make_temp_dir(prefix: &str) -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("{prefix}-{nonce}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn make_invalid_local_events_dir(prefix: &str) -> PathBuf {
+        let dir = make_temp_dir(prefix);
+        std::fs::write(dir.join("bad.json"), "{not valid json").unwrap();
+        dir
+    }
+
     // -----------------------------------------------------------------------
     // Fix 4: JSONL output should not include text footer
     // -----------------------------------------------------------------------
 
     #[tokio::test]
     async fn hunt_query_jsonl_no_text_footer() {
+        let local_dir = make_temp_dir("hush-query-jsonl-local");
         let args = HuntQueryArgs {
             source: None,
             verdict: None,
@@ -2119,7 +2194,7 @@ mod tests {
             nats_url: "nats://localhost:4222".to_string(),
             nats_creds: None,
             offline: true,
-            local_dir: Some(vec!["/nonexistent".to_string()]),
+            local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
             verify: false,
             json: false,
             jsonl: true,
@@ -2135,10 +2210,12 @@ mod tests {
             !output.contains("events returned"),
             "JSONL output should not contain text footer, got: {output}"
         );
+        let _ = std::fs::remove_dir_all(&local_dir);
     }
 
     #[tokio::test]
     async fn hunt_query_text_mode_has_footer() {
+        let local_dir = make_temp_dir("hush-query-text-local");
         let args = HuntQueryArgs {
             source: None,
             verdict: None,
@@ -2153,7 +2230,7 @@ mod tests {
             nats_url: "nats://localhost:4222".to_string(),
             nats_creds: None,
             offline: true,
-            local_dir: Some(vec!["/nonexistent".to_string()]),
+            local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
             verify: false,
             json: false,
             jsonl: false,
@@ -2169,10 +2246,12 @@ mod tests {
             output.contains("events returned"),
             "Text output should contain footer, got: {output}"
         );
+        let _ = std::fs::remove_dir_all(&local_dir);
     }
 
     #[tokio::test]
     async fn hunt_timeline_jsonl_has_no_text_header() {
+        let local_dir = make_temp_dir("hush-timeline-jsonl-local");
         let args = HuntQueryArgs {
             source: None,
             verdict: None,
@@ -2187,7 +2266,7 @@ mod tests {
             nats_url: "nats://localhost:4222".to_string(),
             nats_creds: None,
             offline: true,
-            local_dir: Some(vec!["/nonexistent".to_string()]),
+            local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
             verify: false,
             json: false,
             jsonl: true,
@@ -2206,10 +2285,12 @@ mod tests {
             !output.contains("Sources:"),
             "JSONL timeline output must not include text header, got: {output}"
         );
+        let _ = std::fs::remove_dir_all(&local_dir);
     }
 
     #[tokio::test]
     async fn hunt_timeline_text_mode_includes_header() {
+        let local_dir = make_temp_dir("hush-timeline-text-local");
         let args = HuntQueryArgs {
             source: None,
             verdict: None,
@@ -2224,7 +2305,7 @@ mod tests {
             nats_url: "nats://localhost:4222".to_string(),
             nats_creds: None,
             offline: true,
-            local_dir: Some(vec!["/nonexistent".to_string()]),
+            local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
             verify: false,
             json: false,
             jsonl: false,
@@ -2239,11 +2320,210 @@ mod tests {
             output.contains("Events:"),
             "text timeline output should include header, got: {output}"
         );
+        let _ = std::fs::remove_dir_all(&local_dir);
+    }
+
+    #[tokio::test]
+    async fn hunt_query_fails_when_offline_local_source_is_unreadable() {
+        let local_dir = make_invalid_local_events_dir("hush-query-invalid-local");
+        let args = HuntQueryArgs {
+            source: None,
+            verdict: None,
+            start: None,
+            end: None,
+            action_type: None,
+            process: None,
+            namespace: None,
+            pod: None,
+            limit: 10,
+            nl: None,
+            nats_url: "nats://localhost:4222".to_string(),
+            nats_creds: None,
+            offline: true,
+            local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
+            verify: false,
+            json: false,
+            jsonl: false,
+            no_color: true,
+            entity: None,
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = cmd_hunt_query(args, &mut stdout, &mut stderr).await;
+        assert_eq!(code, ExitCode::RuntimeError);
+        assert!(
+            String::from_utf8_lossy(&stderr).contains("local file query error"),
+            "stderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let _ = std::fs::remove_dir_all(&local_dir);
+    }
+
+    #[tokio::test]
+    async fn hunt_timeline_fails_when_offline_local_source_is_unreadable() {
+        let local_dir = make_invalid_local_events_dir("hush-timeline-invalid-local");
+        let args = HuntQueryArgs {
+            source: None,
+            verdict: None,
+            start: None,
+            end: None,
+            action_type: None,
+            process: None,
+            namespace: None,
+            pod: None,
+            limit: 10,
+            nl: None,
+            nats_url: "nats://localhost:4222".to_string(),
+            nats_creds: None,
+            offline: true,
+            local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
+            verify: false,
+            json: false,
+            jsonl: false,
+            no_color: true,
+            entity: None,
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = cmd_hunt_timeline(args, &mut stdout, &mut stderr).await;
+        assert_eq!(code, ExitCode::RuntimeError);
+        assert!(
+            String::from_utf8_lossy(&stderr).contains("local file query error"),
+            "stderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let _ = std::fs::remove_dir_all(&local_dir);
+    }
+
+    #[tokio::test]
+    async fn hunt_correlate_fails_when_offline_local_source_is_unreadable() {
+        let tmp = make_temp_dir("hush-correlate-invalid-local");
+        let local_dir = tmp.join("events");
+        std::fs::create_dir_all(&local_dir).unwrap();
+        std::fs::write(local_dir.join("bad.json"), "{not valid json").unwrap();
+        let rule_path = tmp.join("rule.yaml");
+        std::fs::write(
+            &rule_path,
+            r#"
+schema: clawdstrike.hunt.correlation.v1
+name: "Test"
+severity: low
+description: "test"
+window: 1m
+conditions:
+  - source: receipt
+    bind: evt
+output:
+  title: "test"
+  evidence:
+    - evt
+"#,
+        )
+        .unwrap();
+
+        let args = HuntCorrelateArgs {
+            rules: vec![rule_path.to_string_lossy().to_string()],
+            source: None,
+            verdict: None,
+            start: None,
+            end: None,
+            action_type: None,
+            process: None,
+            namespace: None,
+            pod: None,
+            limit: 10,
+            nl: None,
+            nats_url: "nats://localhost:4222".to_string(),
+            nats_creds: None,
+            offline: true,
+            local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
+            verify: false,
+            json: false,
+            jsonl: false,
+            no_color: true,
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = cmd_hunt_correlate(args, &mut stdout, &mut stderr).await;
+        assert_eq!(code, ExitCode::RuntimeError);
+        assert!(
+            String::from_utf8_lossy(&stderr).contains("local file query error"),
+            "stderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn hunt_ioc_fails_when_offline_local_source_is_unreadable() {
+        let tmp = make_temp_dir("hush-ioc-invalid-local");
+        let local_dir = tmp.join("events");
+        std::fs::create_dir_all(&local_dir).unwrap();
+        std::fs::write(local_dir.join("bad.json"), "{not valid json").unwrap();
+        let feed_path = tmp.join("feed.txt");
+        std::fs::write(&feed_path, "evil.com\n").unwrap();
+
+        let args = HuntIocArgs {
+            feed: Some(vec![feed_path.to_string_lossy().to_string()]),
+            stix: None,
+            source: None,
+            start: None,
+            end: None,
+            limit: 10,
+            nats_url: "nats://localhost:4222".to_string(),
+            nats_creds: None,
+            offline: true,
+            local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
+            verify: false,
+            json: false,
+            no_color: true,
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = cmd_hunt_ioc(args, &mut stdout, &mut stderr).await;
+        assert_eq!(code, ExitCode::RuntimeError);
+        assert!(
+            String::from_utf8_lossy(&stderr).contains("local file query error"),
+            "stderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     // -----------------------------------------------------------------------
     // Fix 2: Policy load failure returns error exit code
     // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn hunt_scan_fails_when_explicit_target_path_is_missing() {
+        let args = HuntScanArgs {
+            target: Some(vec!["/nonexistent-mcp-config.json".to_string()]),
+            package: None,
+            skills: None,
+            query: None,
+            policy: None,
+            ruleset: None,
+            timeout: 1,
+            include_builtin: false,
+            json: true,
+            analysis_url: None,
+            skip_ssl_verify: false,
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let exit_code = cmd_hunt_scan(args, &mut stdout, &mut stderr).await;
+        assert_eq!(exit_code, ExitCode::Fail);
+        assert!(
+            stderr.is_empty(),
+            "JSON mode should keep errors in payload, stderr was: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let payload: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(
+            payload["data"]["scan_results"][0]["error"]["category"],
+            serde_json::Value::String("parse_error".to_string())
+        );
+    }
 
     #[tokio::test]
     async fn hunt_scan_fails_on_invalid_policy_path() {

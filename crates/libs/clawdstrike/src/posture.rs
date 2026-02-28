@@ -542,7 +542,22 @@ impl PostureBudgetCounter {
 }
 
 pub fn parse_duration(value: &str) -> Option<Duration> {
-    hush_core::parse_human_duration(value)?.to_std().ok()
+    if value.len() < 2 {
+        return None;
+    }
+
+    let (num, suffix) = value.split_at(value.len() - 1);
+    if num.is_empty() || !num.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+
+    let magnitude = num.parse::<u64>().ok()?;
+    match suffix {
+        "s" => Some(Duration::from_secs(magnitude)),
+        "m" => Some(Duration::from_secs(magnitude.saturating_mul(60))),
+        "h" => Some(Duration::from_secs(magnitude.saturating_mul(60 * 60))),
+        _ => None,
+    }
 }
 
 pub fn elapsed_since_timestamp(timestamp: &str, now: DateTime<Utc>) -> Option<Duration> {
@@ -560,10 +575,25 @@ pub fn elapsed_since_timestamp(timestamp: &str, now: DateTime<Utc>) -> Option<Du
 #[cfg(test)]
 mod tests {
     use super::parse_duration;
+    use std::time::Duration;
 
     #[test]
-    fn parse_duration_rejects_overflow_values() {
-        let huge = format!("{}h", i64::MAX);
-        assert_eq!(parse_duration(&huge), None);
+    fn parse_duration_accepts_supported_units() {
+        assert_eq!(parse_duration("15s"), Some(Duration::from_secs(15)));
+        assert_eq!(parse_duration("2m"), Some(Duration::from_secs(120)));
+        assert_eq!(parse_duration("3h"), Some(Duration::from_secs(10_800)));
+    }
+
+    #[test]
+    fn parse_duration_rejects_unsupported_units() {
+        assert_eq!(parse_duration("1d"), None);
+        assert_eq!(parse_duration("5min"), None);
+        assert_eq!(parse_duration("2hours"), None);
+    }
+
+    #[test]
+    fn parse_duration_saturates_large_values() {
+        let huge = format!("{}h", u64::MAX);
+        assert_eq!(parse_duration(&huge), Some(Duration::from_secs(u64::MAX)));
     }
 }
