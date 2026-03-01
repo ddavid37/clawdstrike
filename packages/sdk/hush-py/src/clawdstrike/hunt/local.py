@@ -23,6 +23,13 @@ from clawdstrike.hunt.types import (
 logger = logging.getLogger(__name__)
 
 
+def _normalize_utc(dt: datetime) -> datetime:
+    """Normalize datetimes to timezone-aware UTC for safe comparisons."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def default_local_dirs() -> list[str]:
     """Return default directories to search for local envelopes.
 
@@ -118,13 +125,15 @@ def hunt(
         if td is not None:
             start_dt = datetime.now(tz=timezone.utc) - td
     elif isinstance(start, datetime):
-        start_dt = start
+        start_dt = _normalize_utc(start)
+
+    end_dt = _normalize_utc(end) if isinstance(end, datetime) else None
 
     query = HuntQuery(
         sources=sources,
         verdict=verdict,
         start=start_dt,
-        end=end,
+        end=end_dt,
         action_type=action_type,
         process=process,
         namespace=namespace,

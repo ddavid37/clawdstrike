@@ -1,6 +1,7 @@
 """Tests for clawdstrike.hunt.local."""
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 from clawdstrike.hunt.local import default_local_dirs, hunt, query_local_files
@@ -240,4 +241,34 @@ class TestHuntFunction:
         (tmp_path / "recent.json").write_text(json.dumps(envelope))
 
         events = hunt(start="1h", dirs=[str(tmp_path)])
+        assert len(events) == 1
+
+    def test_normalizes_naive_start_datetime(self, tmp_path: Path) -> None:
+        envelope = _make_envelope(
+            "clawdstrike.sdr.fact.receipt.v1",
+            "2025-01-15T10:00:00Z",
+            "allow",
+            "bounded event",
+        )
+        (tmp_path / "bounded.json").write_text(json.dumps(envelope))
+
+        events = hunt(
+            start=datetime(2025, 1, 15, 9, 59, 59),
+            dirs=[str(tmp_path)],
+        )
+        assert len(events) == 1
+
+    def test_normalizes_naive_end_datetime(self, tmp_path: Path) -> None:
+        envelope = _make_envelope(
+            "clawdstrike.sdr.fact.receipt.v1",
+            "2025-01-15T10:00:00Z",
+            "allow",
+            "bounded event",
+        )
+        (tmp_path / "bounded.json").write_text(json.dumps(envelope))
+
+        events = hunt(
+            end=datetime(2025, 1, 15, 10, 0, 1),
+            dirs=[str(tmp_path)],
+        )
         assert len(events) == 1

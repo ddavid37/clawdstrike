@@ -214,13 +214,7 @@ export class SanitizationStream {
         this.buffer = "";
         return fullScan;
       }
-      // Force progress if input has no token boundaries and has grown beyond
-      // the target buffer window.
-      if (this.buffer.length > this.bufferSize + carry) {
-        cutoff = this.buffer.length - carry;
-      } else {
-        return null;
-      }
+      return null;
     }
 
     if (cutoff <= 0) {
@@ -238,6 +232,8 @@ export class SanitizationStream {
         return i + 1;
       }
     }
-    return cutoff;
+    // If there is no boundary before cutoff, defer flush. Emitting here can
+    // split potential secret tokens and leak prefixes across chunk boundaries.
+    return 0;
   }
 }

@@ -24,7 +24,15 @@ export async function buildNatsConnectOptions(
   let creds: Uint8Array;
   try {
     creds = await readFile(natsCreds);
-  } catch {
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code !== "ENOENT") {
+      throw new WatchError(
+        `Failed to read natsCreds file '${natsCreds}': ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
     creds = new TextEncoder().encode(natsCreds);
   }
 

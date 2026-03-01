@@ -42,6 +42,64 @@ interface RawRule {
   };
 }
 
+function toOptionalString(
+  value: unknown,
+  field: string,
+  conditionIndex: number,
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new ParseError(
+      `condition ${conditionIndex} has invalid '${field}' (expected string)`
+    );
+  }
+  return value;
+}
+
+function parseCondition(raw: unknown, conditionIndex: number): RuleCondition {
+  if (!raw || typeof raw !== "object") {
+    throw new ParseError(`condition ${conditionIndex} must be an object`);
+  }
+
+  const record = raw as Record<string, unknown>;
+  const sourceRaw = record.source;
+  const sourceList = Array.isArray(sourceRaw) ? sourceRaw : [sourceRaw];
+  if (
+    sourceList.length === 0 ||
+    !sourceList.every((s) => typeof s === "string" && s.trim().length > 0)
+  ) {
+    throw new ParseError(
+      `condition ${conditionIndex} has invalid 'source' (expected string or array of strings)`
+    );
+  }
+  const source = sourceList as string[];
+
+  const bind = record.bind;
+  if (typeof bind !== "string" || bind.trim().length === 0) {
+    throw new ParseError(`condition ${conditionIndex} has invalid 'bind' (expected string)`);
+  }
+
+  const withinRaw = toOptionalString(record.within, "within", conditionIndex);
+  let withinMs: number | undefined;
+  if (withinRaw !== undefined) {
+    withinMs = parseHumanDuration(withinRaw);
+    if (withinMs === undefined) {
+      throw new ParseError(`invalid duration: ${withinRaw}`);
+    }
+  }
+
+  return {
+    source,
+    actionType: toOptionalString(record.action_type, "action_type", conditionIndex),
+    verdict: toOptionalString(record.verdict, "verdict", conditionIndex),
+    targetPattern: toOptionalString(record.target_pattern, "target_pattern", conditionIndex),
+    notTargetPattern: toOptionalString(record.not_target_pattern, "not_target_pattern", conditionIndex),
+    after: toOptionalString(record.after, "after", conditionIndex),
+    within: withinMs,
+    bind,
+  };
+}
+
 function parseSeverity(s: string): RuleSeverity {
   const lower = s.toLowerCase();
   if (lower === "low" || lower === "medium" || lower === "high" || lower === "critical") {
@@ -126,28 +184,22 @@ export function parseRule(yamlStr: string): CorrelationRule {
     throw new ParseError(`invalid duration: ${raw.window}`);
   }
 
-  const rawConditions = raw.sequence ? desugarSequence(raw.sequence) : (raw.conditions || []);
-
-  const conditions: RuleCondition[] = rawConditions.map((c: RawCondition) => {
-    const source = Array.isArray(c.source) ? c.source : [c.source];
-    let withinMs: number | undefined;
-    if (c.within !== undefined) {
-      withinMs = parseHumanDuration(c.within);
-      if (withinMs === undefined) {
-        throw new ParseError(`invalid duration: ${c.within}`);
-      }
+  let rawConditions: unknown[];
+  if (raw.sequence !== undefined) {
+    if (!Array.isArray(raw.sequence)) {
+      throw new ParseError("'sequence' must be an array");
     }
-    return {
-      source,
-      actionType: c.action_type,
-      verdict: c.verdict,
-      targetPattern: c.target_pattern,
-      notTargetPattern: c.not_target_pattern,
-      after: c.after,
-      within: withinMs,
-      bind: c.bind,
-    };
-  });
+    rawConditions = desugarSequence(raw.sequence);
+  } else if (raw.conditions !== undefined) {
+    if (!Array.isArray(raw.conditions)) {
+      throw new ParseError("'conditions' must be an array");
+    }
+    rawConditions = raw.conditions;
+  } else {
+    rawConditions = [];
+  }
+
+  const conditions: RuleCondition[] = rawConditions.map((c, index) => parseCondition(c, index));
 
   const rule: CorrelationRule = {
     schema: raw.schema,

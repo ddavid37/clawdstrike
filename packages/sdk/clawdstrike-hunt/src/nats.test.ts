@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildNatsConnectOptions } from "./nats.js";
@@ -50,6 +50,21 @@ describe("buildNatsConnectOptions", () => {
   it("throws WatchError when credsAuthenticator is unavailable", async () => {
     await expect(
       buildNatsConnectOptions({}, "nats://localhost:4222", "whatever"),
+    ).rejects.toBeInstanceOf(WatchError);
+  });
+
+  it("throws WatchError when natsCreds points to unreadable path kind", async () => {
+    const dirPath = join(tmpdir(), `hunt-nats-creds-dir-${Date.now()}`);
+    await mkdir(dirPath);
+
+    await expect(
+      buildNatsConnectOptions(
+        {
+          credsAuthenticator: () => "auth",
+        },
+        "nats://localhost:4222",
+        dirPath,
+      ),
     ).rejects.toBeInstanceOf(WatchError);
   });
 });

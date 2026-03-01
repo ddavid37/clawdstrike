@@ -132,6 +132,57 @@ output:
     expect(() => parseRule(yaml)).toThrow("at least one condition");
   });
 
+  it("rejects non-object condition entries", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "Bad condition entry"
+severity: low
+description: "test"
+window: 10s
+conditions:
+  - 123
+output:
+  title: "test"
+  evidence: []
+`;
+    expect(() => parseRule(yaml)).toThrow("condition 0 must be an object");
+  });
+
+  it("rejects condition missing source", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "Missing source"
+severity: low
+description: "test"
+window: 10s
+conditions:
+  - bind: evt
+output:
+  title: "test"
+  evidence:
+    - evt
+`;
+    expect(() => parseRule(yaml)).toThrow("condition 0 has invalid 'source'");
+  });
+
+  it("rejects condition source arrays containing non-strings", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "Bad source array"
+severity: low
+description: "test"
+window: 10s
+conditions:
+  - source: [receipt, 123]
+    bind: evt
+output:
+  title: "test"
+  evidence:
+    - evt
+`;
+    expect(() => parseRule(yaml)).toThrow("condition 0 has invalid 'source'");
+  });
+
   it("rejects invalid after reference", () => {
     const yaml = `
 schema: clawdstrike.hunt.correlation.v1
