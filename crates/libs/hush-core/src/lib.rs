@@ -45,6 +45,7 @@
 //! ```
 
 pub mod canonical;
+pub mod duration;
 pub mod error;
 pub mod hashing;
 pub mod merkle;
@@ -54,6 +55,7 @@ pub mod signing;
 pub mod tpm;
 
 pub use canonical::canonicalize as canonicalize_json;
+pub use duration::parse_human_duration;
 pub use error::{Error, Result};
 pub use hashing::{keccak256, keccak256_hex, sha256, sha256_hex, Hash};
 pub use merkle::{MerkleProof, MerkleTree};

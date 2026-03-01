@@ -1,0 +1,35 @@
+[package]
+name = "hunt-scan"
+description = "MCP agent scanning and vulnerability detection for clawdstrike hunt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hush-core.workspace = true
+clawdstrike.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+glob.workspace = true
+dirs.workspace = true
+regex.workspace = true
+url.workspace = true
+sha2.workspace = true
+shell-words = "1.1"
+json5 = "0.4"
+md-5 = "0.10"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
+
+[lints]
+workspace = true

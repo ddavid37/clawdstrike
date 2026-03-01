@@ -40,6 +40,7 @@ use hush_core::{keccak256, sha256, Hash, Keypair, MerkleProof, MerkleTree, Signe
 mod canonical_commandline;
 mod guard_cli;
 mod guard_report_json;
+mod hunt;
 mod hush_run;
 mod mirror;
 mod pkg_cli;
@@ -252,6 +253,12 @@ enum Commands {
     Daemon {
         #[command(subcommand)]
         command: DaemonCommands,
+    },
+
+    /// Threat hunting for AI agent ecosystems
+    Hunt {
+        #[command(subcommand)]
+        command: HuntCommands,
     },
 
     /// Generate shell completions
@@ -828,6 +835,371 @@ enum DaemonCommands {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum HuntCommands {
+    /// Scan local AI agent MCP configurations for vulnerabilities
+    Scan {
+        /// Specific client name or config path to scan (default: auto-discover)
+        #[arg(long)]
+        target: Option<Vec<String>>,
+
+        /// Scan a package directly (npm:pkg, pypi:pkg, oci:image)
+        #[arg(long)]
+        package: Option<Vec<String>>,
+
+        /// Scan agent skills directories
+        #[arg(long)]
+        skills: Option<Vec<String>>,
+
+        /// Natural language or keyword query to filter results
+        #[arg(long)]
+        query: Option<String>,
+
+        /// Policy file to evaluate discovered tools against
+        #[arg(long)]
+        policy: Option<String>,
+
+        /// Built-in ruleset to evaluate against
+        #[arg(long)]
+        ruleset: Option<String>,
+
+        /// MCP server connection timeout in seconds
+        #[arg(long, default_value_t = 10)]
+        timeout: u64,
+
+        /// Include built-in IDE tools in results
+        #[arg(long)]
+        include_builtin: bool,
+
+        /// Emit machine-readable JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Analysis API URL for remote vulnerability detection
+        #[arg(long)]
+        analysis_url: Option<String>,
+
+        /// Skip SSL certificate verification for analysis API
+        #[arg(long)]
+        skip_ssl_verify: bool,
+    },
+
+    /// Query spine envelopes for security events
+    Query {
+        /// Envelope source filters (e.g. agent name, node)
+        #[arg(long)]
+        source: Option<Vec<String>>,
+
+        /// Filter by verdict (allow, deny, abstain)
+        #[arg(long)]
+        verdict: Option<String>,
+
+        /// Start of time range (RFC 3339 or relative like "1h")
+        #[arg(long)]
+        start: Option<String>,
+
+        /// End of time range (RFC 3339 or relative)
+        #[arg(long)]
+        end: Option<String>,
+
+        /// Filter by action type (file, network, shell, mcp, etc.)
+        #[arg(long)]
+        action_type: Option<String>,
+
+        /// Filter by process name or path
+        #[arg(long)]
+        process: Option<String>,
+
+        /// Filter by Kubernetes namespace
+        #[arg(long)]
+        namespace: Option<String>,
+
+        /// Filter by Kubernetes pod
+        #[arg(long)]
+        pod: Option<String>,
+
+        /// Maximum number of results
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+
+        /// Natural language query (translated to filters)
+        #[arg(long)]
+        nl: Option<String>,
+
+        /// NATS server URL
+        #[arg(long, default_value = "nats://localhost:4222")]
+        nats_url: String,
+
+        /// Path to NATS credentials file
+        #[arg(long)]
+        nats_creds: Option<String>,
+
+        /// Offline mode: query only local directories
+        #[arg(long)]
+        offline: bool,
+
+        /// Local directories to search for exported envelopes
+        #[arg(long)]
+        local_dir: Option<Vec<String>>,
+
+        /// Verify envelope signatures
+        #[arg(long)]
+        verify: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Output as JSON Lines (one object per line)
+        #[arg(long)]
+        jsonl: bool,
+
+        /// Disable colored output
+        #[arg(long)]
+        no_color: bool,
+    },
+
+    /// Reconstruct an activity timeline from spine envelopes
+    Timeline {
+        /// Envelope source filters
+        #[arg(long)]
+        source: Option<Vec<String>>,
+
+        /// Filter by verdict
+        #[arg(long)]
+        verdict: Option<String>,
+
+        /// Start of time range
+        #[arg(long)]
+        start: Option<String>,
+
+        /// End of time range
+        #[arg(long)]
+        end: Option<String>,
+
+        /// Filter by action type
+        #[arg(long)]
+        action_type: Option<String>,
+
+        /// Filter by process name or path
+        #[arg(long)]
+        process: Option<String>,
+
+        /// Filter by Kubernetes namespace
+        #[arg(long)]
+        namespace: Option<String>,
+
+        /// Filter by Kubernetes pod
+        #[arg(long)]
+        pod: Option<String>,
+
+        /// Maximum number of results
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+
+        /// Natural language query
+        #[arg(long)]
+        nl: Option<String>,
+
+        /// NATS server URL
+        #[arg(long, default_value = "nats://localhost:4222")]
+        nats_url: String,
+
+        /// Path to NATS credentials file
+        #[arg(long)]
+        nats_creds: Option<String>,
+
+        /// Offline mode
+        #[arg(long)]
+        offline: bool,
+
+        /// Local directories to search
+        #[arg(long)]
+        local_dir: Option<Vec<String>>,
+
+        /// Verify envelope signatures
+        #[arg(long)]
+        verify: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Output as JSON Lines
+        #[arg(long)]
+        jsonl: bool,
+
+        /// Disable colored output
+        #[arg(long)]
+        no_color: bool,
+
+        /// Filter timeline by entity (agent, user, service)
+        #[arg(long)]
+        entity: Option<String>,
+    },
+
+    /// Run correlation rules against spine envelopes in real-time watch mode
+    Watch {
+        /// Correlation rule YAML files
+        #[arg(long)]
+        rules: Vec<String>,
+
+        /// NATS server URL
+        #[arg(long, default_value = "nats://localhost:4222")]
+        nats_url: String,
+
+        /// Path to NATS credentials file
+        #[arg(long)]
+        nats_creds: Option<String>,
+
+        /// Maximum sliding window duration (e.g. "5m", "1h")
+        #[arg(long, default_value = "5m")]
+        max_window: String,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Disable colored output
+        #[arg(long)]
+        no_color: bool,
+    },
+
+    /// Run correlation rules against queried spine envelopes (batch mode)
+    Correlate {
+        /// Correlation rule YAML files
+        #[arg(long)]
+        rules: Vec<String>,
+
+        /// Envelope source filters
+        #[arg(long)]
+        source: Option<Vec<String>>,
+
+        /// Filter by verdict (allow, deny, abstain)
+        #[arg(long)]
+        verdict: Option<String>,
+
+        /// Start of time range (RFC 3339 or relative like "1h")
+        #[arg(long)]
+        start: Option<String>,
+
+        /// End of time range (RFC 3339 or relative)
+        #[arg(long)]
+        end: Option<String>,
+
+        /// Filter by action type
+        #[arg(long)]
+        action_type: Option<String>,
+
+        /// Filter by process name or path
+        #[arg(long)]
+        process: Option<String>,
+
+        /// Filter by Kubernetes namespace
+        #[arg(long)]
+        namespace: Option<String>,
+
+        /// Filter by Kubernetes pod
+        #[arg(long)]
+        pod: Option<String>,
+
+        /// Maximum number of results
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+
+        /// Natural language query (translated to filters)
+        #[arg(long)]
+        nl: Option<String>,
+
+        /// NATS server URL
+        #[arg(long, default_value = "nats://localhost:4222")]
+        nats_url: String,
+
+        /// Path to NATS credentials file
+        #[arg(long)]
+        nats_creds: Option<String>,
+
+        /// Offline mode: query only local directories
+        #[arg(long)]
+        offline: bool,
+
+        /// Local directories to search for exported envelopes
+        #[arg(long)]
+        local_dir: Option<Vec<String>>,
+
+        /// Verify envelope signatures
+        #[arg(long)]
+        verify: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Output as JSON Lines (one object per line)
+        #[arg(long)]
+        jsonl: bool,
+
+        /// Disable colored output
+        #[arg(long)]
+        no_color: bool,
+    },
+
+    /// Match spine envelopes against IOC feeds
+    Ioc {
+        /// IOC feed files (CSV, text)
+        #[arg(long)]
+        feed: Option<Vec<String>>,
+
+        /// STIX 2.1 JSON bundle files
+        #[arg(long)]
+        stix: Option<Vec<String>>,
+
+        /// Envelope source filters
+        #[arg(long)]
+        source: Option<Vec<String>>,
+
+        /// Start of time range (RFC 3339 or relative like "1h")
+        #[arg(long)]
+        start: Option<String>,
+
+        /// End of time range (RFC 3339 or relative)
+        #[arg(long)]
+        end: Option<String>,
+
+        /// Maximum number of results
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+
+        /// NATS server URL
+        #[arg(long, default_value = "nats://localhost:4222")]
+        nats_url: String,
+
+        /// Path to NATS credentials file
+        #[arg(long)]
+        nats_creds: Option<String>,
+
+        /// Offline mode: query only local directories
+        #[arg(long)]
+        offline: bool,
+
+        /// Local directories to search for exported envelopes
+        #[arg(long)]
+        local_dir: Option<Vec<String>>,
+
+        /// Verify envelope signatures
+        #[arg(long)]
+        verify: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Disable colored output
+        #[arg(long)]
+        no_color: bool,
+    },
+}
+
 #[tokio::main]
 async fn main() {
     let cli = match Cli::try_parse() {
@@ -1083,6 +1455,10 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
                 ExitCode::RuntimeError.as_i32()
             }
         },
+
+        Commands::Hunt { command } => {
+            hunt::cmd_hunt(command, &remote_extends, stdout, stderr).await
+        }
     }
 }
 

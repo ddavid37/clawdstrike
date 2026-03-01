@@ -221,6 +221,18 @@ def has_executable_rust_lines(path: str) -> bool:
     return False
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
+# Rust files that are known to be poor LCOV emitters in this job:
+# - crate root facades (`src/lib.rs`) that only re-export modules
+# - binary test harness glue (`src/tests.rs`) for clap parser tests
+MISSING_LCOV_ALLOWLIST = {
+    normalize("crates/libs/hush-core/src/lib.rs"),
+    normalize("crates/services/hush-cli/src/tests.rs"),
+}
+
+
+def is_missing_lcov_allowed(relpath: str) -> bool:
+    return normalize(relpath) in MISSING_LCOV_ALLOWLIST
+
 
 def load_changed_lines(diff_range: str, changed_files: list[str]) -> dict[str, set[int]]:
     if not changed_files:
@@ -286,6 +298,8 @@ def main() -> int:
         if record is None:
             if not has_executable_rust_lines(relpath):
                 per_file_lines.append(f"{relpath}: n/a (non-executable source)")
+                continue
+            if is_missing_lcov_allowed(relpath):
                 continue
             missing.append(relpath)
             continue

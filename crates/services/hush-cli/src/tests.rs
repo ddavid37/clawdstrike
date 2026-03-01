@@ -2945,7 +2945,11 @@ mod remote_extends_contract {
                         Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
                             continue;
                         }
-                        Err(_) => break,
+                        Err(_) => {
+                            // Keep the harness alive through transient accept errors so
+                            // chained fetches in the same test don't fail spuriously.
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
                     }
                 }
             });
@@ -2982,12 +2986,39 @@ mod remote_extends_contract {
         stream: &mut TcpStream,
         routes: &HashMap<String, Vec<u8>>,
     ) -> std::io::Result<()> {
-        stream.set_read_timeout(Some(Duration::from_millis(200)))?;
-        stream.set_write_timeout(Some(Duration::from_millis(200)))?;
+        stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+        stream.set_write_timeout(Some(Duration::from_secs(2)))?;
 
-        let mut buf = [0u8; 4096];
-        let n = stream.read(&mut buf)?;
-        let req = std::str::from_utf8(&buf[..n]).unwrap_or("");
+        // Read until the request headers are complete. Under heavy
+        // instrumentation, a single read is not always sufficient.
+        let mut buf = Vec::with_capacity(4096);
+        let mut chunk = [0u8; 1024];
+        loop {
+            match stream.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    buf.extend_from_slice(&chunk[..n]);
+                    if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                    if buf.len() >= 64 * 1024 {
+                        break;
+                    }
+                }
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    if buf.is_empty() {
+                        return Err(e);
+                    }
+                    break;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        let req = std::str::from_utf8(&buf).unwrap_or("");
         let mut lines = req.lines();
         let first = lines.next().unwrap_or("");
         let mut parts = first.split_whitespace();
@@ -3509,5 +3540,732 @@ mod keygen_file_permissions {
         assert_eq!(mode, 0o600);
 
         let _ = std::fs::remove_file(path);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Hunt Correlate / Watch / IOC CLI tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod hunt_cli_parsing {
+    use clap::Parser;
+
+    use crate::{Cli, Commands, HuntCommands};
+
+    #[test]
+    fn hunt_watch_parses_with_defaults() {
+        let cli = Cli::parse_from(["hush", "hunt", "watch", "--rules", "rule.yaml"]);
+
+        match cli.command {
+            Commands::Hunt { command } => match command {
+                HuntCommands::Watch {
+                    rules,
+                    nats_url,
+                    nats_creds,
+                    max_window,
+                    json,
+                    no_color,
+                } => {
+                    assert_eq!(rules, vec!["rule.yaml"]);
+                    assert_eq!(nats_url, "nats://localhost:4222");
+                    assert!(nats_creds.is_none());
+                    assert_eq!(max_window, "5m");
+                    assert!(!json);
+                    assert!(!no_color);
+                }
+                _ => panic!("Expected Watch command"),
+            },
+            _ => panic!("Expected Hunt command"),
+        }
+    }
+
+    #[test]
+    fn hunt_watch_parses_multiple_rules() {
+        let cli = Cli::parse_from([
+            "hush",
+            "hunt",
+            "watch",
+            "--rules",
+            "r1.yaml",
+            "--rules",
+            "r2.yaml",
+            "--json",
+            "--no-color",
+            "--max-window",
+            "10m",
+        ]);
+
+        match cli.command {
+            Commands::Hunt { command } => match command {
+                HuntCommands::Watch {
+                    rules,
+                    max_window,
+                    json,
+                    no_color,
+                    ..
+                } => {
+                    assert_eq!(rules, vec!["r1.yaml", "r2.yaml"]);
+                    assert_eq!(max_window, "10m");
+                    assert!(json);
+                    assert!(no_color);
+                }
+                _ => panic!("Expected Watch command"),
+            },
+            _ => panic!("Expected Hunt command"),
+        }
+    }
+
+    #[test]
+    fn hunt_correlate_parses_with_query_flags() {
+        let cli = Cli::parse_from([
+            "hush",
+            "hunt",
+            "correlate",
+            "--rules",
+            "exfil.yaml",
+            "--source",
+            "receipt",
+            "--verdict",
+            "allow",
+            "--start",
+            "2025-01-01T00:00:00Z",
+            "--limit",
+            "500",
+            "--offline",
+            "--json",
+        ]);
+
+        match cli.command {
+            Commands::Hunt { command } => match command {
+                HuntCommands::Correlate {
+                    rules,
+                    source,
+                    verdict,
+                    start,
+                    limit,
+                    offline,
+                    json,
+                    ..
+                } => {
+                    assert_eq!(rules, vec!["exfil.yaml"]);
+                    assert_eq!(source, Some(vec!["receipt".to_string()]));
+                    assert_eq!(verdict, Some("allow".to_string()));
+                    assert_eq!(start, Some("2025-01-01T00:00:00Z".to_string()));
+                    assert_eq!(limit, 500);
+                    assert!(offline);
+                    assert!(json);
+                }
+                _ => panic!("Expected Correlate command"),
+            },
+            _ => panic!("Expected Hunt command"),
+        }
+    }
+
+    #[test]
+    fn hunt_correlate_defaults() {
+        let cli = Cli::parse_from(["hush", "hunt", "correlate", "--rules", "r.yaml"]);
+
+        match cli.command {
+            Commands::Hunt { command } => match command {
+                HuntCommands::Correlate {
+                    rules,
+                    source,
+                    verdict,
+                    start,
+                    end,
+                    limit,
+                    offline,
+                    json,
+                    jsonl,
+                    no_color,
+                    ..
+                } => {
+                    assert_eq!(rules, vec!["r.yaml"]);
+                    assert!(source.is_none());
+                    assert!(verdict.is_none());
+                    assert!(start.is_none());
+                    assert!(end.is_none());
+                    assert_eq!(limit, 100);
+                    assert!(!offline);
+                    assert!(!json);
+                    assert!(!jsonl);
+                    assert!(!no_color);
+                }
+                _ => panic!("Expected Correlate command"),
+            },
+            _ => panic!("Expected Hunt command"),
+        }
+    }
+
+    #[test]
+    fn hunt_ioc_parses_feed_and_stix() {
+        let cli = Cli::parse_from([
+            "hush",
+            "hunt",
+            "ioc",
+            "--feed",
+            "iocs.txt",
+            "--feed",
+            "iocs.csv",
+            "--stix",
+            "bundle.json",
+            "--offline",
+            "--json",
+        ]);
+
+        match cli.command {
+            Commands::Hunt { command } => match command {
+                HuntCommands::Ioc {
+                    feed,
+                    stix,
+                    offline,
+                    json,
+                    ..
+                } => {
+                    assert_eq!(
+                        feed,
+                        Some(vec!["iocs.txt".to_string(), "iocs.csv".to_string()])
+                    );
+                    assert_eq!(stix, Some(vec!["bundle.json".to_string()]));
+                    assert!(offline);
+                    assert!(json);
+                }
+                _ => panic!("Expected Ioc command"),
+            },
+            _ => panic!("Expected Hunt command"),
+        }
+    }
+
+    #[test]
+    fn hunt_ioc_defaults() {
+        let cli = Cli::parse_from(["hush", "hunt", "ioc", "--feed", "iocs.txt"]);
+
+        match cli.command {
+            Commands::Hunt { command } => match command {
+                HuntCommands::Ioc {
+                    feed,
+                    stix,
+                    source,
+                    start,
+                    end,
+                    limit,
+                    offline,
+                    json,
+                    no_color,
+                    ..
+                } => {
+                    assert_eq!(feed, Some(vec!["iocs.txt".to_string()]));
+                    assert!(stix.is_none());
+                    assert!(source.is_none());
+                    assert!(start.is_none());
+                    assert!(end.is_none());
+                    assert_eq!(limit, 100);
+                    assert!(!offline);
+                    assert!(!json);
+                    assert!(!no_color);
+                }
+                _ => panic!("Expected Ioc command"),
+            },
+            _ => panic!("Expected Hunt command"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod hunt_contract {
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use crate::remote_extends::RemoteExtendsConfig;
+    use crate::{ExitCode, HuntCommands};
+
+    fn temp_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("hush_hunt_{name}_{nanos}"))
+    }
+
+    #[tokio::test]
+    async fn correlate_no_rules_returns_invalid_args() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+
+        let code = crate::hunt::cmd_hunt(
+            HuntCommands::Correlate {
+                rules: vec![],
+                source: None,
+                verdict: None,
+                start: None,
+                end: None,
+                action_type: None,
+                process: None,
+                namespace: None,
+                pod: None,
+                limit: 100,
+                nl: None,
+                nats_url: "nats://localhost:4222".to_string(),
+                nats_creds: None,
+                offline: true,
+                local_dir: None,
+                verify: false,
+                json: true,
+                jsonl: false,
+                no_color: true,
+            },
+            &remote,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::InvalidArgs.as_i32());
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
+        assert_eq!(v["command"].as_str(), Some("hunt correlate"));
+        assert_eq!(
+            v["exit_code"].as_i64(),
+            Some(ExitCode::InvalidArgs.as_i32() as i64)
+        );
+        assert!(v["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("No correlation rule files"));
+    }
+
+    #[tokio::test]
+    async fn correlate_with_rules_offline_empty_events_returns_ok() {
+        let rule_path = temp_path("rule.yaml");
+        std::fs::write(
+            &rule_path,
+            r#"
+schema: clawdstrike.hunt.correlation.v1
+name: "Test Rule"
+severity: low
+description: "test"
+window: 5m
+conditions:
+  - source: receipt
+    action_type: file
+    verdict: deny
+    bind: evt
+output:
+  title: "test alert"
+  evidence:
+    - evt
+"#,
+        )
+        .expect("write rule");
+
+        // Create empty local dir for offline mode
+        let local_dir = temp_path("events_dir");
+        std::fs::create_dir_all(&local_dir).expect("create events dir");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+
+        let code = crate::hunt::cmd_hunt(
+            HuntCommands::Correlate {
+                rules: vec![rule_path.to_string_lossy().to_string()],
+                source: None,
+                verdict: None,
+                start: None,
+                end: None,
+                action_type: None,
+                process: None,
+                namespace: None,
+                pod: None,
+                limit: 100,
+                nl: None,
+                nats_url: "nats://localhost:4222".to_string(),
+                nats_creds: None,
+                offline: true,
+                local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
+                verify: false,
+                json: true,
+                jsonl: false,
+                no_color: true,
+            },
+            &remote,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        let _ = std::fs::remove_file(&rule_path);
+        let _ = std::fs::remove_dir_all(&local_dir);
+
+        assert_eq!(code, ExitCode::Ok.as_i32());
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
+        assert_eq!(v["version"].as_u64(), Some(1));
+        assert_eq!(v["command"].as_str(), Some("hunt correlate"));
+        assert_eq!(v["exit_code"].as_i64(), Some(0));
+        assert!(v["error"].is_null());
+
+        let data = &v["data"];
+        assert!(data["alerts"].as_array().unwrap().is_empty());
+        assert_eq!(data["summary"]["events_processed"].as_u64(), Some(0));
+        assert_eq!(data["summary"]["alerts_generated"].as_u64(), Some(0));
+        assert_eq!(data["summary"]["rules_loaded"].as_u64(), Some(1));
+    }
+
+    #[tokio::test]
+    async fn correlate_bad_rule_path_returns_config_error() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+
+        let code = crate::hunt::cmd_hunt(
+            HuntCommands::Correlate {
+                rules: vec!["/nonexistent/rule.yaml".to_string()],
+                source: None,
+                verdict: None,
+                start: None,
+                end: None,
+                action_type: None,
+                process: None,
+                namespace: None,
+                pod: None,
+                limit: 100,
+                nl: None,
+                nats_url: "nats://localhost:4222".to_string(),
+                nats_creds: None,
+                offline: true,
+                local_dir: None,
+                verify: false,
+                json: true,
+                jsonl: false,
+                no_color: true,
+            },
+            &remote,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::ConfigError.as_i32());
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
+        assert_eq!(v["command"].as_str(), Some("hunt correlate"));
+        assert_eq!(
+            v["exit_code"].as_i64(),
+            Some(ExitCode::ConfigError.as_i32() as i64)
+        );
+        assert!(v["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Failed to load rules"));
+    }
+
+    #[tokio::test]
+    async fn ioc_no_feeds_returns_invalid_args() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+
+        let code = crate::hunt::cmd_hunt(
+            HuntCommands::Ioc {
+                feed: None,
+                stix: None,
+                source: None,
+                start: None,
+                end: None,
+                limit: 100,
+                nats_url: "nats://localhost:4222".to_string(),
+                nats_creds: None,
+                offline: true,
+                local_dir: None,
+                verify: false,
+                json: true,
+                no_color: true,
+            },
+            &remote,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::InvalidArgs.as_i32());
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
+        assert_eq!(v["command"].as_str(), Some("hunt ioc"));
+        assert_eq!(
+            v["exit_code"].as_i64(),
+            Some(ExitCode::InvalidArgs.as_i32() as i64)
+        );
+        assert!(v["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("No IOC feeds specified"));
+    }
+
+    #[tokio::test]
+    async fn ioc_with_feed_offline_empty_events_returns_ok() {
+        // Create a simple text IOC feed
+        let feed_path = temp_path("iocs.txt");
+        std::fs::write(&feed_path, "# IOC feed\nevil.com\n10.0.0.99\n").expect("write feed");
+
+        // Create empty local dir for offline mode
+        let local_dir = temp_path("ioc_events_dir");
+        std::fs::create_dir_all(&local_dir).expect("create events dir");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+
+        let code = crate::hunt::cmd_hunt(
+            HuntCommands::Ioc {
+                feed: Some(vec![feed_path.to_string_lossy().to_string()]),
+                stix: None,
+                source: None,
+                start: None,
+                end: None,
+                limit: 100,
+                nats_url: "nats://localhost:4222".to_string(),
+                nats_creds: None,
+                offline: true,
+                local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
+                verify: false,
+                json: true,
+                no_color: true,
+            },
+            &remote,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        let _ = std::fs::remove_file(&feed_path);
+        let _ = std::fs::remove_dir_all(&local_dir);
+
+        assert_eq!(code, ExitCode::Ok.as_i32());
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
+        assert_eq!(v["version"].as_u64(), Some(1));
+        assert_eq!(v["command"].as_str(), Some("hunt ioc"));
+        assert_eq!(v["exit_code"].as_i64(), Some(0));
+        assert!(v["error"].is_null());
+
+        let data = &v["data"];
+        assert!(data["matches"].as_array().unwrap().is_empty());
+        assert_eq!(data["summary"]["events_scanned"].as_u64(), Some(0));
+        assert_eq!(data["summary"]["iocs_loaded"].as_u64(), Some(2));
+        assert_eq!(data["summary"]["matches_found"].as_u64(), Some(0));
+    }
+
+    #[tokio::test]
+    async fn ioc_bad_feed_path_returns_config_error() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+
+        let code = crate::hunt::cmd_hunt(
+            HuntCommands::Ioc {
+                feed: Some(vec!["/nonexistent/iocs.txt".to_string()]),
+                stix: None,
+                source: None,
+                start: None,
+                end: None,
+                limit: 100,
+                nats_url: "nats://localhost:4222".to_string(),
+                nats_creds: None,
+                offline: true,
+                local_dir: None,
+                verify: false,
+                json: true,
+                no_color: true,
+            },
+            &remote,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::ConfigError.as_i32());
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
+        assert_eq!(v["command"].as_str(), Some("hunt ioc"));
+        assert!(v["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Failed to load IOC feed"));
+    }
+
+    #[tokio::test]
+    async fn ioc_stix_bundle_offline_returns_ok() {
+        let sha = "a".repeat(64);
+        let bundle = serde_json::json!({
+            "type": "bundle",
+            "id": "bundle--1",
+            "objects": [
+                {
+                    "type": "indicator",
+                    "id": "indicator--1",
+                    "name": "Bad hash",
+                    "pattern": format!("[file:hashes.SHA-256 = '{}']", sha),
+                    "pattern_type": "stix",
+                    "valid_from": "2025-01-01T00:00:00Z"
+                }
+            ]
+        });
+        let stix_path = temp_path("stix.json");
+        std::fs::write(&stix_path, serde_json::to_string(&bundle).unwrap()).expect("write stix");
+
+        let local_dir = temp_path("stix_events_dir");
+        std::fs::create_dir_all(&local_dir).expect("create events dir");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+
+        let code = crate::hunt::cmd_hunt(
+            HuntCommands::Ioc {
+                feed: None,
+                stix: Some(vec![stix_path.to_string_lossy().to_string()]),
+                source: None,
+                start: None,
+                end: None,
+                limit: 100,
+                nats_url: "nats://localhost:4222".to_string(),
+                nats_creds: None,
+                offline: true,
+                local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
+                verify: false,
+                json: true,
+                no_color: true,
+            },
+            &remote,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        let _ = std::fs::remove_file(&stix_path);
+        let _ = std::fs::remove_dir_all(&local_dir);
+
+        assert_eq!(code, ExitCode::Ok.as_i32());
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
+        assert_eq!(v["command"].as_str(), Some("hunt ioc"));
+        assert_eq!(v["data"]["summary"]["iocs_loaded"].as_u64(), Some(1));
+    }
+
+    #[tokio::test]
+    async fn watch_no_rules_returns_invalid_args() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+
+        let code = crate::hunt::cmd_hunt(
+            HuntCommands::Watch {
+                rules: vec![],
+                nats_url: "nats://localhost:4222".to_string(),
+                nats_creds: None,
+                max_window: "5m".to_string(),
+                json: true,
+                no_color: true,
+            },
+            &remote,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::InvalidArgs.as_i32());
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
+        assert_eq!(v["command"].as_str(), Some("hunt watch"));
+        assert!(v["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("No correlation rule files"));
+    }
+
+    #[tokio::test]
+    async fn watch_bad_max_window_returns_invalid_args() {
+        let rule_path = temp_path("watch_rule.yaml");
+        std::fs::write(
+            &rule_path,
+            r#"
+schema: clawdstrike.hunt.correlation.v1
+name: "Test"
+severity: low
+description: "test"
+window: 1m
+conditions:
+  - source: receipt
+    bind: evt
+output:
+  title: "test"
+  evidence:
+    - evt
+"#,
+        )
+        .expect("write rule");
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+
+        let code = crate::hunt::cmd_hunt(
+            HuntCommands::Watch {
+                rules: vec![rule_path.to_string_lossy().to_string()],
+                nats_url: "nats://localhost:4222".to_string(),
+                nats_creds: None,
+                max_window: "invalid".to_string(),
+                json: true,
+                no_color: true,
+            },
+            &remote,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        let _ = std::fs::remove_file(&rule_path);
+
+        assert_eq!(code, ExitCode::InvalidArgs.as_i32());
+        let v: serde_json::Value = serde_json::from_slice(&out).expect("valid JSON output");
+        assert_eq!(v["command"].as_str(), Some("hunt watch"));
+        assert!(v["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Invalid --max-window"));
+    }
+
+    #[tokio::test]
+    async fn correlate_text_output_no_rules() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let remote = RemoteExtendsConfig::disabled();
+
+        let code = crate::hunt::cmd_hunt(
+            HuntCommands::Correlate {
+                rules: vec![],
+                source: None,
+                verdict: None,
+                start: None,
+                end: None,
+                action_type: None,
+                process: None,
+                namespace: None,
+                pod: None,
+                limit: 100,
+                nl: None,
+                nats_url: "nats://localhost:4222".to_string(),
+                nats_creds: None,
+                offline: true,
+                local_dir: None,
+                verify: false,
+                json: false,
+                jsonl: false,
+                no_color: true,
+            },
+            &remote,
+            &mut out,
+            &mut err,
+        )
+        .await;
+
+        assert_eq!(code, ExitCode::InvalidArgs.as_i32());
+        let stderr_str = String::from_utf8(err).unwrap();
+        assert!(stderr_str.contains("No correlation rule files"));
     }
 }

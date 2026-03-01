@@ -26,7 +26,11 @@ tools:
 
     expect(policy.version).toBe("1.1.0");
     expect(warnings.join("\n")).toMatch(/legacy OpenClaw policy/i);
-    expect((policy as any).legacy_openclaw).toBeTruthy();
+    expect((policy as any).legacy_openclaw).toMatchObject({
+      version: "clawdstrike-v1.0",
+      egress: { mode: "allowlist", allowed_domains: ["api.github.com"] },
+      tools: { denied: ["shell_exec"] },
+    });
     expect((policy.guards as any)?.forbidden_path?.patterns).toEqual(["~/.ssh"]);
     expect((policy.guards as any)?.egress_allowlist?.default_action).toBe("block");
     expect((policy.guards as any)?.mcp_tool?.block).toEqual(["shell_exec"]);

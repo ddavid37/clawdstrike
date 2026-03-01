@@ -1,4 +1,9 @@
-import type { HttpClient, HttpRequestPolicy, HttpResponse } from "./types.js";
+import {
+  AsyncGuardError,
+  type HttpClient,
+  type HttpRequestPolicy,
+  type HttpResponse,
+} from "./types.js";
 
 export class FetchHttpClient implements HttpClient {
   async requestJson(
@@ -37,6 +42,10 @@ export class FetchHttpClient implements HttpClient {
     const controller = signal ? anySignal([signal, timeoutController.signal]) : timeoutController;
     const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
     timeoutId.unref?.();
+    let timedOut = false;
+    timeoutController.signal.addEventListener("abort", () => {
+      timedOut = true;
+    });
 
     try {
       const resp = await fetch(parsed.toString(), {
@@ -49,19 +58,23 @@ export class FetchHttpClient implements HttpClient {
 
       // Treat redirects as errors (policy: no redirects).
       if (resp.status >= 300 && resp.status <= 399) {
-        throw new Error(`redirect not allowed (status ${resp.status})`);
+        throw new AsyncGuardError(
+          "http",
+          `redirect not allowed (status ${resp.status})`,
+          resp.status,
+        );
       }
 
       const buf = Buffer.from(await resp.arrayBuffer());
       if (buf.byteLength > maxResponseSizeBytes) {
-        throw new Error(`response too large`);
+        throw new AsyncGuardError("http", "response too large", resp.status);
       }
 
       let json: unknown;
       try {
         json = JSON.parse(buf.toString("utf8"));
       } catch (err) {
-        throw new Error(`parse json: ${String(err)}`);
+        throw new AsyncGuardError("parse", `parse json: ${String(err)}`, resp.status);
       }
 
       const durationMs = Date.now() - start;
@@ -78,8 +91,18 @@ export class FetchHttpClient implements HttpClient {
     } catch (err) {
       // Intentionally do not include headers/query params in error strings.
       const durationMs = Date.now() - start;
+      if (err instanceof AsyncGuardError) {
+        throw new AsyncGuardError(
+          err.kind,
+          `${guard}: http error (${durationMs}ms): ${err.message}`,
+          err.status,
+        );
+      }
+      if (timedOut || isAbortError(err)) {
+        throw new AsyncGuardError("timeout", `${guard}: http timeout (${durationMs}ms)`);
+      }
       const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`${guard}: http error (${durationMs}ms): ${message}`);
+      throw new AsyncGuardError("http", `${guard}: http error (${durationMs}ms): ${message}`);
     } finally {
       clearTimeout(timeoutId);
     }
@@ -90,12 +113,12 @@ function enforceUrlPolicy(url: URL, method: string, policy: HttpRequestPolicy): 
   const hostname = url.hostname;
   const allowedHosts = policy.allowedHosts ?? [];
   if (allowedHosts.length > 0 && !allowedHosts.includes(hostname)) {
-    throw new Error(`host not allowed: ${hostname}`);
+    throw new AsyncGuardError("other", `host not allowed: ${hostname}`);
   }
 
   const allowedMethods = (policy.allowedMethods ?? []).map((m) => m.toUpperCase());
   if (allowedMethods.length > 0 && !allowedMethods.includes(method.toUpperCase())) {
-    throw new Error(`http method not allowed: ${method}`);
+    throw new AsyncGuardError("other", `http method not allowed: ${method}`);
   }
 
   const scheme = url.protocol.replace(":", "");
@@ -104,7 +127,7 @@ function enforceUrlPolicy(url: URL, method: string, policy: HttpRequestPolicy): 
   const allowInsecure = policy.allowInsecureHttpForLoopback !== false;
   if (scheme === "http" && allowInsecure && isLoopbackHost(hostname)) return;
 
-  throw new Error(`unsupported url scheme: ${scheme}`);
+  throw new AsyncGuardError("other", `unsupported url scheme: ${scheme}`);
 }
 
 function isLoopbackHost(hostname: string): boolean {
@@ -127,4 +150,11 @@ function anySignal(signals: AbortSignal[]): AbortController {
     s.addEventListener("abort", onAbort, { once: true });
   }
   return controller;
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.message.toLowerCase().includes("aborted"))
+  );
 }
