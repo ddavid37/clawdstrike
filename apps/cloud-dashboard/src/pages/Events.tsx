@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useSharedSSE } from "../context/SSEContext";
-import { NoiseGrain, Stamp } from "../components/ui";
-import { EventDetailDrawer } from "../components/events/EventDetailDrawer";
 import { EventBookmarks } from "../components/events/EventBookmarks";
+import { EventDetailDrawer } from "../components/events/EventDetailDrawer";
+import { NoiseGrain, Stamp } from "../components/ui";
+import { useSharedSSE } from "../context/SSEContext";
 import type { SSEEvent } from "../hooks/useSSE";
 
 const DISPLAY_LIMIT = 100;
@@ -21,7 +21,10 @@ export function Events(_props: { windowId?: string }) {
   const hasMore = !showAll && events.length > DISPLAY_LIMIT;
 
   return (
-    <div className="space-y-5" style={{ padding: 20, color: "#e2e8f0", overflow: "auto", height: "100%" }}>
+    <div
+      className="space-y-5"
+      style={{ padding: 20, color: "#e2e8f0", overflow: "auto", height: "100%" }}
+    >
       {/* Status bar */}
       <div className="flex items-center gap-3">
         <span
@@ -63,30 +66,39 @@ export function Events(_props: { windowId?: string }) {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr>
-                  {["\u2606", "Type", "Action", "Target", "Guard", "Decision", "Session", "Agent", "Time"].map(
-                    (label) => (
-                      <th
-                        key={label}
-                        className="font-mono px-4 py-3 text-[11px]"
-                        style={{
-                          textTransform: "uppercase",
-                          letterSpacing: "0.12em",
-                          color: "rgba(154,167,181,0.6)",
-                          fontWeight: 500,
-                          width: label === "\u2606" ? "40px" : undefined,
-                        }}
-                      >
-                        {label}
-                      </th>
-                    ),
-                  )}
+                  {[
+                    "\u2606",
+                    "Type",
+                    "Action",
+                    "Target",
+                    "Guard",
+                    "Decision",
+                    "Session",
+                    "Agent",
+                    "Time",
+                  ].map((label) => (
+                    <th
+                      key={label}
+                      className="font-mono px-4 py-3 text-[11px]"
+                      style={{
+                        textTransform: "uppercase",
+                        letterSpacing: "0.12em",
+                        color: "rgba(154,167,181,0.6)",
+                        fontWeight: 500,
+                        width: label === "\u2606" ? "40px" : undefined,
+                      }}
+                    >
+                      {label}
+                    </th>
+                  ))}
                 </tr>
                 <tr>
                   <td colSpan={9} className="p-0">
                     <div
                       style={{
                         height: 1,
-                        background: "linear-gradient(90deg, transparent 0%, rgba(27,34,48,0.6) 30%, rgba(27,34,48,0.6) 70%, transparent 100%)",
+                        background:
+                          "linear-gradient(90deg, transparent 0%, rgba(27,34,48,0.6) 30%, rgba(27,34,48,0.6) 70%, transparent 100%)",
                       }}
                     />
                   </td>
@@ -157,7 +169,12 @@ function EventTableRow({ event, onClick }: { event: SSEEvent; onClick: () => voi
       onClick={onClick}
       tabIndex={0}
       role="button"
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
     >
       {/* Bookmark */}
       <td className="whitespace-nowrap px-4 py-2.5" style={{ width: "40px" }}>
@@ -189,10 +206,7 @@ function EventTableRow({ event, onClick }: { event: SSEEvent; onClick: () => voi
       </td>
 
       {/* Action */}
-      <td
-        className="font-mono whitespace-nowrap px-4 py-2.5 text-sm"
-        style={{ color: "#cbd5e1" }}
-      >
+      <td className="font-mono whitespace-nowrap px-4 py-2.5 text-sm" style={{ color: "#cbd5e1" }}>
         {event.action_type ?? "-"}
       </td>
 

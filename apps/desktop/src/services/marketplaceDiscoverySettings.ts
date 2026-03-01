@@ -48,7 +48,8 @@ function normalizeTopic(value: unknown): string | null {
 }
 
 function normalizeSettings(value: unknown): MarketplaceDiscoverySettings {
-  if (typeof value !== "object" || value === null) return { ...DEFAULT_MARKETPLACE_DISCOVERY_SETTINGS };
+  if (typeof value !== "object" || value === null)
+    return { ...DEFAULT_MARKETPLACE_DISCOVERY_SETTINGS };
   const v = value as Record<string, unknown>;
   return {
     enabled: Boolean(v.enabled),
@@ -93,4 +94,3 @@ export function parseMarketplaceDiscoveryBootstrapInput(input: string): string[]
 export function formatMarketplaceDiscoveryBootstrapInput(bootstrap: string[]): string {
   return normalizeBootstrap(bootstrap).join("\n");
 }
-

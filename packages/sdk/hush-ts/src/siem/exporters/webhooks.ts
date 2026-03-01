@@ -1,4 +1,4 @@
-import type { ExportError, ExportResult, ExporterConfig } from "../framework";
+import type { ExportError, ExporterConfig, ExportResult } from "../framework";
 import { BaseExporter, SchemaFormat } from "../framework";
 import { readResponseBody } from "../http";
 import type { SecurityEvent, SecuritySeverity } from "../types";
@@ -97,7 +97,10 @@ export class WebhookExporter extends BaseExporter {
   }
 
   private shouldNotify(event: SecurityEvent): boolean {
-    if (this.cfg.minSeverity && severityOrd(event.decision.severity) < severityOrd(this.cfg.minSeverity)) {
+    if (
+      this.cfg.minSeverity &&
+      severityOrd(event.decision.severity) < severityOrd(this.cfg.minSeverity)
+    ) {
       return false;
     }
 
@@ -126,7 +129,9 @@ export class WebhookExporter extends BaseExporter {
   }
 
   private async postSlack(cfg: SlackConfig, event: SecurityEvent): Promise<void> {
-    const title = event.decision.allowed ? "Clawdstrike security event (allowed)" : "Clawdstrike security event (blocked)";
+    const title = event.decision.allowed
+      ? "Clawdstrike security event (allowed)"
+      : "Clawdstrike security event (blocked)";
     const payload = {
       text: `${title}: ${event.decision.guard} (${event.decision.severity})`,
       blocks: [
@@ -143,7 +148,12 @@ export class WebhookExporter extends BaseExporter {
         },
         {
           type: "context",
-          elements: [{ type: "mrkdwn", text: `Session: \`${event.session.id}\`  Event: \`${event.event_id}\`` }],
+          elements: [
+            {
+              type: "mrkdwn",
+              text: `Session: \`${event.session.id}\`  Event: \`${event.event_id}\``,
+            },
+          ],
         },
       ],
     };
@@ -164,9 +174,13 @@ export class WebhookExporter extends BaseExporter {
     const useAdaptiveCards = formatting.useAdaptiveCards ?? true;
     const themeColor = formatting.themeColor ?? "D32F2F";
 
-    const title = event.decision.allowed ? "Clawdstrike security event (allowed)" : "Clawdstrike security event (blocked)";
+    const title = event.decision.allowed
+      ? "Clawdstrike security event (allowed)"
+      : "Clawdstrike security event (blocked)";
 
-    const payload = useAdaptiveCards ? this.teamsAdaptiveCard(title, themeColor, event) : this.teamsMessageCard(title, themeColor, event);
+    const payload = useAdaptiveCards
+      ? this.teamsAdaptiveCard(title, themeColor, event)
+      : this.teamsMessageCard(title, themeColor, event);
 
     const response = await fetch(cfg.webhookUrl, {
       method: "POST",
@@ -179,7 +193,11 @@ export class WebhookExporter extends BaseExporter {
     }
   }
 
-  private teamsMessageCard(title: string, themeColor: string, event: SecurityEvent): Record<string, unknown> {
+  private teamsMessageCard(
+    title: string,
+    themeColor: string,
+    event: SecurityEvent,
+  ): Record<string, unknown> {
     return {
       "@type": "MessageCard",
       "@context": "http://schema.org/extensions",
@@ -200,7 +218,11 @@ export class WebhookExporter extends BaseExporter {
     };
   }
 
-  private teamsAdaptiveCard(title: string, themeColor: string, event: SecurityEvent): Record<string, unknown> {
+  private teamsAdaptiveCard(
+    title: string,
+    themeColor: string,
+    event: SecurityEvent,
+  ): Record<string, unknown> {
     return {
       type: "message",
       attachments: [
@@ -211,7 +233,13 @@ export class WebhookExporter extends BaseExporter {
             type: "AdaptiveCard",
             version: "1.5",
             body: [
-              { type: "TextBlock", text: title, weight: "Bolder", size: "Large", color: "Attention" },
+              {
+                type: "TextBlock",
+                text: title,
+                weight: "Bolder",
+                size: "Large",
+                color: "Attention",
+              },
               {
                 type: "FactSet",
                 facts: [
@@ -243,7 +271,9 @@ export class WebhookExporter extends BaseExporter {
       if (cfg.auth.type === "bearer") {
         headers.Authorization = `Bearer ${cfg.auth.token}`;
       } else if (cfg.auth.type === "basic") {
-        const token = Buffer.from(`${cfg.auth.username}:${cfg.auth.password ?? ""}`).toString("base64");
+        const token = Buffer.from(`${cfg.auth.username}:${cfg.auth.password ?? ""}`).toString(
+          "base64",
+        );
         headers.Authorization = `Basic ${token}`;
       } else if (cfg.auth.type === "header") {
         headers[cfg.auth.headerName] = cfg.auth.headerValue;
@@ -270,7 +300,7 @@ export class WebhookExporter extends BaseExporter {
   private renderGenericBody(
     template: string | undefined,
     event: SecurityEvent,
-    contentType: string
+    contentType: string,
   ): string | Uint8Array {
     if (!template) {
       return JSON.stringify(event);

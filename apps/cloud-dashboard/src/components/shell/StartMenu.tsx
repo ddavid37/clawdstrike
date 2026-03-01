@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react";
 import { useDesktopOS } from "@backbay/glia-desktop";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { desktopIcons, PROCESS_ICONS } from "../../state/processRegistry";
 
 export function StartMenu() {
@@ -134,8 +134,7 @@ export function StartMenu() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    background:
-                      "linear-gradient(180deg, var(--graphite), var(--obsidian))",
+                    background: "linear-gradient(180deg, var(--graphite), var(--obsidian))",
                     border: "1px solid var(--gold-edge)",
                     borderRadius: 8,
                     flexShrink: 0,

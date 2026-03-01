@@ -14,7 +14,7 @@ export class StixPatternParser {
   private mapToIndicatorType(
     objectType: string,
     property: string,
-    value: string
+    value: string,
   ): { type: ParsedIndicator["type"]; value: string } | null {
     switch (objectType) {
       case "domain-name":
@@ -107,4 +107,3 @@ function extractHostFromUrl(url: string): string | null {
     return out ? out : null;
   }
 }
-

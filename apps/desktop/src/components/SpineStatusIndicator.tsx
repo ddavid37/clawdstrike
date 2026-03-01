@@ -3,9 +3,12 @@
  *
  * Shared across ThreatRadarView, AttackGraphView, and NetworkMapView.
  */
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  getSpineConnectionStatus,
+  type SpineConnectionStatusDetail,
+} from "@/services/spineEventSource";
 import type { SpineConnectionStatus } from "@/types/spine";
-import { getSpineConnectionStatus, type SpineConnectionStatusDetail } from "@/services/spineEventSource";
 
 const STATUS_CONFIG: Record<SpineConnectionStatus, { color: string; label: string }> = {
   connected: { color: "bg-green-500", label: "Live" },
@@ -23,10 +26,14 @@ export function SpineStatusIndicator({ status }: { status: SpineConnectionStatus
   useEffect(() => {
     if (!showDetail) return;
     // Fetch detailed status when tooltip opens
-    getSpineConnectionStatus().then(setDetail).catch(() => {});
+    getSpineConnectionStatus()
+      .then(setDetail)
+      .catch(() => {});
     // Poll while open
     timerRef.current = window.setInterval(() => {
-      getSpineConnectionStatus().then(setDetail).catch(() => {});
+      getSpineConnectionStatus()
+        .then(setDetail)
+        .catch(() => {});
     }, 3000);
     return () => {
       if (timerRef.current !== null) clearInterval(timerRef.current);

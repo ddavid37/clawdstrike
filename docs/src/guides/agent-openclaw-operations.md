@@ -26,6 +26,8 @@ This runbook documents day-2 operations for the **agent-owned OpenClaw architect
   - `apps/desktop/src/context/OpenClawAgentProvider.tsx`
 - Local auth token file: `~/.config/clawdstrike/agent-local-token`
 
+`POST /api/v1/openclaw/request` is policy-gated through the same local enforcement path as `/api/v1/agent/policy-check` (fail-closed when hushd is unreachable and enforcement is enabled).
+
 ## Prerequisites
 
 1. Start Clawdstrike Agent.

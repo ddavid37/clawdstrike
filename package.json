@@ -1,5 +1,9 @@
 {
   "private": true,
+  "scripts": {
+    "format": "biome check --write",
+    "format:check": "biome check"
+  },
   "workspaces": [
     "packages/adapters/clawdstrike-adapter-core",
     "packages/sdk/hush-ts",
@@ -14,5 +18,8 @@
     "packages/adapters/clawdstrike-hush-cli-engine",
     "packages/adapters/clawdstrike-hushd-engine",
     "apps/cloud-dashboard"
-  ]
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4"
+  }
 }

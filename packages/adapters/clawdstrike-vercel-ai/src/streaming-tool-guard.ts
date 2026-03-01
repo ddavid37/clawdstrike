@@ -1,5 +1,5 @@
-import { createSecurityContext } from '@clawdstrike/adapter-core';
-import type { AdapterConfig, SecurityContext, ToolInterceptor } from '@clawdstrike/adapter-core';
+import type { AdapterConfig, SecurityContext, ToolInterceptor } from "@clawdstrike/adapter-core";
+import { createSecurityContext } from "@clawdstrike/adapter-core";
 
 export type StreamChunk = Record<string, unknown> & {
   type?: string;
@@ -34,8 +34,8 @@ export class StreamingToolGuard {
     this.interceptor = interceptor;
     this.config = options.config ?? {};
     this.context =
-      options.context
-      ?? createSecurityContext({ metadata: { framework: 'vercel-ai', streaming: true } });
+      options.context ??
+      createSecurityContext({ metadata: { framework: "vercel-ai", streaming: true } });
     this.getContext = options.getContext;
   }
 
@@ -45,40 +45,40 @@ export class StreamingToolGuard {
       return chunk;
     }
 
-    if (type === 'tool-call-start' || type === 'tool-call-streaming-start') {
+    if (type === "tool-call-start" || type === "tool-call-streaming-start") {
       const toolCallId = chunk.toolCallId;
       const toolName = chunk.toolName ?? (chunk as any).name;
-      if (typeof toolCallId === 'string') {
-        const name = typeof toolName === 'string' ? toolName : 'unknown';
-        this.pendingToolCalls.set(toolCallId, { id: toolCallId, name, argsText: '' });
+      if (typeof toolCallId === "string") {
+        const name = typeof toolName === "string" ? toolName : "unknown";
+        this.pendingToolCalls.set(toolCallId, { id: toolCallId, name, argsText: "" });
       }
       return chunk;
     }
 
-    if (type === 'tool-call-delta') {
+    if (type === "tool-call-delta") {
       const toolCallId = chunk.toolCallId;
-      if (typeof toolCallId !== 'string') {
+      if (typeof toolCallId !== "string") {
         return chunk;
       }
       const pending =
-        this.pendingToolCalls.get(toolCallId)
-        ?? (() => {
+        this.pendingToolCalls.get(toolCallId) ??
+        (() => {
           const toolName = chunk.toolName ?? (chunk as any).name;
-          const name = typeof toolName === 'string' ? toolName : 'unknown';
-          const entry = { id: toolCallId, name, argsText: '' };
+          const name = typeof toolName === "string" ? toolName : "unknown";
+          const entry = { id: toolCallId, name, argsText: "" };
           this.pendingToolCalls.set(toolCallId, entry);
           return entry;
         })();
-      if (typeof chunk.argsTextDelta === 'string') {
+      if (typeof chunk.argsTextDelta === "string") {
         pending.argsText += chunk.argsTextDelta;
       }
       return chunk;
     }
 
-    if (type === 'tool-call') {
+    if (type === "tool-call") {
       const toolCallId = chunk.toolCallId;
       const toolName = chunk.toolName ?? (chunk as any).name;
-      if (typeof toolCallId !== 'string' || typeof toolName !== 'string') {
+      if (typeof toolCallId !== "string" || typeof toolName !== "string") {
         return chunk;
       }
 
@@ -96,20 +96,20 @@ export class StreamingToolGuard {
         return {
           ...chunk,
           __clawdstrike_blocked: true,
-          __clawdstrike_reason: result.decision.message ?? result.decision.reason ?? 'denied',
+          __clawdstrike_reason: result.decision.message ?? result.decision.reason ?? "denied",
         };
       }
 
       return chunk;
     }
 
-    if (type === 'tool-result') {
+    if (type === "tool-result") {
       if (this.config.sanitizeOutputs === false) {
         return chunk;
       }
 
       const toolName = chunk.toolName;
-      if (typeof toolName !== 'string') {
+      if (typeof toolName !== "string") {
         return chunk;
       }
 
@@ -128,7 +128,7 @@ export class StreamingToolGuard {
 }
 
 function parseJsonBestEffort(value: unknown): unknown {
-  if (typeof value !== 'string') {
+  if (typeof value !== "string") {
     return value ?? {};
   }
   const trimmed = value.trim();

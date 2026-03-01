@@ -82,7 +82,7 @@ export class McpToolGuard implements Guard {
       return GuardResult.block(
         this.name,
         Severity.ERROR,
-        `Tool arguments too large: ${argsSize} bytes (max: ${this.maxArgsSize})`
+        `Tool arguments too large: ${argsSize} bytes (max: ${this.maxArgsSize})`,
       );
     }
 
@@ -96,17 +96,14 @@ export class McpToolGuard implements Guard {
         return GuardResult.block(
           this.name,
           Severity.ERROR,
-          `Tool '${toolName}' is blocked by policy`
+          `Tool '${toolName}' is blocked by policy`,
         ).withDetails({
           tool: toolName,
           reason: "blocked_by_policy",
         });
 
       case ToolDecision.RequireConfirmation:
-        return GuardResult.warn(
-          this.name,
-          `Tool '${toolName}' requires confirmation`
-        ).withDetails({
+        return GuardResult.warn(this.name, `Tool '${toolName}' requires confirmation`).withDetails({
           tool: toolName,
           requiresConfirmation: true,
         });

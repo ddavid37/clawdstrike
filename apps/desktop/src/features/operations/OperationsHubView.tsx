@@ -1,6 +1,6 @@
+import { GlassHeader, GlassPanel, GlowButton } from "@backbay/glia/primitives";
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { GlassHeader, GlassPanel, GlowButton } from "@backbay/glia/primitives";
 import { OpenClawFleetView } from "@/features/openclaw/OpenClawFleetView";
 import { SettingsView } from "@/features/settings/SettingsView";
 
@@ -21,10 +21,7 @@ function normalizeTab(value: string | null): OperationsTab {
 
 export function OperationsHubView() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = useMemo(
-    () => normalizeTab(searchParams.get("tab")),
-    [searchParams]
-  );
+  const activeTab = useMemo(() => normalizeTab(searchParams.get("tab")), [searchParams]);
 
   const setTab = (tab: OperationsTab) => {
     const next = new URLSearchParams(searchParams);

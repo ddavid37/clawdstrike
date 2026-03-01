@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 
 export interface AppNotification {
   id: string;
@@ -15,7 +15,10 @@ export function useNotifications() {
 
   const add = useCallback((message: string, type: AppNotification["type"] = "info") => {
     setNotifications((prev) => {
-      const next = [{ id: String(_notifId++), message, type, timestamp: new Date().toISOString(), read: false }, ...prev];
+      const next = [
+        { id: String(_notifId++), message, type, timestamp: new Date().toISOString(), read: false },
+        ...prev,
+      ];
       return next.slice(0, 100);
     });
   }, []);

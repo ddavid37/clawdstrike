@@ -1,6 +1,6 @@
 import { canonicalize } from "./canonical";
 import { getBackend } from "./crypto/backend";
-import { sha256, toHex, fromHex } from "./crypto/hash";
+import { fromHex, sha256, toHex } from "./crypto/hash";
 import { generateKeypair, signMessage, verifySignature } from "./crypto/sign";
 
 export type WatermarkEncoding = "metadata";
@@ -136,7 +136,9 @@ function extractMetadata(text: string): EncodedWatermark | undefined {
 }
 
 export class PromptWatermarker {
-  private readonly config: Required<Pick<WatermarkConfig, "encoding" | "generateKeypair" | "includeTimestamp" | "includeSequence">> &
+  private readonly config: Required<
+    Pick<WatermarkConfig, "encoding" | "generateKeypair" | "includeTimestamp" | "includeSequence">
+  > &
     Omit<WatermarkConfig, "encoding" | "generateKeypair" | "includeTimestamp" | "includeSequence">;
   private readonly privateKey: Uint8Array;
   private readonly publicKey: Uint8Array;
@@ -206,12 +208,16 @@ export class PromptWatermarker {
 }
 
 export class WatermarkExtractor {
-  private readonly cfg: Required<Pick<WatermarkVerifierConfig, "trustedPublicKeys" | "allowUnverified">> &
+  private readonly cfg: Required<
+    Pick<WatermarkVerifierConfig, "trustedPublicKeys" | "allowUnverified">
+  > &
     Omit<WatermarkVerifierConfig, "trustedPublicKeys" | "allowUnverified">;
 
   constructor(config: WatermarkVerifierConfig = {}) {
     this.cfg = {
-      trustedPublicKeys: (config.trustedPublicKeys ?? []).map((k) => normalizeHex32(k, "public key")),
+      trustedPublicKeys: (config.trustedPublicKeys ?? []).map((k) =>
+        normalizeHex32(k, "public key"),
+      ),
       allowUnverified: config.allowUnverified ?? false,
     };
   }

@@ -4,10 +4,9 @@
  * Shows recent network flows from Hubble in a sortable table.
  * Subscribes to spine events filtered to network_flow and dns_query categories.
  */
-import { useMemo, useCallback } from "react";
-import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
-import { Badge } from "@backbay/glia/primitives";
-import { GlowButton } from "@backbay/glia/primitives";
+
+import { Badge, GlassHeader, GlassPanel, GlowButton } from "@backbay/glia/primitives";
+import { useCallback, useMemo } from "react";
 import { useSpineEvents } from "@/hooks/useSpineEvents";
 import type { SDREvent, SpineConnectionStatus } from "@/types/spine";
 
@@ -220,9 +219,7 @@ export function NetworkMapView() {
                       </span>
                     )}
                   </td>
-                  <td className="px-1 py-1.5 text-sdr-text-muted text-center">
-                    &rarr;
-                  </td>
+                  <td className="px-1 py-1.5 text-sdr-text-muted text-center">&rarr;</td>
                   <td className="px-3 py-1.5 truncate max-w-[180px]">
                     <span className="text-sdr-text-primary">{row.dstIp || "-"}</span>
                     {row.dstPort !== undefined && (
@@ -231,9 +228,7 @@ export function NetworkMapView() {
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-1.5 text-sdr-text-secondary">
-                    {row.protocol || "-"}
-                  </td>
+                  <td className="px-3 py-1.5 text-sdr-text-secondary">{row.protocol || "-"}</td>
                   <td className="px-3 py-1.5">
                     {row.verdict ? (
                       <Badge variant={VERDICT_VARIANT[row.verdict] ?? "outline"}>

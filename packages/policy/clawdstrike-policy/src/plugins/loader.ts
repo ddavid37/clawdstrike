@@ -1,19 +1,19 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { createRequire } from 'node:module';
-import { spawn } from 'node:child_process';
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
-import type { CustomGuardFactory } from '../custom-registry.js';
-import { CustomGuardRegistry } from '../custom-registry.js';
+import type { CustomGuardFactory } from "../custom-registry.js";
+import { CustomGuardRegistry } from "../custom-registry.js";
 import {
-  parsePluginManifest,
   type PluginCapabilities,
   type PluginManifest,
   type PluginResourceLimits,
-} from './manifest.js';
+  parsePluginManifest,
+} from "./manifest.js";
 
-const DEFAULT_CURRENT_VERSION = '0.1.0';
+const DEFAULT_CURRENT_VERSION = "0.1.0";
 
 export type PluginLoadResult = {
   root: string;
@@ -26,7 +26,7 @@ export type PluginResolveOptions = {
   fromDir?: string;
 };
 
-export type PluginExecutionMode = 'node' | 'wasm';
+export type PluginExecutionMode = "node" | "wasm";
 
 export interface PluginLoaderOptions extends PluginResolveOptions {
   trustedOnly?: boolean;
@@ -49,7 +49,7 @@ export interface PluginInspectResult {
 
 export class PluginLoader {
   private readonly options: Required<
-    Pick<PluginLoaderOptions, 'trustedOnly' | 'allowWasmSandbox' | 'currentClawdstrikeVersion'>
+    Pick<PluginLoaderOptions, "trustedOnly" | "allowWasmSandbox" | "currentClawdstrikeVersion">
   > & {
     fromDir: string;
     maxResources: Partial<PluginResourceLimits>;
@@ -68,7 +68,7 @@ export class PluginLoader {
         command:
           options.wasmBridge?.command && options.wasmBridge.command.length > 0
             ? [...options.wasmBridge.command]
-            : [process.env.CLAWDSTRIKE_PATH ?? process.env.HUSH_PATH ?? 'clawdstrike'],
+            : [process.env.CLAWDSTRIKE_PATH ?? process.env.HUSH_PATH ?? "clawdstrike"],
         timeoutMs: options.wasmBridge?.timeoutMs ?? 15_000,
       },
     };
@@ -81,12 +81,12 @@ export class PluginLoader {
     }
 
     const root = resolvePluginRoot(pluginRef, this.options.fromDir);
-    const manifestPath = path.join(root, 'clawdstrike.plugin.json');
+    const manifestPath = path.join(root, "clawdstrike.plugin.json");
     if (!fs.existsSync(manifestPath)) {
       throw new Error(`missing clawdstrike.plugin.json in ${root}`);
     }
 
-    const manifestRaw = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as unknown;
+    const manifestRaw = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as unknown;
     const manifest = parsePluginManifest(manifestRaw);
 
     this.validateTrustPolicy(manifest);
@@ -109,7 +109,7 @@ export class PluginLoader {
   ): Promise<PluginLoadResult> {
     const inspected = await this.inspect(pluginRef);
 
-    if (inspected.executionMode === 'wasm') {
+    if (inspected.executionMode === "wasm") {
       const registered = this.loadWasmIntoRegistry(inspected, registry);
       return {
         root: inspected.root,
@@ -144,10 +144,10 @@ export class PluginLoader {
   }
 
   private validateTrustPolicy(manifest: PluginManifest): void {
-    if (this.options.trustedOnly && manifest.trust.level !== 'trusted') {
+    if (this.options.trustedOnly && manifest.trust.level !== "trusted") {
       throw new Error(`refusing to load untrusted plugin: ${manifest.name}`);
     }
-    if (manifest.trust.sandbox === 'wasm' && !this.options.allowWasmSandbox) {
+    if (manifest.trust.sandbox === "wasm" && !this.options.allowWasmSandbox) {
       throw new Error(
         `refusing to load wasm-sandboxed plugin until WASM sandbox is enabled: ${manifest.name}`,
       );
@@ -184,15 +184,17 @@ export class PluginLoader {
   private validateCapabilityPolicy(
     capabilities: PluginCapabilities,
     pluginName: string,
-    trustLevel: 'trusted' | 'untrusted',
+    trustLevel: "trusted" | "untrusted",
   ): void {
     // Capability policy stubs: enforce high-risk defaults before sandbox exists.
-    if (trustLevel === 'untrusted') {
+    if (trustLevel === "untrusted") {
       if (capabilities.subprocess) {
         throw new Error(`untrusted plugin ${pluginName} cannot request subprocess capability`);
       }
       if (capabilities.filesystem.write) {
-        throw new Error(`untrusted plugin ${pluginName} cannot request filesystem write capability`);
+        throw new Error(
+          `untrusted plugin ${pluginName} cannot request filesystem write capability`,
+        );
       }
       if (capabilities.secrets.access) {
         throw new Error(`untrusted plugin ${pluginName} cannot request secrets access capability`);
@@ -202,17 +204,17 @@ export class PluginLoader {
 
   private validateResourceLimits(resources: PluginResourceLimits, pluginName: string): void {
     const max = this.options.maxResources;
-    if (typeof max.maxMemoryMb === 'number' && resources.maxMemoryMb > max.maxMemoryMb) {
+    if (typeof max.maxMemoryMb === "number" && resources.maxMemoryMb > max.maxMemoryMb) {
       throw new Error(
         `plugin ${pluginName} maxMemoryMb=${resources.maxMemoryMb} exceeds loader limit ${max.maxMemoryMb}`,
       );
     }
-    if (typeof max.maxCpuMs === 'number' && resources.maxCpuMs > max.maxCpuMs) {
+    if (typeof max.maxCpuMs === "number" && resources.maxCpuMs > max.maxCpuMs) {
       throw new Error(
         `plugin ${pluginName} maxCpuMs=${resources.maxCpuMs} exceeds loader limit ${max.maxCpuMs}`,
       );
     }
-    if (typeof max.maxTimeoutMs === 'number' && resources.maxTimeoutMs > max.maxTimeoutMs) {
+    if (typeof max.maxTimeoutMs === "number" && resources.maxTimeoutMs > max.maxTimeoutMs) {
       throw new Error(
         `plugin ${pluginName} maxTimeoutMs=${resources.maxTimeoutMs} exceeds loader limit ${max.maxTimeoutMs}`,
       );
@@ -300,13 +302,18 @@ export function resolvePluginRoot(pluginRef: string, fromDir: string): string {
 function extractFactory(mod: any): CustomGuardFactory {
   const candidate = mod?.factory ?? mod?.default ?? mod;
   if (!isFactory(candidate)) {
-    throw new Error('invalid plugin guard entrypoint: expected CustomGuardFactory export');
+    throw new Error("invalid plugin guard entrypoint: expected CustomGuardFactory export");
   }
   return candidate;
 }
 
 function isFactory(value: any): value is CustomGuardFactory {
-  return Boolean(value) && typeof value === 'object' && typeof value.id === 'string' && typeof value.build === 'function';
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    typeof value.id === "string" &&
+    typeof value.build === "function"
+  );
 }
 
 type BridgeInvocation = {
@@ -324,53 +331,56 @@ type BridgeInvocation = {
 async function invokeWasmBridge(args: BridgeInvocation): Promise<{
   allowed: boolean;
   guard: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
+  severity: "low" | "medium" | "high" | "critical";
   message: string;
   details?: Record<string, unknown>;
 }> {
   const [bin, ...prefix] = args.command;
   if (!bin) {
-    throw new Error('invalid wasm bridge command: missing executable');
+    throw new Error("invalid wasm bridge command: missing executable");
   }
 
   const procArgs: string[] = [
     ...prefix,
-    'guard',
-    'wasm-check',
-    '--entrypoint',
+    "guard",
+    "wasm-check",
+    "--entrypoint",
     args.entrypoint,
-    '--guard',
+    "--guard",
     args.guard,
-    '--input-json',
-    '-',
-    '--config-json',
+    "--input-json",
+    "-",
+    "--config-json",
     JSON.stringify(args.config ?? {}),
-    '--max-memory-mb',
+    "--max-memory-mb",
     String(args.resources.maxMemoryMb),
-    '--max-cpu-ms',
+    "--max-cpu-ms",
     String(args.resources.maxCpuMs),
-    '--max-timeout-ms',
+    "--max-timeout-ms",
     String(args.resources.maxTimeoutMs),
-    '--json',
+    "--json",
   ];
 
   if (args.actionType) {
-    procArgs.push('--action-type', args.actionType);
+    procArgs.push("--action-type", args.actionType);
   }
   if (args.capabilities.network) {
-    procArgs.push('--allow-network');
+    procArgs.push("--allow-network");
   }
   if (args.capabilities.subprocess) {
-    procArgs.push('--allow-subprocess');
+    procArgs.push("--allow-subprocess");
   }
-  if (Array.isArray(args.capabilities.filesystem?.read) && args.capabilities.filesystem.read.length > 0) {
-    procArgs.push('--allow-fs-read');
+  if (
+    Array.isArray(args.capabilities.filesystem?.read) &&
+    args.capabilities.filesystem.read.length > 0
+  ) {
+    procArgs.push("--allow-fs-read");
   }
   if (args.capabilities.filesystem?.write) {
-    procArgs.push('--allow-fs-write');
+    procArgs.push("--allow-fs-write");
   }
   if (args.capabilities.secrets?.access) {
-    procArgs.push('--allow-secrets');
+    procArgs.push("--allow-secrets");
   }
 
   const payloadText = JSON.stringify(args.payload ?? {});
@@ -387,35 +397,35 @@ async function runChildJson(
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ["pipe", "pipe", "pipe"],
       env: process.env,
     });
 
-    let stdout = '';
-    let stderr = '';
+    let stdout = "";
+    let stderr = "";
     let settled = false;
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      child.kill('SIGKILL');
+      child.kill("SIGKILL");
       reject(new Error(`wasm bridge timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => {
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
       stdout += String(chunk);
     });
-    child.stderr.on('data', (chunk) => {
+    child.stderr.on("data", (chunk) => {
       stderr += String(chunk);
     });
-    child.on('error', (err) => {
+    child.on("error", (err) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       reject(err);
     });
-    child.on('close', (code, signal) => {
+    child.on("close", (code, signal) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -430,7 +440,9 @@ async function runChildJson(
       try {
         resolve(JSON.parse(stdout));
       } catch (error) {
-        reject(new Error(`wasm bridge returned non-JSON output: ${stdout || stderr || String(error)}`));
+        reject(
+          new Error(`wasm bridge returned non-JSON output: ${stdout || stderr || String(error)}`),
+        );
       }
     });
 
@@ -445,29 +457,31 @@ function normalizeBridgeResult(
 ): {
   allowed: boolean;
   guard: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
+  severity: "low" | "medium" | "high" | "critical";
   message: string;
   details?: Record<string, unknown>;
 } {
   if (!isPlainObject(output)) {
-    throw new Error('wasm bridge returned invalid payload');
+    throw new Error("wasm bridge returned invalid payload");
   }
   if (isPlainObject(output.error)) {
-    const message = typeof output.error.message === 'string'
-      ? output.error.message
-      : 'wasm bridge error';
+    const message =
+      typeof output.error.message === "string" ? output.error.message : "wasm bridge error";
     throw new Error(message);
   }
   if (!isPlainObject(output.result)) {
-    throw new Error('wasm bridge returned payload without result');
+    throw new Error("wasm bridge returned payload without result");
   }
 
   const r = output.result as Record<string, unknown>;
-  const allowed = typeof r.allowed === 'boolean' ? r.allowed : false;
-  const guard = typeof r.guard === 'string' && r.guard.length > 0 ? r.guard : guardFallback;
-  const message = typeof r.message === 'string' && r.message.length > 0
-    ? r.message
-    : allowed ? 'Allowed' : 'Denied';
+  const allowed = typeof r.allowed === "boolean" ? r.allowed : false;
+  const guard = typeof r.guard === "string" && r.guard.length > 0 ? r.guard : guardFallback;
+  const message =
+    typeof r.message === "string" && r.message.length > 0
+      ? r.message
+      : allowed
+        ? "Allowed"
+        : "Denied";
   const severity = toCanonicalSeverity(r.severity, allowed);
   const details = isPlainObject(r.details) ? (r.details as Record<string, unknown>) : undefined;
 
@@ -477,38 +491,38 @@ function normalizeBridgeResult(
 function toCanonicalSeverity(
   value: unknown,
   allowed: boolean,
-): 'low' | 'medium' | 'high' | 'critical' {
-  const raw = typeof value === 'string' ? value.toLowerCase() : '';
-  if (raw === 'critical') return 'critical';
-  if (raw === 'high' || raw === 'error') return 'high';
-  if (raw === 'medium' || raw === 'warning' || raw === 'warn') return 'medium';
-  if (raw === 'low' || raw === 'info') return 'low';
-  return allowed ? 'low' : 'high';
+): "low" | "medium" | "high" | "critical" {
+  const raw = typeof value === "string" ? value.toLowerCase() : "";
+  if (raw === "critical") return "critical";
+  if (raw === "high" || raw === "error") return "high";
+  if (raw === "medium" || raw === "warning" || raw === "warn") return "medium";
+  if (raw === "low" || raw === "info") return "low";
+  return allowed ? "low" : "high";
 }
 
 function mapPolicyEventToGuardHandle(eventType: unknown): string {
-  switch (String(eventType ?? '')) {
-    case 'file_read':
-      return 'file_read';
-    case 'file_write':
-      return 'file_write';
-    case 'command_exec':
-      return 'command_exec';
-    case 'network_egress':
-      return 'network_egress';
-    case 'tool_call':
-      return 'tool_call';
-    case 'patch_apply':
-      return 'patch_apply';
-    case 'secret_access':
-      return 'secret_access';
+  switch (String(eventType ?? "")) {
+    case "file_read":
+      return "file_read";
+    case "file_write":
+      return "file_write";
+    case "command_exec":
+      return "command_exec";
+    case "network_egress":
+      return "network_egress";
+    case "tool_call":
+      return "tool_call";
+    case "patch_apply":
+      return "patch_apply";
+    case "secret_access":
+      return "secret_access";
     default:
-      return 'custom';
+      return "custom";
   }
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 type Semver = [number, number, number];

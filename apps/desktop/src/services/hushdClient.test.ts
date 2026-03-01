@@ -29,7 +29,7 @@ describe("HushdClient", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ event }),
-      })
+      }),
     );
   });
 });

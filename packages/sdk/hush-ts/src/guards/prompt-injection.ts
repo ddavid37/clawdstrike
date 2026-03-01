@@ -10,9 +10,21 @@ export interface PromptInjectionConfig {
 }
 
 const PROMPT_PATTERNS: Array<{ id: string; re: RegExp; score: number }> = [
-  { id: "ignore_previous", re: /\b(ignore|disregard|override)\b.{0,48}\b(previous|system|developer)\b/ims, score: 2 },
-  { id: "reveal_prompt", re: /\b(reveal|show|print|dump)\b.{0,48}\b(system prompt|developer prompt|hidden instructions)\b/ims, score: 2 },
-  { id: "policy_bypass", re: /\b(ignore|bypass|disable|turn off)\b.{0,48}\b(safety|guardrails?|policies|policy|filters)\b/ims, score: 3 },
+  {
+    id: "ignore_previous",
+    re: /\b(ignore|disregard|override)\b.{0,48}\b(previous|system|developer)\b/ims,
+    score: 2,
+  },
+  {
+    id: "reveal_prompt",
+    re: /\b(reveal|show|print|dump)\b.{0,48}\b(system prompt|developer prompt|hidden instructions)\b/ims,
+    score: 2,
+  },
+  {
+    id: "policy_bypass",
+    re: /\b(ignore|bypass|disable|turn off)\b.{0,48}\b(safety|guardrails?|policies|policy|filters)\b/ims,
+    score: 3,
+  },
   {
     id: "credential_exfiltration",
     re: /(?:\b(api key|secret|secrets|token|password|private key)\b.{0,96}\b(send|post|upload|exfiltrat(?:e|ion|ing|ed)?|leak|reveal|print|dump)\b|\b(send|post|upload|exfiltrat(?:e|ion|ing|ed)?|leak|reveal|print|dump)\b.{0,96}\b(api key|secret|secrets|token|password|private key)\b)/ims,
@@ -57,15 +69,18 @@ export class PromptInjectionGuard implements Guard {
     this.enabled = config.enabled !== false;
     this.warnAt = config.warn_at_or_above ?? "suspicious";
     this.blockAt = config.block_at_or_above ?? "high";
-    this.maxScanBytes = Number.isInteger(config.max_scan_bytes) && (config.max_scan_bytes ?? 0) > 0
-      ? Number(config.max_scan_bytes)
-      : 200_000;
+    this.maxScanBytes =
+      Number.isInteger(config.max_scan_bytes) && (config.max_scan_bytes ?? 0) > 0
+        ? Number(config.max_scan_bytes)
+        : 200_000;
   }
 
   handles(action: GuardAction): boolean {
     return (
-      action.actionType === "custom"
-      && (action.customType === "untrusted_text" || action.customType === "clawdstrike.untrusted_text" || action.customType === "hushclaw.untrusted_text")
+      action.actionType === "custom" &&
+      (action.customType === "untrusted_text" ||
+        action.customType === "clawdstrike.untrusted_text" ||
+        action.customType === "hushclaw.untrusted_text")
     );
   }
 
@@ -81,7 +96,9 @@ export class PromptInjectionGuard implements Guard {
 
     const scanned = new TextEncoder().encode(text);
     const truncated = scanned.length > this.maxScanBytes;
-    const content = truncated ? new TextDecoder().decode(scanned.subarray(0, this.maxScanBytes)) : text;
+    const content = truncated
+      ? new TextDecoder().decode(scanned.subarray(0, this.maxScanBytes))
+      : text;
 
     let score = 0;
     const signals: string[] = [];
@@ -102,13 +119,17 @@ export class PromptInjectionGuard implements Guard {
     };
 
     if (levelOrd(level) >= levelOrd(this.blockAt)) {
-      return GuardResult
-        .block(this.name, severityForBlock(level), "Untrusted text contains prompt-injection signals")
-        .withDetails(details);
+      return GuardResult.block(
+        this.name,
+        severityForBlock(level),
+        "Untrusted text contains prompt-injection signals",
+      ).withDetails(details);
     }
     if (levelOrd(level) >= levelOrd(this.warnAt)) {
-      return GuardResult.warn(this.name, "Untrusted text contains prompt-injection signals")
-        .withDetails(details);
+      return GuardResult.warn(
+        this.name,
+        "Untrusted text contains prompt-injection signals",
+      ).withDetails(details);
     }
 
     return GuardResult.allow(this.name);

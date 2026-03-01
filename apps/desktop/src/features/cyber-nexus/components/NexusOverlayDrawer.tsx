@@ -54,7 +54,9 @@ export function NexusOverlayDrawer({
           <div className="grid grid-cols-2 gap-3">
             <div className="origin-card rounded-lg p-3">
               <div className="origin-label text-[10px]">Status</div>
-              <div className="mt-1 text-sm uppercase text-sdr-text-primary">{strikecell.status}</div>
+              <div className="mt-1 text-sm uppercase text-sdr-text-primary">
+                {strikecell.status}
+              </div>
             </div>
             <div className="origin-card rounded-lg p-3">
               <div className="origin-label text-[10px]">Activity</div>

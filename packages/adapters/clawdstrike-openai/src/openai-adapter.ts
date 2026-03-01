@@ -1,4 +1,3 @@
-import { createFrameworkAdapter } from '@clawdstrike/adapter-core';
 import type {
   AdapterConfig,
   FrameworkAdapter,
@@ -6,9 +5,10 @@ import type {
   PolicyEngineLike,
   SecurityContext,
   ToolCallTranslationInput,
-} from '@clawdstrike/adapter-core';
+} from "@clawdstrike/adapter-core";
+import { createFrameworkAdapter } from "@clawdstrike/adapter-core";
 
-import { openAICuaTranslator } from './openai-cua-translator.js';
+import { openAICuaTranslator } from "./openai-cua-translator.js";
 
 function composeConfig(config: AdapterConfig = {}): AdapterConfig {
   const userTranslator = config.translateToolCall;
@@ -26,11 +26,15 @@ export class OpenAIAdapter {
   private readonly delegate: FrameworkAdapter;
 
   constructor(engine: PolicyEngineLike, config: AdapterConfig = {}) {
-    this.delegate = createFrameworkAdapter('openai', engine, composeConfig(config));
+    this.delegate = createFrameworkAdapter("openai", engine, composeConfig(config));
   }
 
-  get name() { return this.delegate.name; }
-  get version() { return this.delegate.version; }
+  get name() {
+    return this.delegate.name;
+  }
+  get version() {
+    return this.delegate.version;
+  }
 
   async initialize(config: AdapterConfig) {
     return this.delegate.initialize(composeConfig(config));

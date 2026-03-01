@@ -12,37 +12,37 @@
  * - Social/connections (NEW)
  */
 
-export { DockSystem, default } from "./DockSystem";
-export { DockProvider, useDock, useCapsule, useCapsulesByKind } from "./DockContext";
 export { Capsule, CapsuleTab } from "./Capsule";
+export { DockProvider, useCapsule, useCapsulesByKind, useDock } from "./DockContext";
+export { DockSystem, default } from "./DockSystem";
 export { SessionRail } from "./SessionRail";
-export {
-  useDockDemo,
-  // New mystical naming
-  sampleOracle,
-  sampleWhisper,
-  sampleCoven,
-  sampleChronicle,
-  sampleSessions,
-  // Legacy exports
-  sampleActions,
-  sampleChat,
-  sampleSocial,
-} from "./useDockDemo";
 export type {
-  CapsuleKind,
-  CapsuleViewMode,
-  DockCapsuleState,
-  CapsuleTabState,
-  SessionItem,
-  ShelfMode,
-  ShelfState,
-  CapsuleContentProps,
+  ActionOption,
   // New agentic types
   ActionPriority,
   ActionType,
   AgentAction,
-  ActionOption,
-  ChatMessage,
+  CapsuleContentProps,
+  CapsuleKind,
+  CapsuleTabState,
+  CapsuleViewMode,
   ChatChannel,
+  ChatMessage,
+  DockCapsuleState,
+  SessionItem,
+  ShelfMode,
+  ShelfState,
 } from "./types";
+export {
+  // Legacy exports
+  sampleActions,
+  sampleChat,
+  sampleChronicle,
+  sampleCoven,
+  // New mystical naming
+  sampleOracle,
+  sampleSessions,
+  sampleSocial,
+  sampleWhisper,
+  useDockDemo,
+} from "./useDockDemo";

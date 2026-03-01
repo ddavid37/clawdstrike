@@ -4,14 +4,8 @@
  * Detects and blocks exposure of secrets in tool outputs and patches.
  */
 
-import type {
-  PolicyEvent,
-  Policy,
-  GuardResult,
-  EventType,
-  SecretPattern,
-} from '../types.js';
-import { BaseGuard } from './types.js';
+import type { EventType, GuardResult, Policy, PolicyEvent, SecretPattern } from "../types.js";
+import { BaseGuard } from "./types.js";
 
 /**
  * Built-in secret detection patterns
@@ -19,166 +13,167 @@ import { BaseGuard } from './types.js';
 const SECRET_PATTERNS: SecretPattern[] = [
   // AWS Keys
   {
-    name: 'aws_access_key',
+    name: "aws_access_key",
     pattern: /AKIA[0-9A-Z]{16}/g,
-    severity: 'critical',
-    description: 'AWS Access Key ID',
+    severity: "critical",
+    description: "AWS Access Key ID",
   },
   {
-    name: 'aws_secret_key',
+    name: "aws_secret_key",
     pattern: /[A-Za-z0-9/+=]{40}/g,
-    severity: 'critical',
-    description: 'AWS Secret Access Key',
+    severity: "critical",
+    description: "AWS Secret Access Key",
   },
 
   // GitHub Tokens
   {
-    name: 'github_pat',
+    name: "github_pat",
     pattern: /ghp_[A-Za-z0-9]{36}/g,
-    severity: 'critical',
-    description: 'GitHub Personal Access Token',
+    severity: "critical",
+    description: "GitHub Personal Access Token",
   },
   {
-    name: 'github_oauth',
+    name: "github_oauth",
     pattern: /gho_[A-Za-z0-9]{36}/g,
-    severity: 'critical',
-    description: 'GitHub OAuth Token',
+    severity: "critical",
+    description: "GitHub OAuth Token",
   },
   {
-    name: 'github_app_token',
+    name: "github_app_token",
     pattern: /ghu_[A-Za-z0-9]{36}/g,
-    severity: 'critical',
-    description: 'GitHub App User Token',
+    severity: "critical",
+    description: "GitHub App User Token",
   },
   {
-    name: 'github_fine_grained',
+    name: "github_fine_grained",
     pattern: /github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}/g,
-    severity: 'critical',
-    description: 'GitHub Fine-grained PAT',
+    severity: "critical",
+    description: "GitHub Fine-grained PAT",
   },
 
   // OpenAI Keys
   {
-    name: 'openai_api_key',
+    name: "openai_api_key",
     pattern: /sk-[A-Za-z0-9]{48}/g,
-    severity: 'critical',
-    description: 'OpenAI API Key',
+    severity: "critical",
+    description: "OpenAI API Key",
   },
   {
-    name: 'openai_project_key',
+    name: "openai_project_key",
     pattern: /sk-proj-[A-Za-z0-9]{48}/g,
-    severity: 'critical',
-    description: 'OpenAI Project API Key',
+    severity: "critical",
+    description: "OpenAI Project API Key",
   },
 
   // Anthropic Keys
   {
-    name: 'anthropic_api_key',
+    name: "anthropic_api_key",
     pattern: /sk-ant-[A-Za-z0-9]{32,}/g,
-    severity: 'critical',
-    description: 'Anthropic API Key',
+    severity: "critical",
+    description: "Anthropic API Key",
   },
 
   // Google Cloud
   {
-    name: 'google_api_key',
+    name: "google_api_key",
     pattern: /AIza[0-9A-Za-z\-_]{35}/g,
-    severity: 'critical',
-    description: 'Google API Key',
+    severity: "critical",
+    description: "Google API Key",
   },
   {
-    name: 'gcp_service_account',
+    name: "gcp_service_account",
     pattern: /"type":\s*"service_account"/g,
-    severity: 'high',
-    description: 'GCP Service Account JSON',
+    severity: "high",
+    description: "GCP Service Account JSON",
   },
 
   // Private Keys
   {
-    name: 'private_key_rsa',
+    name: "private_key_rsa",
     pattern: /-----BEGIN RSA PRIVATE KEY-----/g,
-    severity: 'critical',
-    description: 'RSA Private Key',
+    severity: "critical",
+    description: "RSA Private Key",
   },
   {
-    name: 'private_key_openssh',
+    name: "private_key_openssh",
     pattern: /-----BEGIN OPENSSH PRIVATE KEY-----/g,
-    severity: 'critical',
-    description: 'OpenSSH Private Key',
+    severity: "critical",
+    description: "OpenSSH Private Key",
   },
   {
-    name: 'private_key_ec',
+    name: "private_key_ec",
     pattern: /-----BEGIN EC PRIVATE KEY-----/g,
-    severity: 'critical',
-    description: 'EC Private Key',
+    severity: "critical",
+    description: "EC Private Key",
   },
   {
-    name: 'private_key_generic',
+    name: "private_key_generic",
     pattern: /-----BEGIN PRIVATE KEY-----/g,
-    severity: 'critical',
-    description: 'Private Key',
+    severity: "critical",
+    description: "Private Key",
   },
 
   // Stripe
   {
-    name: 'stripe_secret_key',
+    name: "stripe_secret_key",
     pattern: /sk_live_[A-Za-z0-9]{24,}/g,
-    severity: 'critical',
-    description: 'Stripe Live Secret Key',
+    severity: "critical",
+    description: "Stripe Live Secret Key",
   },
   {
-    name: 'stripe_test_key',
+    name: "stripe_test_key",
     pattern: /sk_test_[A-Za-z0-9]{24,}/g,
-    severity: 'medium',
-    description: 'Stripe Test Secret Key',
+    severity: "medium",
+    description: "Stripe Test Secret Key",
   },
 
   // Stripe Restricted Key
   {
-    name: 'stripe_restricted_key',
+    name: "stripe_restricted_key",
     pattern: /rk_live_[A-Za-z0-9]{24,}/g,
-    severity: 'critical',
-    description: 'Stripe Live Restricted Key',
+    severity: "critical",
+    description: "Stripe Live Restricted Key",
   },
 
   // Slack
   {
-    name: 'slack_token',
+    name: "slack_token",
     pattern: /xox[baprs]-[A-Za-z0-9-]{10,}/g,
-    severity: 'high',
-    description: 'Slack Token',
+    severity: "high",
+    description: "Slack Token",
   },
 
   // Azure Key Vault
   {
-    name: 'azure_key_vault_token',
-    pattern: /azure[_-]?(?:key[_-]?vault|kv)[_-]?(?:secret|token|key)(?:'|")?\s*[:=]\s*(?:'|")?[A-Za-z0-9+/=_-]{32,}/gi,
-    severity: 'critical',
-    description: 'Azure Key Vault Secret',
+    name: "azure_key_vault_token",
+    pattern:
+      /azure[_-]?(?:key[_-]?vault|kv)[_-]?(?:secret|token|key)(?:'|")?\s*[:=]\s*(?:'|")?[A-Za-z0-9+/=_-]{32,}/gi,
+    severity: "critical",
+    description: "Azure Key Vault Secret",
   },
 
   // GitLab Personal Access Token
   {
-    name: 'gitlab_pat',
+    name: "gitlab_pat",
     pattern: /glpat-[A-Za-z0-9_-]{20,}/g,
-    severity: 'critical',
-    description: 'GitLab Personal Access Token',
+    severity: "critical",
+    description: "GitLab Personal Access Token",
   },
 
   // Generic high-entropy (likely secrets)
   {
-    name: 'jwt_token',
+    name: "jwt_token",
     pattern: /eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*/g,
-    severity: 'high',
-    description: 'JWT Token',
+    severity: "high",
+    description: "JWT Token",
   },
 
   // Database URLs with credentials
   {
-    name: 'database_url',
+    name: "database_url",
     pattern: /(?:postgres|mysql|mongodb|redis):\/\/[^:]+:[^@]+@/g,
-    severity: 'critical',
-    description: 'Database URL with credentials',
+    severity: "critical",
+    description: "Database URL with credentials",
   },
 ];
 
@@ -194,11 +189,11 @@ export class SecretLeakGuard extends BaseGuard {
   }
 
   name(): string {
-    return 'secret_leak';
+    return "secret_leak";
   }
 
   handles(): EventType[] {
-    return ['patch_apply', 'tool_call'];
+    return ["patch_apply", "tool_call"];
   }
 
   async check(event: PolicyEvent, policy: Policy): Promise<GuardResult> {
@@ -210,12 +205,12 @@ export class SecretLeakGuard extends BaseGuard {
     let contentToCheck: string | undefined;
 
     // Get content to check based on event type
-    if (data.type === 'patch') {
+    if (data.type === "patch") {
       contentToCheck = data.patchContent;
-    } else if (data.type === 'tool') {
+    } else if (data.type === "tool") {
       // Check tool result for secrets
       contentToCheck =
-        typeof data.result === 'string' ? data.result : JSON.stringify(data.result ?? '');
+        typeof data.result === "string" ? data.result : JSON.stringify(data.result ?? "");
     }
 
     if (!contentToCheck) {
@@ -227,12 +222,9 @@ export class SecretLeakGuard extends BaseGuard {
 
     if (detected.length > 0) {
       const highestSeverity = this.getHighestSeverity(detected);
-      const secretNames = detected.map((s) => s.name).join(', ');
+      const secretNames = detected.map((s) => s.name).join(", ");
 
-      return this.deny(
-        `Detected potential secrets in output: ${secretNames}`,
-        highestSeverity,
-      );
+      return this.deny(`Detected potential secrets in output: ${secretNames}`, highestSeverity);
     }
 
     return this.allow();
@@ -272,9 +264,9 @@ export class SecretLeakGuard extends BaseGuard {
       redacted = redacted.replace(pattern.pattern, (match) => {
         // Show first 4 chars and last 4 chars, redact the middle
         if (match.length > 12) {
-          return match.slice(0, 4) + '[REDACTED]' + match.slice(-4);
+          return match.slice(0, 4) + "[REDACTED]" + match.slice(-4);
         }
-        return '[REDACTED]';
+        return "[REDACTED]";
       });
 
       // Reset again after replace
@@ -287,18 +279,13 @@ export class SecretLeakGuard extends BaseGuard {
   /**
    * Get the highest severity from detected patterns
    */
-  private getHighestSeverity(
-    patterns: SecretPattern[],
-  ): 'low' | 'medium' | 'high' | 'critical' {
-    const severityOrder = ['low', 'medium', 'high', 'critical'] as const;
+  private getHighestSeverity(patterns: SecretPattern[]): "low" | "medium" | "high" | "critical" {
+    const severityOrder = ["low", "medium", "high", "critical"] as const;
 
-    let highest: (typeof severityOrder)[number] = 'low';
+    let highest: (typeof severityOrder)[number] = "low";
 
     for (const pattern of patterns) {
-      if (
-        severityOrder.indexOf(pattern.severity) >
-        severityOrder.indexOf(highest)
-      ) {
+      if (severityOrder.indexOf(pattern.severity) > severityOrder.indexOf(highest)) {
         highest = pattern.severity;
       }
     }

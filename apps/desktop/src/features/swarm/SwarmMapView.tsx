@@ -1,16 +1,17 @@
 /**
  * SwarmMapView - 3D visualization of agent identities and delegation chains
  */
-import { Suspense, useState, useCallback } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Environment } from "@react-three/drei";
-import { EnvironmentLayer } from "@backbay/glia-three/environment";
+
 import { GlowButton } from "@backbay/glia/primitives";
-import { useSwarm, useSelectedAgent } from "@/context/SwarmContext";
+import { EnvironmentLayer } from "@backbay/glia-three/environment";
+import { Environment, OrbitControls } from "@react-three/drei";
+import { Canvas } from "@react-three/fiber";
+import { Suspense, useCallback, useState } from "react";
 import { useConnection } from "@/context/ConnectionContext";
+import { useSelectedAgent, useSwarm } from "@/context/SwarmContext";
+import { AgentDetailPanel } from "./components/AgentDetailPanel";
 import { AgentNodes } from "./components/AgentNodes";
 import { DelegationEdges } from "./components/DelegationEdges";
-import { AgentDetailPanel } from "./components/AgentDetailPanel";
 import { SwarmLegend } from "./components/SwarmLegend";
 
 export function SwarmMapView() {
@@ -36,10 +37,7 @@ export function SwarmMapView() {
       {/* 3D Canvas */}
       <div className="absolute inset-0">
         <EnvironmentLayer preset="cyberpunk-city" intensity={0.2} />
-        <Canvas
-          camera={{ position: [0, 5, 12], fov: 50 }}
-          style={{ background: "#0a0a0f" }}
-        >
+        <Canvas camera={{ position: [0, 5, 12], fov: 50 }} style={{ background: "#0a0a0f" }}>
           <Suspense fallback={null}>
             {/* Lighting */}
             <ambientLight intensity={0.4} />
@@ -86,17 +84,10 @@ export function SwarmMapView() {
         </div>
 
         <div className="flex items-center gap-2 pointer-events-auto">
-          <GlowButton
-            onClick={() => setShowLegend(!showLegend)}
-            variant="secondary"
-          >
+          <GlowButton onClick={() => setShowLegend(!showLegend)} variant="secondary">
             {showLegend ? "Hide" : "Show"} Legend
           </GlowButton>
-          <GlowButton
-            onClick={handleRefresh}
-            disabled={isLoading}
-            variant="secondary"
-          >
+          <GlowButton onClick={handleRefresh} disabled={isLoading} variant="secondary">
             {isLoading ? "Loading..." : "Refresh"}
           </GlowButton>
         </div>

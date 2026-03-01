@@ -49,15 +49,16 @@ export async function verifyReceipt(receiptJson: string): Promise<ReceiptVerific
     const keyBytes = Uint8Array.from(atob(publicKey), (c) => c.charCodeAt(0));
     const sigBytes = Uint8Array.from(atob(signature), (c) => c.charCodeAt(0));
 
-    const cryptoKey = await crypto.subtle.importKey(
-      "raw",
-      keyBytes,
-      { name: "Ed25519" },
-      false,
-      ["verify"],
-    );
+    const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, { name: "Ed25519" }, false, [
+      "verify",
+    ]);
 
-    const valid = await crypto.subtle.verify("Ed25519", cryptoKey, sigBytes.buffer as ArrayBuffer, data.buffer as ArrayBuffer);
+    const valid = await crypto.subtle.verify(
+      "Ed25519",
+      cryptoKey,
+      sigBytes.buffer as ArrayBuffer,
+      data.buffer as ArrayBuffer,
+    );
     return { valid, receipt };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Verification failed";

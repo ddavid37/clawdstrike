@@ -153,7 +153,10 @@ resolve_previous_version() {
 
   local repo
   repo="${CHART_REF#oci://}"
-  mapfile -t tags < <(oras repo tags "$repo" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+  tags=()
+  while IFS= read -r tag; do
+    tags+=("$tag")
+  done < <(oras repo tags "$repo" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
   if ((${#tags[@]} < 2)); then
     hc_record_failure "unable to auto-resolve previous version from ${repo}"
     return
@@ -214,7 +217,10 @@ fi
 
 if [[ "$RESULT" -eq 0 ]]; then
   log "Restarting all release deployments"
-  mapfile -t deployments < <(hc_kctl -n "$NAMESPACE" get deploy -l "app.kubernetes.io/instance=${RELEASE}" -o name 2>/dev/null)
+  deployments=()
+  while IFS= read -r deploy; do
+    deployments+=("$deploy")
+  done < <(hc_kctl -n "$NAMESPACE" get deploy -l "app.kubernetes.io/instance=${RELEASE}" -o name 2>/dev/null)
   if ((${#deployments[@]} > 0)); then
     hc_kctl -n "$NAMESPACE" rollout restart "${deployments[@]}" >/dev/null
     for deploy in "${deployments[@]}"; do

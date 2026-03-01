@@ -1,6 +1,6 @@
-import type { PolicyEngineLike, Decision } from '@clawdstrike/adapter-core';
+import type { Decision, PolicyEngineLike } from "@clawdstrike/adapter-core";
 
-export type EngineMode = 'standalone' | 'connected' | 'degraded';
+export type EngineMode = "standalone" | "connected" | "degraded";
 
 export interface ModeChangeEvent {
   from: EngineMode;
@@ -13,7 +13,7 @@ export interface ModeChangeEvent {
 
 export interface EnrichedProvenance {
   mode: EngineMode;
-  engine: 'local' | 'remote';
+  engine: "local" | "remote";
   reason?: string;
   localPolicyRef?: string;
   localPolicyAge?: string;

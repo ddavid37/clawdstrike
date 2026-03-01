@@ -1,6 +1,6 @@
-import type { PolicyEvent } from '@clawdstrike/adapter-core';
+import type { PolicyEvent } from "@clawdstrike/adapter-core";
 
-import type { GuardResult } from './async/types.js';
+import type { GuardResult } from "./async/types.js";
 
 export interface CustomGuard {
   name: string;
@@ -18,8 +18,8 @@ export class CustomGuardRegistry {
 
   register(factory: CustomGuardFactory): void {
     const id = factory.id;
-    if (!id || typeof id !== 'string') {
-      throw new Error('CustomGuardFactory.id must be a non-empty string');
+    if (!id || typeof id !== "string") {
+      throw new Error("CustomGuardFactory.id must be a non-empty string");
     }
     if (this.factories.has(id)) {
       throw new Error(`duplicate custom guard factory id: ${id}`);
@@ -35,4 +35,3 @@ export class CustomGuardRegistry {
     return factory.build(config);
   }
 }
-

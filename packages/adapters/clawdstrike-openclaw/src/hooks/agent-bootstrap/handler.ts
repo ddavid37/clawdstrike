@@ -4,9 +4,14 @@
  * Injects a SECURITY.md file into the agent bootstrap context.
  */
 
-import type { AgentBootstrapEvent, HookEvent, HookHandler, ClawdstrikeConfig } from '../../types.js';
-import { initializeEngine, getSharedEngine } from '../../engine-holder.js';
-import { generateSecurityPrompt } from '../../security-prompt.js';
+import { getSharedEngine, initializeEngine } from "../../engine-holder.js";
+import { generateSecurityPrompt } from "../../security-prompt.js";
+import type {
+  AgentBootstrapEvent,
+  ClawdstrikeConfig,
+  HookEvent,
+  HookHandler,
+} from "../../types.js";
 
 /**
  * Initialize the hook with configuration.
@@ -21,7 +26,7 @@ function getEngine(config?: ClawdstrikeConfig) {
 }
 
 const handler: HookHandler = async (event: HookEvent): Promise<void> => {
-  if (event.type !== 'agent:bootstrap') return;
+  if (event.type !== "agent:bootstrap") return;
 
   const bootstrap = event as AgentBootstrapEvent;
   const cfg = bootstrap.context.cfg;
@@ -33,10 +38,10 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   const securityPrompt =
     generateSecurityPrompt(policy) +
     `\n\n## Enabled Guards\n` +
-    enabledGuards.map((g) => `- ${g}`).join('\n');
+    enabledGuards.map((g) => `- ${g}`).join("\n");
 
   bootstrap.context.bootstrapFiles.push({
-    path: 'SECURITY.md',
+    path: "SECURITY.md",
     content: securityPrompt,
   });
 };

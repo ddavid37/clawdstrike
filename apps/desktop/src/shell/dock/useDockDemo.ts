@@ -26,12 +26,23 @@ const ORACLE_VISIONS: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isPin
     sourceData: {
       type: "approval",
       priority: "critical",
-      description: "The kernel has completed its preparations. 3 new enchantments and 2 ward repairs await release to the production realm. Shall we proceed with the ritual?",
+      description:
+        "The kernel has completed its preparations. 3 new enchantments and 2 ward repairs await release to the production realm. Shall we proceed with the ritual?",
       agentName: "Architect",
       options: [
-        { id: "approve", label: "Begin Ritual", description: "Deploy to production now", variant: "primary" },
+        {
+          id: "approve",
+          label: "Begin Ritual",
+          description: "Deploy to production now",
+          variant: "primary",
+        },
         { id: "staging", label: "Test in Sanctum", description: "Validate in staging first" },
-        { id: "reject", label: "Abort", description: "Cancel the deployment", variant: "destructive" },
+        {
+          id: "reject",
+          label: "Abort",
+          description: "Cancel the deployment",
+          variant: "destructive",
+        },
       ],
       timeout: 300000,
       createdAt: new Date().toISOString(),
@@ -45,11 +56,17 @@ const ORACLE_VISIONS: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isPin
     sourceData: {
       type: "decision",
       priority: "high",
-      description: "Multiple paths reveal themselves for this task. Which vessel shall carry the work?",
+      description:
+        "Multiple paths reveal themselves for this task. Which vessel shall carry the work?",
       agentName: "Dispatcher",
       options: [
         { id: "claude", label: "Opus Vessel", description: "Deep reasoning, complex tasks" },
-        { id: "codex", label: "Codex Vessel", description: "Swift incantations", variant: "primary" },
+        {
+          id: "codex",
+          label: "Codex Vessel",
+          description: "Swift incantations",
+          variant: "primary",
+        },
         { id: "speculate", label: "Parallel Paths", description: "Run both, divine the best" },
       ],
       createdAt: new Date().toISOString(),
@@ -63,7 +80,8 @@ const ORACLE_VISIONS: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isPin
     sourceData: {
       type: "question",
       priority: "normal",
-      description: "The scrolls speak of 'updating the auth flow' but the runes are unclear. Should the ward use OAuth2 sigils or JWT tokens?",
+      description:
+        "The scrolls speak of 'updating the auth flow' but the runes are unclear. Should the ward use OAuth2 sigils or JWT tokens?",
       agentName: "Claude",
       options: [
         { id: "oauth", label: "OAuth2 Sigils" },
@@ -81,7 +99,8 @@ const ORACLE_VISIONS: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isPin
     sourceData: {
       type: "review",
       priority: "normal",
-      description: "The enchantment is complete. The proof awaits your inspection before the merge ritual.",
+      description:
+        "The enchantment is complete. The proof awaits your inspection before the merge ritual.",
       agentName: "Claude",
       options: [
         { id: "approve", label: "Seal & Merge", variant: "primary" },
@@ -113,7 +132,8 @@ const ORACLE_VISIONS: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isPin
     sourceData: {
       type: "approval",
       priority: "normal",
-      description: "The Forge has manifested a new realm: Dark Dungeon. 47 assets crafted, all gates passed. Ready for integration.",
+      description:
+        "The Forge has manifested a new realm: Dark Dungeon. 47 assets crafted, all gates passed. Ready for integration.",
       agentName: "Forge Master",
       options: [
         { id: "integrate", label: "Integrate Realm", variant: "primary" },
@@ -144,7 +164,8 @@ const WHISPER_CHANNELS: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isP
           id: "msg-1",
           role: "agent",
           agentName: "Claude",
-          content: "I have begun the authentication refactor. Analyzing the existing ward structures...",
+          content:
+            "I have begun the authentication refactor. Analyzing the existing ward structures...",
           timestamp: new Date(Date.now() - 300000).toISOString(),
         },
         {
@@ -164,7 +185,8 @@ const WHISPER_CHANNELS: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isP
           id: "msg-4",
           role: "agent",
           agentName: "Claude",
-          content: "Understood. Unit tests and integration trials shall be woven into the enchantment.",
+          content:
+            "Understood. Unit tests and integration trials shall be woven into the enchantment.",
           timestamp: new Date(Date.now() - 120000).toISOString(),
         },
         {
@@ -203,7 +225,8 @@ const WHISPER_CHANNELS: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isP
           id: "forge-3",
           role: "agent",
           agentName: "Forge",
-          content: "Terrain complete. 12 height variations generated. Proceeding to flora placement.",
+          content:
+            "Terrain complete. 12 height variations generated. Proceeding to flora placement.",
           timestamp: new Date(Date.now() - 420000).toISOString(),
         },
         {
@@ -248,7 +271,8 @@ const WHISPER_CHANNELS: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isP
           id: "kern-3",
           role: "agent",
           agentName: "Kernel",
-          content: "Issue #42 routed to Claude Opus (high complexity). Issue #43 routed to Codex (quick fix).",
+          content:
+            "Issue #42 routed to Claude Opus (high complexity). Issue #43 routed to Codex (quick fix).",
           timestamp: new Date(Date.now() - 720000).toISOString(),
         },
         {
@@ -292,8 +316,22 @@ const COVEN_DATA: Omit<DockCapsuleState, "viewMode" | "isMinimized" | "isPinned"
 
 const ACTIVE_SESSIONS: SessionItem[] = [
   // Running - these will be prominently shown expanded
-  { id: "run-auth-42", kind: "run", title: "Auth Refactor", status: "running", progress: 0.65, route: "/kernel" },
-  { id: "build-main", kind: "build", title: "Build", status: "running", progress: 0.45, route: "/kernel" },
+  {
+    id: "run-auth-42",
+    kind: "run",
+    title: "Auth Refactor",
+    status: "running",
+    progress: 0.65,
+    route: "/kernel",
+  },
+  {
+    id: "build-main",
+    kind: "build",
+    title: "Build",
+    status: "running",
+    progress: 0.45,
+    route: "/kernel",
+  },
   // Error - shown expanded in error group
   { id: "run-migration", kind: "run", title: "DB Migration", status: "error", route: "/kernel" },
   // Idle/Success - these will be grouped/collapsed
@@ -309,16 +347,56 @@ const ACTIVE_SESSIONS: SessionItem[] = [
 // =============================================================================
 
 const CHRONICLE_EVENTS = [
-  { type: "kernel", message: "Kernel awakened, scanning beads graph", timestamp: new Date(Date.now() - 900000).toISOString() },
-  { type: "dispatch", message: "Issue #42 routed to Claude Opus", timestamp: new Date(Date.now() - 840000).toISOString() },
-  { type: "workcell", message: "Workcell wc-8a3f manifested for #42", timestamp: new Date(Date.now() - 720000).toISOString() },
-  { type: "dispatch", message: "Issue #43 routed to Codex", timestamp: new Date(Date.now() - 660000).toISOString() },
-  { type: "forge", message: "World generation started: enchanted_forest", timestamp: new Date(Date.now() - 600000).toISOString() },
-  { type: "gate", message: "Gate passed: terrain_quality for enchanted_forest", timestamp: new Date(Date.now() - 480000).toISOString() },
-  { type: "gate", message: "Gate passed: flora_density for enchanted_forest", timestamp: new Date(Date.now() - 300000).toISOString() },
-  { type: "proof", message: "Proof submitted for #43 - awaiting verification", timestamp: new Date(Date.now() - 180000).toISOString() },
-  { type: "verify", message: "Verification passed for #43", timestamp: new Date(Date.now() - 120000).toISOString() },
-  { type: "merge", message: "PR #126 merged to main", timestamp: new Date(Date.now() - 60000).toISOString() },
+  {
+    type: "kernel",
+    message: "Kernel awakened, scanning beads graph",
+    timestamp: new Date(Date.now() - 900000).toISOString(),
+  },
+  {
+    type: "dispatch",
+    message: "Issue #42 routed to Claude Opus",
+    timestamp: new Date(Date.now() - 840000).toISOString(),
+  },
+  {
+    type: "workcell",
+    message: "Workcell wc-8a3f manifested for #42",
+    timestamp: new Date(Date.now() - 720000).toISOString(),
+  },
+  {
+    type: "dispatch",
+    message: "Issue #43 routed to Codex",
+    timestamp: new Date(Date.now() - 660000).toISOString(),
+  },
+  {
+    type: "forge",
+    message: "World generation started: enchanted_forest",
+    timestamp: new Date(Date.now() - 600000).toISOString(),
+  },
+  {
+    type: "gate",
+    message: "Gate passed: terrain_quality for enchanted_forest",
+    timestamp: new Date(Date.now() - 480000).toISOString(),
+  },
+  {
+    type: "gate",
+    message: "Gate passed: flora_density for enchanted_forest",
+    timestamp: new Date(Date.now() - 300000).toISOString(),
+  },
+  {
+    type: "proof",
+    message: "Proof submitted for #43 - awaiting verification",
+    timestamp: new Date(Date.now() - 180000).toISOString(),
+  },
+  {
+    type: "verify",
+    message: "Verification passed for #43",
+    timestamp: new Date(Date.now() - 120000).toISOString(),
+  },
+  {
+    type: "merge",
+    message: "PR #126 merged to main",
+    timestamp: new Date(Date.now() - 60000).toISOString(),
+  },
 ];
 
 // =============================================================================
@@ -380,9 +458,12 @@ export function useDockDemo(options: UseDockDemoOptions = {}) {
     if (showOracle) {
       const visions = ORACLE_VISIONS.slice(0, Math.min(oracleCount, ORACLE_VISIONS.length));
       visions.forEach((vision, index) => {
-        setTimeout(() => {
-          openCapsule(vision, true); // Start minimized
-        }, (index + 1) * 100);
+        setTimeout(
+          () => {
+            openCapsule(vision, true); // Start minimized
+          },
+          (index + 1) * 100,
+        );
       });
     }
 
@@ -391,15 +472,19 @@ export function useDockDemo(options: UseDockDemoOptions = {}) {
       const channels = WHISPER_CHANNELS.slice(0, Math.min(whisperCount, WHISPER_CHANNELS.length));
       const baseDelay = showOracle ? (oracleCount + 1) * 100 : 100;
       channels.forEach((channel, index) => {
-        setTimeout(() => {
-          openCapsule(channel, true); // Start minimized
-        }, baseDelay + (index * 100));
+        setTimeout(
+          () => {
+            openCapsule(channel, true); // Start minimized
+          },
+          baseDelay + index * 100,
+        );
       });
     }
 
     // Add coven (social) capsule - start minimized
     if (showCoven) {
-      const covenDelay = (showOracle ? oracleCount : 0) * 100 + (showWhisper ? whisperCount : 0) * 100 + 200;
+      const covenDelay =
+        (showOracle ? oracleCount : 0) * 100 + (showWhisper ? whisperCount : 0) * 100 + 200;
       setTimeout(() => {
         openCapsule(COVEN_DATA, true); // Start minimized
       }, covenDelay);
@@ -411,7 +496,19 @@ export function useDockDemo(options: UseDockDemoOptions = {}) {
         toggleShelf("events");
       }, 1000);
     }
-  }, [showOracle, showWhisper, showCoven, showSessions, oracleCount, whisperCount, showChronicle, openCapsule, setSessions, capsules.length, toggleShelf]);
+  }, [
+    showOracle,
+    showWhisper,
+    showCoven,
+    showSessions,
+    oracleCount,
+    whisperCount,
+    showChronicle,
+    openCapsule,
+    setSessions,
+    capsules.length,
+    toggleShelf,
+  ]);
 }
 
 /**

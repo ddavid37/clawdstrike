@@ -1,12 +1,7 @@
 /**
  * HushdClient - HTTP client for hushd daemon API
  */
-import type {
-  AuditFilter,
-  AuditResponse,
-  AuditStats,
-  ActionType,
-} from "@/types/events";
+import type { ActionType, AuditFilter, AuditResponse, AuditStats } from "@/types/events";
 import type { ValidationResult } from "@/types/policies";
 
 export interface CheckRequest {
@@ -89,7 +84,7 @@ export interface ApiResponse<T> {
 export class HushdClient {
   constructor(
     private baseUrl: string,
-    private token?: string
+    private token?: string,
   ) {}
 
   private unwrapData<T>(payload: T | ApiResponse<T>): T {
@@ -104,10 +99,7 @@ export class HushdClient {
     return payload as T;
   }
 
-  private async fetch<T>(
-    path: string,
-    options: Parameters<typeof fetch>[1] = {}
-  ): Promise<T> {
+  private async fetch<T>(path: string, options: Parameters<typeof fetch>[1] = {}): Promise<T> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...(options.headers as Record<string, string>),
@@ -139,21 +131,29 @@ export class HushdClient {
   // === Policy ===
 
   async getPolicy(): Promise<DaemonPolicyResponse> {
-    const response = await this.fetch<DaemonPolicyResponse | ApiResponse<DaemonPolicyResponse>>("/api/v1/policy");
+    const response = await this.fetch<DaemonPolicyResponse | ApiResponse<DaemonPolicyResponse>>(
+      "/api/v1/policy",
+    );
     return this.unwrapData(response);
   }
 
   async validatePolicy(yaml: string): Promise<ValidationResult> {
-    const response = await this.fetch<ValidationResult | ApiResponse<ValidationResult>>("/api/v1/policy/validate", {
-      method: "POST",
-      body: JSON.stringify({ yaml }),
-    });
+    const response = await this.fetch<ValidationResult | ApiResponse<ValidationResult>>(
+      "/api/v1/policy/validate",
+      {
+        method: "POST",
+        body: JSON.stringify({ yaml }),
+      },
+    );
     return this.unwrapData(response);
   }
 
-  async updatePolicy(yaml: string): Promise<{ success: boolean; message: string; policy_hash?: string }> {
+  async updatePolicy(
+    yaml: string,
+  ): Promise<{ success: boolean; message: string; policy_hash?: string }> {
     const response = await this.fetch<
-      { success: boolean; message: string; policy_hash?: string } | ApiResponse<{ success: boolean; message: string; policy_hash?: string }>
+      | { success: boolean; message: string; policy_hash?: string }
+      | ApiResponse<{ success: boolean; message: string; policy_hash?: string }>
     >("/api/v1/policy", {
       method: "PUT",
       body: JSON.stringify({ yaml }),
@@ -176,10 +176,13 @@ export class HushdClient {
   }
 
   async eval(event: Record<string, unknown>): Promise<PolicyEvalResponse> {
-    const response = await this.fetch<PolicyEvalResponse | ApiResponse<PolicyEvalResponse>>("/api/v1/eval", {
-      method: "POST",
-      body: JSON.stringify({ event }),
-    });
+    const response = await this.fetch<PolicyEvalResponse | ApiResponse<PolicyEvalResponse>>(
+      "/api/v1/eval",
+      {
+        method: "POST",
+        body: JSON.stringify({ event }),
+      },
+    );
     return this.unwrapData(response);
   }
 
@@ -208,17 +211,20 @@ export class HushdClient {
   // === Sessions ===
 
   async createSession(agentId?: string): Promise<{ session_id: string }> {
-    const response = await this.fetch<{ session_id: string } | ApiResponse<{ session_id: string }>>("/api/v1/session", {
-      method: "POST",
-      body: JSON.stringify({ agent_id: agentId }),
-    });
+    const response = await this.fetch<{ session_id: string } | ApiResponse<{ session_id: string }>>(
+      "/api/v1/session",
+      {
+        method: "POST",
+        body: JSON.stringify({ agent_id: agentId }),
+      },
+    );
     return this.unwrapData(response);
   }
 
   async getSession(sessionId: string): Promise<Record<string, unknown>> {
-    const response = await this.fetch<Record<string, unknown> | ApiResponse<Record<string, unknown>>>(
-      `/api/v1/session/${sessionId}`
-    );
+    const response = await this.fetch<
+      Record<string, unknown> | ApiResponse<Record<string, unknown>>
+    >(`/api/v1/session/${sessionId}`);
     return this.unwrapData(response);
   }
 

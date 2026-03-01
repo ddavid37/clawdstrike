@@ -1,12 +1,12 @@
-import { useEffect } from "react";
 import { useSystemTray } from "@backbay/glia-desktop";
+import { useEffect } from "react";
 import { useSharedSSE } from "../../context/SSEContext";
 
 const STATUS_CONFIG = {
-  connected:     { color: "#2fa7a0", label: "SSE Connected" },
-  connecting:    { color: "#d6b15a", label: "SSE Connecting..." },
-  disconnected:  { color: "#9aa7b5", label: "SSE Disconnected" },
-  unauthorized:  { color: "#c23b3b", label: "SSE Unauthorized" },
+  connected: { color: "#2fa7a0", label: "SSE Connected" },
+  connecting: { color: "#d6b15a", label: "SSE Connecting..." },
+  disconnected: { color: "#9aa7b5", label: "SSE Disconnected" },
+  unauthorized: { color: "#c23b3b", label: "SSE Unauthorized" },
   network_error: { color: "#c23b3b", label: "SSE Network Error" },
 } as const;
 

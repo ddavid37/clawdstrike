@@ -1,10 +1,10 @@
-import type { AdapterConfig } from './adapter.js';
-import type { AuditEvent } from './audit.js';
-import { BaseToolInterceptor } from './base-tool-interceptor.js';
-import { createSecurityContext, type SecurityContext } from './context.js';
-import type { PolicyEngineLike } from './engine.js';
-import type { InterceptResult, ToolInterceptor } from './interceptor.js';
-import type { Decision } from './types.js';
+import type { AdapterConfig } from "./adapter.js";
+import type { AuditEvent } from "./audit.js";
+import { BaseToolInterceptor } from "./base-tool-interceptor.js";
+import { createSecurityContext, type SecurityContext } from "./context.js";
+import type { PolicyEngineLike } from "./engine.js";
+import type { InterceptResult, ToolInterceptor } from "./interceptor.js";
+import type { Decision } from "./types.js";
 
 export type GenericToolDispatcher<TInput = unknown, TOutput = unknown, TRunId = string> = (
   toolName: string,
@@ -12,11 +12,7 @@ export type GenericToolDispatcher<TInput = unknown, TOutput = unknown, TRunId = 
   runId: TRunId,
 ) => Promise<TOutput>;
 
-export interface GenericToolBoundaryOptions<
-  TInput = unknown,
-  TOutput = unknown,
-  TRunId = string,
-> {
+export interface GenericToolBoundaryOptions<TInput = unknown, TOutput = unknown, TRunId = string> {
   engine?: PolicyEngineLike;
   interceptor?: ToolInterceptor<TInput, TOutput>;
   config?: AdapterConfig;
@@ -36,7 +32,7 @@ export class GenericToolCallBlockedError extends Error {
 
   constructor(toolName: string, decision: Decision) {
     super(`Tool call blocked by policy: ${toolName}`);
-    this.name = 'GenericToolCallBlockedError';
+    this.name = "GenericToolCallBlockedError";
     this.toolName = toolName;
     this.decision = decision;
   }
@@ -63,23 +59,19 @@ export class GenericToolBoundary<TInput = unknown, TOutput = unknown, TRunId = s
         TOutput
       >;
     } else {
-      throw new Error('GenericToolBoundary requires { interceptor } or { engine }');
+      throw new Error("GenericToolBoundary requires { interceptor } or { engine }");
     }
 
     this.createContextForRun =
-      options.createContext
-      ?? ((runId: TRunId) =>
+      options.createContext ??
+      ((runId: TRunId) =>
         createSecurityContext({
           sessionId: this.keyFromRunId(runId),
-          metadata: { framework: 'generic' },
+          metadata: { framework: "generic" },
         }));
   }
 
-  async handleToolStart(
-    toolName: string,
-    input: TInput,
-    runId: TRunId,
-  ): Promise<InterceptResult> {
+  async handleToolStart(toolName: string, input: TInput, runId: TRunId): Promise<InterceptResult> {
     const key = this.keyFromRunId(runId);
     const context = this.getContext(runId);
     const result = await this.interceptor.beforeExecute(toolName, input, context);
@@ -87,11 +79,12 @@ export class GenericToolBoundary<TInput = unknown, TOutput = unknown, TRunId = s
       throw new GenericToolCallBlockedError(toolName, result.decision);
     }
 
-    const effectiveInput = result.modifiedInput !== undefined
-      ? (result.modifiedInput as TInput)
-      : result.modifiedParameters !== undefined
-        ? (result.modifiedParameters as unknown as TInput)
-        : input;
+    const effectiveInput =
+      result.modifiedInput !== undefined
+        ? (result.modifiedInput as TInput)
+        : result.modifiedParameters !== undefined
+          ? (result.modifiedParameters as unknown as TInput)
+          : input;
     this.pending.set(key, {
       toolName,
       input: effectiveInput,
@@ -157,7 +150,7 @@ export class GenericToolBoundary<TInput = unknown, TOutput = unknown, TRunId = s
   }
 
   getAuditEvents(): AuditEvent[] {
-    return Array.from(this.contexts.values()).flatMap(context => context.auditEvents);
+    return Array.from(this.contexts.values()).flatMap((context) => context.auditEvents);
   }
 }
 
@@ -172,11 +165,12 @@ export function wrapGenericToolDispatcher<TInput = unknown, TOutput = unknown, T
       if (intercept.replacementResult !== undefined) {
         output = intercept.replacementResult as TOutput;
       } else {
-        const dispatchInput = intercept.modifiedInput !== undefined
-          ? (intercept.modifiedInput as TInput)
-          : intercept.modifiedParameters !== undefined
-            ? (intercept.modifiedParameters as unknown as TInput)
-            : input;
+        const dispatchInput =
+          intercept.modifiedInput !== undefined
+            ? (intercept.modifiedInput as TInput)
+            : intercept.modifiedParameters !== undefined
+              ? (intercept.modifiedParameters as unknown as TInput)
+              : input;
         output = await dispatch(toolName, dispatchInput, runId);
       }
       return await boundary.handleToolEnd(output, runId);

@@ -9,7 +9,10 @@ export interface EventFilter {
 }
 
 export function eventMatchesFilter(event: SecurityEvent, filter: EventFilter): boolean {
-  if (filter.min_severity && severityOrd(event.decision.severity) < severityOrd(filter.min_severity)) {
+  if (
+    filter.min_severity &&
+    severityOrd(event.decision.severity) < severityOrd(filter.min_severity)
+  ) {
     return false;
   }
 
@@ -48,4 +51,3 @@ function severityOrd(sev: SecuritySeverity): number {
     }
   }
 }
-

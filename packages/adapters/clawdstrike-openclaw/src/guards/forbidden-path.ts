@@ -4,36 +4,36 @@
  * Blocks access to sensitive filesystem paths.
  */
 
-import { minimatch } from 'minimatch';
-import { homedir } from 'os';
-import { resolve, normalize } from 'path';
-import type { PolicyEvent, Policy, GuardResult, EventType } from '../types.js';
-import { BaseGuard } from './types.js';
+import { minimatch } from "minimatch";
+import { homedir } from "os";
+import { normalize, resolve } from "path";
+import type { EventType, GuardResult, Policy, PolicyEvent } from "../types.js";
+import { BaseGuard } from "./types.js";
 
 /**
  * Default forbidden paths when no policy is specified
  */
 const DEFAULT_FORBIDDEN_PATHS = [
-  '~/.ssh',
-  '~/.ssh/*',
-  '~/.aws',
-  '~/.aws/*',
-  '~/.gnupg',
-  '~/.gnupg/*',
-  '~/.config/gcloud',
-  '~/.config/gcloud/*',
-  '/etc/shadow',
-  '/etc/passwd',
-  '.env',
-  '**/.env',
-  '**/.env.*',
-  '*.pem',
-  '**/*.pem',
-  '*.key',
-  '**/*.key',
-  '**/id_rsa',
-  '**/id_ed25519',
-  '**/id_ecdsa',
+  "~/.ssh",
+  "~/.ssh/*",
+  "~/.aws",
+  "~/.aws/*",
+  "~/.gnupg",
+  "~/.gnupg/*",
+  "~/.config/gcloud",
+  "~/.config/gcloud/*",
+  "/etc/shadow",
+  "/etc/passwd",
+  ".env",
+  "**/.env",
+  "**/.env.*",
+  "*.pem",
+  "**/*.pem",
+  "*.key",
+  "**/*.key",
+  "**/id_rsa",
+  "**/id_ed25519",
+  "**/id_ecdsa",
 ];
 
 /**
@@ -41,11 +41,11 @@ const DEFAULT_FORBIDDEN_PATHS = [
  */
 export class ForbiddenPathGuard extends BaseGuard {
   name(): string {
-    return 'forbidden_path';
+    return "forbidden_path";
   }
 
   handles(): EventType[] {
-    return ['file_read', 'file_write'];
+    return ["file_read", "file_write"];
   }
 
   async check(event: PolicyEvent, policy: Policy): Promise<GuardResult> {
@@ -56,18 +56,15 @@ export class ForbiddenPathGuard extends BaseGuard {
     const data = event.data;
 
     // Only handle file events
-    if (data.type !== 'file') {
+    if (data.type !== "file") {
       return this.allow();
     }
 
     const path = data.path;
 
     // Reject paths containing null bytes (path injection attack)
-    if (path.includes('\0')) {
-      return this.deny(
-        'Path contains null byte: null_byte_injection',
-        'critical',
-      );
+    if (path.includes("\0")) {
+      return this.deny("Path contains null byte: null_byte_injection", "critical");
     }
     const forbiddenPaths = policy.filesystem?.forbidden_paths ?? DEFAULT_FORBIDDEN_PATHS;
 
@@ -78,7 +75,7 @@ export class ForbiddenPathGuard extends BaseGuard {
     if (matchedPattern) {
       return this.deny(
         `Access to forbidden path: ${path} (matches pattern: ${matchedPattern})`,
-        'critical',
+        "critical",
       );
     }
 
@@ -94,9 +91,7 @@ export class ForbiddenPathGuard extends BaseGuard {
 
     for (const pattern of patterns) {
       // Expand ~ in pattern to actual home directory
-      const expandedPattern = pattern.startsWith('~')
-        ? pattern.replace(/^~/, home)
-        : pattern;
+      const expandedPattern = pattern.startsWith("~") ? pattern.replace(/^~/, home) : pattern;
 
       // Check exact match
       if (path === expandedPattern) {
@@ -105,8 +100,8 @@ export class ForbiddenPathGuard extends BaseGuard {
 
       // Check if path is inside a forbidden directory
       // e.g., ~/.ssh should match /Users/test/.ssh/id_rsa
-      if (!expandedPattern.includes('*') && !expandedPattern.includes('?')) {
-        if (path.startsWith(expandedPattern + '/') || path === expandedPattern) {
+      if (!expandedPattern.includes("*") && !expandedPattern.includes("?")) {
+        if (path.startsWith(expandedPattern + "/") || path === expandedPattern) {
           return pattern;
         }
       }
@@ -117,24 +112,24 @@ export class ForbiddenPathGuard extends BaseGuard {
       }
 
       // Check basename match for patterns like ".env" or "*.pem"
-      const basename = path.split('/').pop() ?? '';
+      const basename = path.split("/").pop() ?? "";
       // Only apply basename matching for patterns without slashes
-      if (!pattern.includes('/')) {
+      if (!pattern.includes("/")) {
         if (minimatch(basename, pattern, { dot: true })) {
           return pattern;
         }
       }
 
       // For patterns starting with **/, match anywhere in path
-      if (pattern.startsWith('**/')) {
+      if (pattern.startsWith("**/")) {
         const patternSuffix = pattern.slice(3);
         if (minimatch(basename, patternSuffix, { dot: true })) {
           return pattern;
         }
         // Also try matching from any path component
-        const pathParts = path.split('/');
+        const pathParts = path.split("/");
         for (let i = 0; i < pathParts.length; i++) {
-          const subPath = pathParts.slice(i).join('/');
+          const subPath = pathParts.slice(i).join("/");
           if (minimatch(subPath, patternSuffix, { dot: true })) {
             return pattern;
           }
@@ -151,15 +146,15 @@ export class ForbiddenPathGuard extends BaseGuard {
  */
 function normalizePath(path: string): string {
   // Strip null bytes to prevent path injection
-  path = path.replace(/\0/g, '');
+  path = path.replace(/\0/g, "");
 
   // Expand ~
-  if (path.startsWith('~')) {
+  if (path.startsWith("~")) {
     path = path.replace(/^~/, homedir());
   }
 
   // Resolve to absolute if not a glob pattern
-  if (!path.includes('*') && !path.includes('?')) {
+  if (!path.includes("*") && !path.includes("?")) {
     path = resolve(path);
   }
 

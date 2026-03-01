@@ -90,12 +90,8 @@ export function ThemeToggle({
           </svg>
         </span>
       </button>
-      <p
-        className="font-body text-xs"
-        style={{ color: "rgba(229,231,235,0.4)" }}
-      >
-        Currently using {isLight ? "light" : "dark"} mode. Theme applies to all panels and
-        overlays.
+      <p className="font-body text-xs" style={{ color: "rgba(229,231,235,0.4)" }}>
+        Currently using {isLight ? "light" : "dark"} mode. Theme applies to all panels and overlays.
       </p>
     </div>
   );

@@ -1,8 +1,8 @@
+import type { SSEEvent } from "../../hooks/useSSE";
 import { Plate } from "../ui";
-import { ViolationSparkline } from "./ViolationSparkline";
 import { DecisionDonut } from "./DecisionDonut";
 import { GuardHeatmap } from "./GuardHeatmap";
-import type { SSEEvent } from "../../hooks/useSSE";
+import { ViolationSparkline } from "./ViolationSparkline";
 
 export function DashboardCharts({ events }: { events: SSEEvent[] }) {
   return (
@@ -25,7 +25,10 @@ export function DashboardCharts({ events }: { events: SSEEvent[] }) {
           <ViolationSparkline events={events} />
         </div>
       </Plate>
-      <Plate className="p-4" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <Plate
+        className="p-4"
+        style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+      >
         <div style={{ position: "relative", zIndex: 2 }}>
           <DecisionDonut events={events} />
         </div>

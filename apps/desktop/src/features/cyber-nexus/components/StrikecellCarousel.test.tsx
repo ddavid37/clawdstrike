@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRoot, type Root } from "react-dom/client";
+
 import { act } from "react";
-import { StrikecellCarousel } from "./StrikecellCarousel";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Strikecell } from "../types";
+import { StrikecellCarousel } from "./StrikecellCarousel";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -66,7 +67,7 @@ describe("StrikecellCarousel", () => {
           onToggleExpanded={vi.fn()}
           onPin={vi.fn()}
           onReorder={vi.fn()}
-        />
+        />,
       );
     });
 
@@ -103,7 +104,7 @@ describe("StrikecellCarousel", () => {
           onToggleExpanded={vi.fn()}
           onPin={vi.fn()}
           onReorder={vi.fn()}
-        />
+        />,
       );
     });
 

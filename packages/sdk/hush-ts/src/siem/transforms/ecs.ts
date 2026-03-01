@@ -19,7 +19,10 @@ function ecsSeverity(sev: SecurityEvent["decision"]["severity"]): number {
   }
 }
 
-function ecsCategoryAndType(eventType: SecurityEvent["event_type"]): { category: string; type: string } {
+function ecsCategoryAndType(eventType: SecurityEvent["event_type"]): {
+  category: string;
+  type: string;
+} {
   switch (eventType) {
     case "session_start":
       return { category: "session", type: "start" };

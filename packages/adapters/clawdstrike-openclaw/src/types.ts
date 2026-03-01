@@ -12,34 +12,30 @@
 // Re-exports from @clawdstrike/adapter-core (structurally identical types)
 // ---------------------------------------------------------------------------
 
-export type {
-  ClawdstrikeConfig,
-  CuaEventData,
-  Decision,
-  DecisionStatus,
-  EventData,
-  EventType,
-  EvaluationMode,
-  GuardToggles,
-  LogLevel,
-  PolicyEvent,
-  Severity,
-} from '@clawdstrike/adapter-core';
-
 // DecisionReasonCode is a plain `string` alias in both packages.
 // Re-export so consumers keep the same semantic name.
-export type { DecisionReasonCode } from '@clawdstrike/adapter-core';
-
 // Also re-export the concrete event-data interfaces so files that import
 // e.g. `FileEventData` from '../types.js' continue to resolve.
 export type {
-  FileEventData,
+  ClawdstrikeConfig,
   CommandEventData,
+  CuaEventData,
+  Decision,
+  DecisionReasonCode,
+  DecisionStatus,
+  EvaluationMode,
+  EventData,
+  EventType,
+  FileEventData,
+  GuardToggles,
+  LogLevel,
   NetworkEventData,
-  ToolEventData,
   PatchEventData,
+  PolicyEvent,
   SecretEventData,
-} from '@clawdstrike/adapter-core';
+  Severity,
+  ToolEventData,
+} from "@clawdstrike/adapter-core";
 
 // ---------------------------------------------------------------------------
 // Openclaw-specific types (no adapter-core equivalent)
@@ -48,14 +44,14 @@ export type {
 /**
  * Action to take on policy violation
  */
-export type ViolationAction = 'cancel' | 'warn' | 'isolate' | 'escalate';
+export type ViolationAction = "cancel" | "warn" | "isolate" | "escalate";
 
 /**
  * Network egress mode
  */
-export type EgressMode = 'allowlist' | 'denylist' | 'open' | 'deny_all';
+export type EgressMode = "allowlist" | "denylist" | "open" | "deny_all";
 
-export type ComputerUseMode = 'observe' | 'guardrail' | 'fail_closed';
+export type ComputerUseMode = "observe" | "guardrail" | "fail_closed";
 
 export interface ComputerUseGuardConfig {
   enabled?: boolean;
@@ -82,7 +78,7 @@ export interface InputInjectionCapabilityGuardConfig {
 
 // NOTE: GuardToggles is re-exported from adapter-core above.
 // Import it as a type-only reference for the `extends` clause.
-import type { GuardToggles as _GuardToggles } from '@clawdstrike/adapter-core';
+import type { GuardToggles as _GuardToggles } from "@clawdstrike/adapter-core";
 
 export interface PolicyGuards extends _GuardToggles {
   custom?: unknown;
@@ -92,14 +88,14 @@ export interface PolicyGuards extends _GuardToggles {
 }
 
 // Import Severity for use in local interfaces below.
-import type { Severity as _Severity } from '@clawdstrike/adapter-core';
+import type { Severity as _Severity } from "@clawdstrike/adapter-core";
 
 /**
  * Result from a single guard check
  */
 export interface GuardResult {
   /** Guard status */
-  status: 'allow' | 'deny' | 'warn';
+  status: "allow" | "deny" | "warn";
   /** Reason message */
   reason?: string;
   /** Severity (for deny) */
@@ -235,7 +231,7 @@ export interface DangerousPattern {
 }
 
 // Import ClawdstrikeConfig for use in local interfaces.
-import type { ClawdstrikeConfig as _ClawdstrikeConfig } from '@clawdstrike/adapter-core';
+import type { ClawdstrikeConfig as _ClawdstrikeConfig } from "@clawdstrike/adapter-core";
 
 /**
  * OpenClaw Plugin API interface (minimal for type safety)
@@ -313,7 +309,7 @@ export interface Logger {
  * Hook event context for tool_result_persist
  */
 export interface ToolResultPersistEvent {
-  type: 'tool_result_persist';
+  type: "tool_result_persist";
   timestamp: string;
   context: {
     sessionId: string;
@@ -331,7 +327,7 @@ export interface ToolResultPersistEvent {
  * Hook event context for agent:bootstrap
  */
 export interface AgentBootstrapEvent {
-  type: 'agent:bootstrap';
+  type: "agent:bootstrap";
   timestamp: string;
   context: {
     sessionId: string;
@@ -349,7 +345,7 @@ export interface AgentBootstrapEvent {
  * Accepts both 'tool_call' (legacy) and 'before_tool_call' (v2026.2.1+).
  */
 export interface ToolCallEvent {
-  type: 'tool_call' | 'before_tool_call';
+  type: "tool_call" | "before_tool_call";
   timestamp: string;
   context: {
     sessionId: string;

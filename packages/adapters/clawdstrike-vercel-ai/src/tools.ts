@@ -1,7 +1,12 @@
-import { BaseToolInterceptor, createSecurityContext } from '@clawdstrike/adapter-core';
-import type { AdapterConfig, PolicyEngineLike, SecurityContext, ToolInterceptor } from '@clawdstrike/adapter-core';
+import type {
+  AdapterConfig,
+  PolicyEngineLike,
+  SecurityContext,
+  ToolInterceptor,
+} from "@clawdstrike/adapter-core";
+import { BaseToolInterceptor, createSecurityContext } from "@clawdstrike/adapter-core";
 
-import { ClawdstrikeBlockedError } from './errors.js';
+import { ClawdstrikeBlockedError } from "./errors.js";
 
 export type VercelAiToolLike<TInput = unknown, TOutput = unknown> = {
   execute: (input: TInput, ...rest: unknown[]) => Promise<TOutput> | TOutput;
@@ -66,15 +71,23 @@ export function secureTools<TTools extends Record<string, VercelAiToolLike>>(
     interceptor = new BaseToolInterceptor(csOrInterceptor, config);
   }
 
-  const defaultContext = options?.context ?? createSecurityContext({
-    metadata: { framework: 'vercel-ai' },
-  });
+  const defaultContext =
+    options?.context ??
+    createSecurityContext({
+      metadata: { framework: "vercel-ai" },
+    });
 
   const secured = {} as TTools;
   for (const [toolName, tool] of Object.entries(tools)) {
     (secured as Record<string, VercelAiToolLike>)[toolName] = {
       ...(tool as object),
-      execute: wrapExecute(toolName, tool.execute, interceptor, defaultContext, options?.getContext),
+      execute: wrapExecute(
+        toolName,
+        tool.execute,
+        interceptor,
+        defaultContext,
+        options?.getContext,
+      ),
     } as VercelAiToolLike;
   }
 
@@ -90,25 +103,25 @@ export function secureToolsLegacy<TTools extends Record<string, VercelAiToolLike
   interceptor: ToolInterceptor,
   options?: SecureToolsOptions,
 ): TTools {
-  console.warn('secureToolsLegacy is deprecated. Use secureTools(tools, clawdstrike) instead.');
+  console.warn("secureToolsLegacy is deprecated. Use secureTools(tools, clawdstrike) instead.");
   return secureTools(tools, interceptor, options);
 }
 
 function isToolInterceptor(value: unknown): value is ToolInterceptor {
   return (
-    typeof value === 'object' &&
+    typeof value === "object" &&
     value !== null &&
-    typeof (value as ToolInterceptor).beforeExecute === 'function' &&
-    typeof (value as ToolInterceptor).afterExecute === 'function' &&
-    typeof (value as ToolInterceptor).onError === 'function'
+    typeof (value as ToolInterceptor).beforeExecute === "function" &&
+    typeof (value as ToolInterceptor).afterExecute === "function" &&
+    typeof (value as ToolInterceptor).onError === "function"
   );
 }
 
 function isClawdstrikeLike(value: unknown): value is ClawdstrikeLike {
   return (
-    typeof value === 'object' &&
+    typeof value === "object" &&
     value !== null &&
-    typeof (value as ClawdstrikeLike).createInterceptor === 'function'
+    typeof (value as ClawdstrikeLike).createInterceptor === "function"
   );
 }
 

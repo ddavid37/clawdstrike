@@ -4,20 +4,15 @@
  * Configuration handling and defaults for the Clawdstrike plugin.
  */
 
-import type {
-  ClawdstrikeConfig,
-  EvaluationMode,
-  LogLevel,
-  GuardToggles,
-} from './types.js';
+import type { ClawdstrikeConfig, EvaluationMode, GuardToggles, LogLevel } from "./types.js";
 
 /**
  * Default configuration values
  */
 export const DEFAULT_CONFIG: Required<ClawdstrikeConfig> = {
-  policy: 'clawdstrike:ai-agent-minimal',
-  mode: 'deterministic',
-  logLevel: 'info',
+  policy: "clawdstrike:ai-agent-minimal",
+  mode: "deterministic",
+  logLevel: "info",
   guards: {
     forbidden_path: true,
     egress: true,
@@ -30,9 +25,7 @@ export const DEFAULT_CONFIG: Required<ClawdstrikeConfig> = {
 /**
  * Merge user config with defaults
  */
-export function mergeConfig(
-  userConfig: ClawdstrikeConfig = {},
-): Required<ClawdstrikeConfig> {
+export function mergeConfig(userConfig: ClawdstrikeConfig = {}): Required<ClawdstrikeConfig> {
   return {
     policy: userConfig.policy ?? DEFAULT_CONFIG.policy,
     mode: userConfig.mode ?? DEFAULT_CONFIG.mode,
@@ -44,9 +37,7 @@ export function mergeConfig(
 /**
  * Merge guard toggles with defaults
  */
-function mergeGuardToggles(
-  userGuards: GuardToggles = {},
-): Required<GuardToggles> {
+function mergeGuardToggles(userGuards: GuardToggles = {}): Required<GuardToggles> {
   const d = DEFAULT_CONFIG.guards;
   const u = userGuards;
   return {
@@ -79,14 +70,14 @@ export function validateConfig(config: ClawdstrikeConfig): string[] {
  * Type guard for EvaluationMode
  */
 function isValidMode(mode: string): mode is EvaluationMode {
-  return ['deterministic', 'advisory', 'audit'].includes(mode);
+  return ["deterministic", "advisory", "audit"].includes(mode);
 }
 
 /**
  * Type guard for LogLevel
  */
 function isValidLogLevel(level: string): level is LogLevel {
-  return ['debug', 'info', 'warn', 'error'].includes(level);
+  return ["debug", "info", "warn", "error"].includes(level);
 }
 
 /**
@@ -94,9 +85,9 @@ function isValidLogLevel(level: string): level is LogLevel {
  */
 export function resolveBuiltinPolicy(name: string): string | null {
   const builtinPolicies: Record<string, string> = {
-    'clawdstrike:ai-agent-minimal': 'ai-agent-minimal.yaml',
-    'clawdstrike:ai-agent': 'ai-agent.yaml',
-    'clawdstrike:default': 'ai-agent.yaml',
+    "clawdstrike:ai-agent-minimal": "ai-agent-minimal.yaml",
+    "clawdstrike:ai-agent": "ai-agent.yaml",
+    "clawdstrike:default": "ai-agent.yaml",
   };
 
   return builtinPolicies[name] ?? null;
@@ -106,5 +97,5 @@ export function resolveBuiltinPolicy(name: string): string | null {
  * Check if a policy name is a built-in policy
  */
 export function isBuiltinPolicy(name: string): boolean {
-  return name.startsWith('clawdstrike:');
+  return name.startsWith("clawdstrike:");
 }

@@ -1,10 +1,10 @@
-import type { AdapterConfig } from './adapter.js';
-import type { AuditEvent } from './audit.js';
-import { BaseToolInterceptor } from './base-tool-interceptor.js';
-import { createSecurityContext, type SecurityContext } from './context.js';
-import type { PolicyEngineLike } from './engine.js';
-import type { InterceptResult, ToolInterceptor } from './interceptor.js';
-import { ClawdstrikeBlockedError } from './errors.js';
+import type { AdapterConfig } from "./adapter.js";
+import type { AuditEvent } from "./audit.js";
+import { BaseToolInterceptor } from "./base-tool-interceptor.js";
+import { createSecurityContext, type SecurityContext } from "./context.js";
+import type { PolicyEngineLike } from "./engine.js";
+import { ClawdstrikeBlockedError } from "./errors.js";
+import type { InterceptResult, ToolInterceptor } from "./interceptor.js";
 
 export interface FrameworkToolBoundaryOptions {
   engine?: PolicyEngineLike;
@@ -47,8 +47,8 @@ export class FrameworkToolBoundary {
     }
 
     this.createContextFn =
-      options.createContext
-      ?? ((runId: string) =>
+      options.createContext ??
+      ((runId: string) =>
         createSecurityContext({
           sessionId: runId,
           metadata: { framework: this.framework },
@@ -62,11 +62,12 @@ export class FrameworkToolBoundary {
       throw new ClawdstrikeBlockedError(toolName, result.decision);
     }
 
-    const effectiveInput = result.modifiedInput !== undefined
-      ? result.modifiedInput
-      : result.modifiedParameters !== undefined
-        ? result.modifiedParameters
-        : input;
+    const effectiveInput =
+      result.modifiedInput !== undefined
+        ? result.modifiedInput
+        : result.modifiedParameters !== undefined
+          ? result.modifiedParameters
+          : input;
     this.pending.set(runId, { toolName, input: effectiveInput, context });
     return result;
   }
@@ -99,7 +100,7 @@ export class FrameworkToolBoundary {
   }
 
   getAuditEvents(): AuditEvent[] {
-    return Array.from(this.contexts.values()).flatMap(ctx => ctx.auditEvents);
+    return Array.from(this.contexts.values()).flatMap((ctx) => ctx.auditEvents);
   }
 
   clearRun(runId: string): void {
@@ -135,11 +136,12 @@ export function wrapFrameworkToolDispatcher<TOutput = unknown>(
       if (intercept.replacementResult !== undefined) {
         output = intercept.replacementResult as TOutput;
       } else {
-        const dispatchInput = intercept.modifiedInput !== undefined
-          ? intercept.modifiedInput
-          : intercept.modifiedParameters !== undefined
-            ? intercept.modifiedParameters
-            : input;
+        const dispatchInput =
+          intercept.modifiedInput !== undefined
+            ? intercept.modifiedInput
+            : intercept.modifiedParameters !== undefined
+              ? intercept.modifiedParameters
+              : input;
         output = await dispatch(toolName, dispatchInput, runId);
       }
       return (await boundary.handleToolEnd(output, runId)) as TOutput;

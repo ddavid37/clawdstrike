@@ -90,14 +90,18 @@ function normalizeGateways(value: unknown): string[] {
     value
       .filter((v) => typeof v === "string")
       .map((s) => s.trim())
-      .filter((s) => s.length > 0 && (s.startsWith("https://") || s.startsWith("http://")))
+      .filter((s) => s.length > 0 && (s.startsWith("https://") || s.startsWith("http://"))),
   ).slice(0, 16);
 }
 
 export function loadIpfsGatewaySettings(): IpfsGatewaySettings {
   try {
     const raw = localStorage.getItem(IPFS_GATEWAY_STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_IPFS_GATEWAY_SETTINGS, gateways: DEFAULT_IPFS_GATEWAY_SETTINGS.gateways.slice() };
+    if (!raw)
+      return {
+        ...DEFAULT_IPFS_GATEWAY_SETTINGS,
+        gateways: DEFAULT_IPFS_GATEWAY_SETTINGS.gateways.slice(),
+      };
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const gateways = normalizeGateways(parsed.gateways);
     const timeoutMs =
@@ -109,7 +113,10 @@ export function loadIpfsGatewaySettings(): IpfsGatewaySettings {
       timeoutMs,
     };
   } catch {
-    return { ...DEFAULT_IPFS_GATEWAY_SETTINGS, gateways: DEFAULT_IPFS_GATEWAY_SETTINGS.gateways.slice() };
+    return {
+      ...DEFAULT_IPFS_GATEWAY_SETTINGS,
+      gateways: DEFAULT_IPFS_GATEWAY_SETTINGS.gateways.slice(),
+    };
   }
 }
 
@@ -125,7 +132,7 @@ export function saveIpfsGatewaySettings(settings: IpfsGatewaySettings): void {
       JSON.stringify({
         gateways: gateways.length > 0 ? gateways : DEFAULT_IPFS_GATEWAY_SETTINGS.gateways.slice(),
         timeoutMs,
-      })
+      }),
     );
   } catch {
     // ignore
@@ -184,4 +191,3 @@ export function saveSpineModeSettings(settings: SpineModeSettings): void {
     // ignore
   }
 }
-

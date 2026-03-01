@@ -1,4 +1,4 @@
-import { sleep } from './util.js';
+import { sleep } from "./util.js";
 
 export class TokenBucket {
   private tokens: number;
@@ -37,4 +37,3 @@ export class TokenBucket {
     this.tokens = Math.min(this.capacity, this.tokens + added);
   }
 }
-

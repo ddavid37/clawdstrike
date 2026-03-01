@@ -1,7 +1,7 @@
 /**
  * CyberNexusOrb - global mode dial + home route anchor.
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   CYBER_NEXUS_MODE_EVENT,
@@ -108,7 +108,11 @@ export function CyberNexusOrb() {
           data-tone={descriptor.tone}
         >
           <div className="nexus-orb-glow" />
-          <div className="nexus-orb-mode-ring" data-mode-index={modeIndex} data-tone={descriptor.tone} />
+          <div
+            className="nexus-orb-mode-ring"
+            data-mode-index={modeIndex}
+            data-tone={descriptor.tone}
+          />
           <div className="nexus-orb-visual">
             <NexusIcon />
           </div>

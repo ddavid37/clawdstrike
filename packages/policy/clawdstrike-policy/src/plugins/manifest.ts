@@ -1,14 +1,14 @@
-export type PluginTrustLevel = 'trusted' | 'untrusted';
-export type PluginTrustSandbox = 'node' | 'wasm';
+export type PluginTrustLevel = "trusted" | "untrusted";
+export type PluginTrustSandbox = "node" | "wasm";
 export type PluginGuardHandle =
-  | 'file_read'
-  | 'file_write'
-  | 'command_exec'
-  | 'network_egress'
-  | 'tool_call'
-  | 'patch_apply'
-  | 'secret_access'
-  | 'custom';
+  | "file_read"
+  | "file_write"
+  | "command_exec"
+  | "network_egress"
+  | "tool_call"
+  | "patch_apply"
+  | "secret_access"
+  | "custom";
 
 export interface PluginGuardManifestEntry {
   name: string;
@@ -60,32 +60,32 @@ export interface PluginManifest {
 
 export function parsePluginManifest(value: unknown): PluginManifest {
   if (!isPlainObject(value)) {
-    throw new Error('plugin manifest must be an object');
+    throw new Error("plugin manifest must be an object");
   }
 
   const version = value.version;
-  if (typeof version !== 'string' || version.trim() === '') {
-    throw new Error('plugin manifest.version must be a non-empty string');
+  if (typeof version !== "string" || version.trim() === "") {
+    throw new Error("plugin manifest.version must be a non-empty string");
   }
 
   const name = value.name;
-  if (typeof name !== 'string' || name.trim() === '') {
-    throw new Error('plugin manifest.name must be a non-empty string');
+  if (typeof name !== "string" || name.trim() === "") {
+    throw new Error("plugin manifest.name must be a non-empty string");
   }
 
   const trust = (value as any).trust;
   if (!isPlainObject(trust)) {
-    throw new Error('plugin manifest.trust must be an object');
+    throw new Error("plugin manifest.trust must be an object");
   }
   const level = (trust as any).level;
-  if (level !== 'trusted' && level !== 'untrusted') {
+  if (level !== "trusted" && level !== "untrusted") {
     throw new Error('plugin manifest.trust.level must be "trusted" or "untrusted"');
   }
   const sandboxRaw = (trust as any).sandbox;
-  if (sandboxRaw !== undefined && sandboxRaw !== 'node' && sandboxRaw !== 'wasm') {
+  if (sandboxRaw !== undefined && sandboxRaw !== "node" && sandboxRaw !== "wasm") {
     throw new Error('plugin manifest.trust.sandbox must be "node" or "wasm"');
   }
-  const sandbox: PluginTrustSandbox = sandboxRaw ?? 'node';
+  const sandbox: PluginTrustSandbox = sandboxRaw ?? "node";
 
   const compatibility = parseCompatibility((value as any).clawdstrike);
   const capabilities = parseCapabilities((value as any).capabilities);
@@ -93,7 +93,7 @@ export function parsePluginManifest(value: unknown): PluginManifest {
 
   const guards = (value as any).guards;
   if (!Array.isArray(guards) || guards.length === 0) {
-    throw new Error('plugin manifest.guards must be a non-empty array');
+    throw new Error("plugin manifest.guards must be a non-empty array");
   }
 
   const guardNames = new Set<string>();
@@ -106,7 +106,7 @@ export function parsePluginManifest(value: unknown): PluginManifest {
     }
 
     const guardName = (g as any).name;
-    if (typeof guardName !== 'string' || guardName.trim() === '') {
+    if (typeof guardName !== "string" || guardName.trim() === "") {
       throw new Error(`${base}.name must be a non-empty string`);
     }
     if (guardNames.has(guardName)) {
@@ -115,7 +115,7 @@ export function parsePluginManifest(value: unknown): PluginManifest {
     guardNames.add(guardName);
 
     const entrypoint = (g as any).entrypoint;
-    if (typeof entrypoint !== 'string' || entrypoint.trim() === '') {
+    if (typeof entrypoint !== "string" || entrypoint.trim() === "") {
       throw new Error(`${base}.entrypoint must be a non-empty string`);
     }
 
@@ -123,7 +123,10 @@ export function parsePluginManifest(value: unknown): PluginManifest {
     const handles = parseHandles(handlesRaw, `${base}.handles`);
 
     const configSchema = (g as any).configSchema;
-    if (configSchema !== undefined && (typeof configSchema !== 'string' || configSchema.trim() === '')) {
+    if (
+      configSchema !== undefined &&
+      (typeof configSchema !== "string" || configSchema.trim() === "")
+    ) {
       throw new Error(`${base}.configSchema must be a non-empty string when provided`);
     }
 
@@ -137,15 +140,15 @@ export function parsePluginManifest(value: unknown): PluginManifest {
 
   return {
     schema:
-      typeof (value as any).$schema === 'string' && (value as any).$schema.trim() !== ''
+      typeof (value as any).$schema === "string" && (value as any).$schema.trim() !== ""
         ? String((value as any).$schema)
         : undefined,
     version,
     name,
-    displayName: parseOptionalString((value as any).displayName, 'plugin manifest.displayName'),
-    description: parseOptionalString((value as any).description, 'plugin manifest.description'),
-    author: parseOptionalString((value as any).author, 'plugin manifest.author'),
-    license: parseOptionalString((value as any).license, 'plugin manifest.license'),
+    displayName: parseOptionalString((value as any).displayName, "plugin manifest.displayName"),
+    description: parseOptionalString((value as any).description, "plugin manifest.description"),
+    author: parseOptionalString((value as any).author, "plugin manifest.author"),
+    license: parseOptionalString((value as any).license, "plugin manifest.license"),
     clawdstrike: compatibility,
     guards: parsedGuards,
     capabilities,
@@ -178,17 +181,25 @@ function parseCompatibility(value: unknown): PluginVersionCompatibility | undefi
     return undefined;
   }
   if (!isPlainObject(value)) {
-    throw new Error('plugin manifest.clawdstrike must be an object when provided');
+    throw new Error("plugin manifest.clawdstrike must be an object when provided");
   }
 
-  const minVersion = parseOptionalString(value.minVersion, 'plugin manifest.clawdstrike.minVersion');
+  const minVersion = parseOptionalString(
+    value.minVersion,
+    "plugin manifest.clawdstrike.minVersion",
+  );
   if (minVersion !== undefined && !isStrictSemver(minVersion)) {
-    throw new Error('plugin manifest.clawdstrike.minVersion must be strict semver (x.y.z)');
+    throw new Error("plugin manifest.clawdstrike.minVersion must be strict semver (x.y.z)");
   }
 
-  const maxVersion = parseOptionalString(value.maxVersion, 'plugin manifest.clawdstrike.maxVersion');
+  const maxVersion = parseOptionalString(
+    value.maxVersion,
+    "plugin manifest.clawdstrike.maxVersion",
+  );
   if (maxVersion !== undefined && !isSemverRange(maxVersion)) {
-    throw new Error('plugin manifest.clawdstrike.maxVersion must be semver or wildcard range (e.g. 1.x)');
+    throw new Error(
+      "plugin manifest.clawdstrike.maxVersion must be semver or wildcard range (e.g. 1.x)",
+    );
   }
 
   return { minVersion, maxVersion };
@@ -199,18 +210,19 @@ function parseCapabilities(value: unknown): PluginCapabilities {
     return defaultCapabilities();
   }
   if (!isPlainObject(value)) {
-    throw new Error('plugin manifest.capabilities must be an object when provided');
+    throw new Error("plugin manifest.capabilities must be an object when provided");
   }
 
-  const network = parseOptionalBoolean(value.network, 'plugin manifest.capabilities.network') ?? false;
+  const network =
+    parseOptionalBoolean(value.network, "plugin manifest.capabilities.network") ?? false;
   const subprocess =
-    parseOptionalBoolean(value.subprocess, 'plugin manifest.capabilities.subprocess') ?? false;
+    parseOptionalBoolean(value.subprocess, "plugin manifest.capabilities.subprocess") ?? false;
 
   const filesystemRaw = value.filesystem;
   let filesystem = { read: [] as string[], write: false };
   if (filesystemRaw !== undefined) {
     if (!isPlainObject(filesystemRaw)) {
-      throw new Error('plugin manifest.capabilities.filesystem must be an object when provided');
+      throw new Error("plugin manifest.capabilities.filesystem must be an object when provided");
     }
 
     const readRaw = filesystemRaw.read;
@@ -220,34 +232,37 @@ function parseCapabilities(value: unknown): PluginCapabilities {
         read = [];
       } else if (Array.isArray(readRaw)) {
         read = readRaw.map((v, i) => {
-          if (typeof v !== 'string' || v.trim() === '') {
-            throw new Error(`plugin manifest.capabilities.filesystem.read[${i}] must be a non-empty string`);
+          if (typeof v !== "string" || v.trim() === "") {
+            throw new Error(
+              `plugin manifest.capabilities.filesystem.read[${i}] must be a non-empty string`,
+            );
           }
           return v;
         });
       } else {
-        throw new Error('plugin manifest.capabilities.filesystem.read must be false or an array of strings');
+        throw new Error(
+          "plugin manifest.capabilities.filesystem.read must be false or an array of strings",
+        );
       }
     }
 
-    const write = parseOptionalBoolean(
-      filesystemRaw.write,
-      'plugin manifest.capabilities.filesystem.write',
-    ) ?? false;
+    const write =
+      parseOptionalBoolean(filesystemRaw.write, "plugin manifest.capabilities.filesystem.write") ??
+      false;
     filesystem = { read, write };
   }
 
   const secretsRaw = value.secrets;
   let secretsAccess = false;
   if (secretsRaw !== undefined) {
-    if (typeof secretsRaw === 'boolean') {
+    if (typeof secretsRaw === "boolean") {
       secretsAccess = secretsRaw;
     } else if (isPlainObject(secretsRaw)) {
       secretsAccess =
-        parseOptionalBoolean(secretsRaw.access, 'plugin manifest.capabilities.secrets.access')
-        ?? false;
+        parseOptionalBoolean(secretsRaw.access, "plugin manifest.capabilities.secrets.access") ??
+        false;
     } else {
-      throw new Error('plugin manifest.capabilities.secrets must be a boolean or object');
+      throw new Error("plugin manifest.capabilities.secrets must be a boolean or object");
     }
   }
 
@@ -267,19 +282,18 @@ function parseResources(value: unknown): PluginResourceLimits {
     return defaults;
   }
   if (!isPlainObject(value)) {
-    throw new Error('plugin manifest.resources must be an object when provided');
+    throw new Error("plugin manifest.resources must be an object when provided");
   }
 
-  const maxMemoryMb = parseOptionalPositiveInt(
-    value.maxMemoryMb,
-    'plugin manifest.resources.maxMemoryMb',
-  ) ?? defaults.maxMemoryMb;
-  const maxCpuMs = parseOptionalPositiveInt(value.maxCpuMs, 'plugin manifest.resources.maxCpuMs')
-    ?? defaults.maxCpuMs;
-  const maxTimeoutMs = parseOptionalPositiveInt(
-    value.maxTimeoutMs,
-    'plugin manifest.resources.maxTimeoutMs',
-  ) ?? defaults.maxTimeoutMs;
+  const maxMemoryMb =
+    parseOptionalPositiveInt(value.maxMemoryMb, "plugin manifest.resources.maxMemoryMb") ??
+    defaults.maxMemoryMb;
+  const maxCpuMs =
+    parseOptionalPositiveInt(value.maxCpuMs, "plugin manifest.resources.maxCpuMs") ??
+    defaults.maxCpuMs;
+  const maxTimeoutMs =
+    parseOptionalPositiveInt(value.maxTimeoutMs, "plugin manifest.resources.maxTimeoutMs") ??
+    defaults.maxTimeoutMs;
 
   return {
     maxMemoryMb,
@@ -292,7 +306,7 @@ function parseOptionalString(value: unknown, field: string): string | undefined 
   if (value === undefined) {
     return undefined;
   }
-  if (typeof value !== 'string' || value.trim() === '') {
+  if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`${field} must be a non-empty string when provided`);
   }
   return value;
@@ -302,7 +316,7 @@ function parseOptionalBoolean(value: unknown, field: string): boolean | undefine
   if (value === undefined) {
     return undefined;
   }
-  if (typeof value !== 'boolean') {
+  if (typeof value !== "boolean") {
     throw new Error(`${field} must be a boolean when provided`);
   }
   return value;
@@ -312,7 +326,7 @@ function parseOptionalPositiveInt(value: unknown, field: string): number | undef
   if (value === undefined) {
     return undefined;
   }
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
     throw new Error(`${field} must be a positive integer when provided`);
   }
   return value;
@@ -320,14 +334,14 @@ function parseOptionalPositiveInt(value: unknown, field: string): number | undef
 
 function isPluginGuardHandle(value: unknown): value is PluginGuardHandle {
   return (
-    value === 'file_read'
-    || value === 'file_write'
-    || value === 'command_exec'
-    || value === 'network_egress'
-    || value === 'tool_call'
-    || value === 'patch_apply'
-    || value === 'secret_access'
-    || value === 'custom'
+    value === "file_read" ||
+    value === "file_write" ||
+    value === "command_exec" ||
+    value === "network_egress" ||
+    value === "tool_call" ||
+    value === "patch_apply" ||
+    value === "secret_access" ||
+    value === "custom"
   );
 }
 
@@ -336,7 +350,11 @@ function isStrictSemver(value: string): boolean {
 }
 
 function isSemverRange(value: string): boolean {
-  return /^(\d+)\.(\d+)\.(\d+)$/.test(value) || /^(\d+)\.x$/.test(value) || /^(\d+)\.(\d+)\.x$/.test(value);
+  return (
+    /^(\d+)\.(\d+)\.(\d+)$/.test(value) ||
+    /^(\d+)\.x$/.test(value) ||
+    /^(\d+)\.(\d+)\.x$/.test(value)
+  );
 }
 
 function defaultCapabilities(): PluginCapabilities {
@@ -362,5 +380,5 @@ function defaultResources(): PluginResourceLimits {
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

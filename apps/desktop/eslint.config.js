@@ -35,6 +35,9 @@ export default [
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
       "@typescript-eslint/no-explicit-any": "warn",
       "no-console": ["warn", { allow: ["warn", "error"] }],
+      // Disable no-undef for TS files — tsc already catches real undefined references,
+      // and this rule doesn't understand DOM/TS global types (EventListener, RequestInit, etc.).
+      "no-undef": "off",
     },
     settings: {
       react: {

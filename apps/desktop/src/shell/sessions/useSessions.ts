@@ -1,10 +1,10 @@
 /**
  * useSessions - React hook for session state
  */
-import { useSyncExternalStore, useCallback, useMemo } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
+import type { AppId } from "../plugins/types";
 import { sessionStore } from "./sessionStore";
 import type { Session, SessionFilter, StrikecellSessionKind } from "./types";
-import type { AppId } from "../plugins/types";
 
 // Stable subscribe function (bound once, not per-render)
 const subscribe = sessionStore.subscribe.bind(sessionStore);
@@ -45,12 +45,12 @@ export function useActiveSession() {
   const activeId = useSyncExternalStore(
     subscribe,
     () => sessionStore.getActiveSessionId(),
-    () => sessionStore.getActiveSessionId()
+    () => sessionStore.getActiveSessionId(),
   );
 
   const getSession = useCallback(
     () => (activeId ? sessionStore.getSession(activeId) : null),
-    [activeId]
+    [activeId],
   );
 
   const session = useSyncExternalStore(subscribe, getSession, getSession);
@@ -61,7 +61,7 @@ export function useActiveSession() {
 export function useSession(sessionId: string | null | undefined) {
   const getSession = useCallback(
     () => (sessionId ? sessionStore.getSession(sessionId) : null),
-    [sessionId]
+    [sessionId],
   );
 
   const session = useSyncExternalStore(subscribe, getSession, getSession);
@@ -72,7 +72,7 @@ export function useActiveApp() {
   const activeAppId = useSyncExternalStore(
     subscribe,
     () => sessionStore.getActiveAppId(),
-    () => sessionStore.getActiveAppId()
+    () => sessionStore.getActiveAppId(),
   );
 
   return activeAppId;
@@ -84,11 +84,11 @@ export function useSessionActions() {
       appId: AppId,
       title?: string,
       data?: unknown,
-      options?: { strikecellId?: string; strikecellKind?: StrikecellSessionKind }
+      options?: { strikecellId?: string; strikecellKind?: StrikecellSessionKind },
     ): Session => {
       return sessionStore.createSession(appId, title, data, options);
     },
-    []
+    [],
   );
 
   const updateSession = useCallback((id: string, updates: Partial<Session>): void => {

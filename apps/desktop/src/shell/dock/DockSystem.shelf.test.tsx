@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { ReactNode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DockProvider } from "./DockContext";
 import { DockSystem } from "./DockSystem";
@@ -56,8 +57,9 @@ class MemoryStorage {
   }
 }
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("DockSystem shelf", () => {
   let container: HTMLDivElement;
@@ -73,14 +75,14 @@ describe("DockSystem shelf", () => {
       root.render(
         <DockProvider>
           <DockSystem demoMode={false} />
-        </DockProvider>
+        </DockProvider>,
       );
     });
   };
 
   const clickShelfButton = (title: string) => {
     const button = Array.from(container.querySelectorAll("button")).find(
-      (candidate) => candidate.getAttribute("title") === title
+      (candidate) => candidate.getAttribute("title") === title,
     ) as HTMLButtonElement | undefined;
     expect(button).toBeTruthy();
     act(() => {

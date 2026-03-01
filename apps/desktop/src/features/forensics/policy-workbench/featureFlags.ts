@@ -2,7 +2,7 @@ const STORAGE_KEY = "sdr:feature:policy-workbench";
 
 export function computePolicyWorkbenchEnabled(
   envValue: string | undefined,
-  localValue: string | null
+  localValue: string | null,
 ): boolean {
   if (localValue === "1" || localValue === "true") return true;
   if (localValue === "0" || localValue === "false") return false;

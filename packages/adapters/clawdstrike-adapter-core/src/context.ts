@@ -1,6 +1,6 @@
-import type { AuditEvent } from './audit.js';
-import { createId } from './id.js';
-import type { Decision, Policy } from './types.js';
+import type { AuditEvent } from "./audit.js";
+import { createId } from "./id.js";
+import type { Decision, Policy } from "./types.js";
 
 export interface SecurityContext {
   readonly id: string;
@@ -50,8 +50,8 @@ export class DefaultSecurityContext implements SecurityContext {
   violationCount = 0;
 
   constructor(options: CreateSecurityContextOptions = {}) {
-    this.id = options.contextId ?? createId('ctx');
-    this.sessionId = options.sessionId ?? createId('sess');
+    this.id = options.contextId ?? createId("ctx");
+    this.sessionId = options.sessionId ?? createId("sess");
     this.userId = options.userId;
     this.createdAt = new Date();
     this.policy = options.policy ?? {};
@@ -68,7 +68,7 @@ export class DefaultSecurityContext implements SecurityContext {
   }
 
   getSummary(): ContextSummary {
-    const warnings = this.auditEvents.filter(e => e.type === 'tool_call_warning').length;
+    const warnings = this.auditEvents.filter((e) => e.type === "tool_call_warning").length;
     return {
       contextId: this.id,
       sessionId: this.sessionId,
@@ -81,8 +81,6 @@ export class DefaultSecurityContext implements SecurityContext {
   }
 }
 
-export function createSecurityContext(
-  options: CreateSecurityContextOptions = {},
-): SecurityContext {
+export function createSecurityContext(options: CreateSecurityContextOptions = {}): SecurityContext {
   return new DefaultSecurityContext(options);
 }

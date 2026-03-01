@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { StrikecellSourceSnapshot } from "../types";
 import {
   buildNexusNodesAndConnections,
   buildStrikecellsFromSocData,
   deriveStrikecellHealth,
 } from "./strikecellAdapter";
-import type { StrikecellSourceSnapshot } from "../types";
 
 const baseSnapshot: StrikecellSourceSnapshot = {
   connected: true,
@@ -123,7 +123,7 @@ describe("deriveStrikecellHealth", () => {
         severityScore: 0.9,
         blockedRate: 0.9,
         activityCount: 100,
-      })
+      }),
     ).toBe("offline");
   });
 
@@ -134,7 +134,7 @@ describe("deriveStrikecellHealth", () => {
         severityScore: 0.1,
         blockedRate: 0.1,
         activityCount: 2,
-      })
+      }),
     ).toBe("healthy");
   });
 
@@ -145,7 +145,7 @@ describe("deriveStrikecellHealth", () => {
         severityScore: 0.95,
         blockedRate: 0.8,
         activityCount: 40,
-      })
+      }),
     ).toBe("critical");
   });
 });
@@ -164,7 +164,9 @@ describe("buildStrikecellsFromSocData", () => {
       "events",
       "policies",
     ]);
-    expect(strikecells.every((strikecell) => typeof strikecell.activityCount === "number")).toBe(true);
+    expect(strikecells.every((strikecell) => typeof strikecell.activityCount === "number")).toBe(
+      true,
+    );
   });
 
   it("returns offline strikecells when disconnected", () => {
@@ -181,7 +183,11 @@ describe("buildNexusNodesAndConnections", () => {
     const graph = buildNexusNodesAndConnections(strikecells);
     expect(graph.nodes.length).toBeGreaterThan(0);
     expect(graph.connections.length).toBeGreaterThan(0);
-    expect(graph.connections.some((connection) => connection.sourceId === "marketplace" && connection.targetId === "policies")).toBe(true);
+    expect(
+      graph.connections.some(
+        (connection) => connection.sourceId === "marketplace" && connection.targetId === "policies",
+      ),
+    ).toBe(true);
   });
 
   it("is deterministic across repeated runs", () => {
@@ -192,10 +198,10 @@ describe("buildNexusNodesAndConnections", () => {
 
     expect(graphA.nodes.map((node) => node.id)).toEqual(graphB.nodes.map((node) => node.id));
     expect(graphA.connections.map((connection) => connection.id)).toEqual(
-      graphB.connections.map((connection) => connection.id)
+      graphB.connections.map((connection) => connection.id),
     );
     expect(graphA.connections.map((connection) => connection.strength)).toEqual(
-      graphB.connections.map((connection) => connection.strength)
+      graphB.connections.map((connection) => connection.strength),
     );
   });
 });

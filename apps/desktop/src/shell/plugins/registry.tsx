@@ -2,44 +2,48 @@
  * Plugin Registry - SDR Desktop plugins
  */
 import React from "react";
-import type { AppPlugin, AppId } from "./types";
+import type { AppId, AppPlugin } from "./types";
 
 // Lazy loaded feature views
 const EventStreamView = React.lazy(() =>
-  import("@/features/events/EventStreamView").then((m) => ({ default: m.EventStreamView }))
+  import("@/features/events/EventStreamView").then((m) => ({ default: m.EventStreamView })),
 );
 const NexusView = React.lazy(() =>
-  import("@/features/forensics-river/ForensicsRiverView").then((m) => ({ default: m.ForensicsRiverView }))
+  import("@/features/forensics-river/ForensicsRiverView").then((m) => ({
+    default: m.ForensicsRiverView,
+  })),
 );
 const OperationsHubView = React.lazy(() =>
-  import("@/features/operations/OperationsHubView").then((m) => ({ default: m.OperationsHubView }))
+  import("@/features/operations/OperationsHubView").then((m) => ({ default: m.OperationsHubView })),
 );
 const PolicyViewerView = React.lazy(() =>
-  import("@/features/policies/PolicyViewerView").then((m) => ({ default: m.PolicyViewerView }))
+  import("@/features/policies/PolicyViewerView").then((m) => ({ default: m.PolicyViewerView })),
 );
 const PolicyTesterView = React.lazy(() =>
-  import("@/features/policies/PolicyTesterView").then((m) => ({ default: m.PolicyTesterView }))
+  import("@/features/policies/PolicyTesterView").then((m) => ({ default: m.PolicyTesterView })),
 );
 const SwarmMapView = React.lazy(() =>
-  import("@/features/swarm/SwarmMapView").then((m) => ({ default: m.SwarmMapView }))
+  import("@/features/swarm/SwarmMapView").then((m) => ({ default: m.SwarmMapView })),
 );
 const MarketplaceView = React.lazy(() =>
-  import("@/features/marketplace/MarketplaceView").then((m) => ({ default: m.MarketplaceView }))
+  import("@/features/marketplace/MarketplaceView").then((m) => ({ default: m.MarketplaceView })),
 );
 const WorkflowsView = React.lazy(() =>
-  import("@/features/workflows/WorkflowsView").then((m) => ({ default: m.WorkflowsView }))
+  import("@/features/workflows/WorkflowsView").then((m) => ({ default: m.WorkflowsView })),
 );
 const ThreatRadarView = React.lazy(() =>
-  import("@/features/threat-radar/ThreatRadarView").then((m) => ({ default: m.ThreatRadarView }))
+  import("@/features/threat-radar/ThreatRadarView").then((m) => ({ default: m.ThreatRadarView })),
 );
 const AttackGraphView = React.lazy(() =>
-  import("@/features/attack-graph/AttackGraphView").then((m) => ({ default: m.AttackGraphView }))
+  import("@/features/attack-graph/AttackGraphView").then((m) => ({ default: m.AttackGraphView })),
 );
 const NetworkMapView = React.lazy(() =>
-  import("@/features/network-map/NetworkMapView").then((m) => ({ default: m.NetworkMapView }))
+  import("@/features/network-map/NetworkMapView").then((m) => ({ default: m.NetworkMapView })),
 );
 const SecurityOverviewView = React.lazy(() =>
-  import("@/features/security-overview/SecurityOverviewView").then((m) => ({ default: m.SecurityOverviewView }))
+  import("@/features/security-overview/SecurityOverviewView").then((m) => ({
+    default: m.SecurityOverviewView,
+  })),
 );
 
 // Plugin definitions

@@ -4,13 +4,17 @@
  * Follows the OpenClaw plugin API: https://docs.openclaw.ai/plugin
  */
 
-import type { ClawdstrikeConfig, CommandBuilder, HookHandler, PolicyEvent } from "./types.js";
-import { initializeEngine, getSharedEngine } from "./engine-holder.js";
-import toolPreflightHandler, { initialize as initPreflight } from "./hooks/tool-preflight/handler.js";
-import toolGuardHandler, { initialize as initToolGuard } from "./hooks/tool-guard/handler.js";
-import agentBootstrapHandler, { initialize as initBootstrap } from "./hooks/agent-bootstrap/handler.js";
-import cuaBridgeHandler, { initialize as initCuaBridge } from "./hooks/cua-bridge/handler.js";
 import { readFileSync } from "node:fs";
+import { getSharedEngine, initializeEngine } from "./engine-holder.js";
+import agentBootstrapHandler, {
+  initialize as initBootstrap,
+} from "./hooks/agent-bootstrap/handler.js";
+import cuaBridgeHandler, { initialize as initCuaBridge } from "./hooks/cua-bridge/handler.js";
+import toolGuardHandler, { initialize as initToolGuard } from "./hooks/tool-guard/handler.js";
+import toolPreflightHandler, {
+  initialize as initPreflight,
+} from "./hooks/tool-preflight/handler.js";
+import type { ClawdstrikeConfig, CommandBuilder, HookHandler, PolicyEvent } from "./types.js";
 
 // Re-export existing utilities for external use
 export * from "./index.js";
@@ -26,7 +30,11 @@ interface RegisterHookOptions {
 }
 
 interface OpenClawPluginAPI {
-  logger?: { info?(...args: unknown[]): void; warn?(...args: unknown[]): void; error?(...args: unknown[]): void };
+  logger?: {
+    info?(...args: unknown[]): void;
+    warn?(...args: unknown[]): void;
+    error?(...args: unknown[]): void;
+  };
   config?: { plugins?: { entries?: Record<string, { config?: Record<string, unknown> }> } };
   registerTool(tool: {
     name: string;
@@ -34,7 +42,10 @@ interface OpenClawPluginAPI {
     parameters: Record<string, unknown>;
     execute: (id: string, params: Record<string, unknown>) => Promise<unknown>;
   }): void;
-  registerCli(callback: (ctx: { program: { command(name: string): CommandBuilder } }) => void, opts?: { commands?: string[] }): void;
+  registerCli(
+    callback: (ctx: { program: { command(name: string): CommandBuilder } }) => void,
+    opts?: { commands?: string[] },
+  ): void;
   registerHook?(event: string, handler: HookHandler, opts?: RegisterHookOptions): void;
   on?(event: string, handler: HookHandler): void;
 }
@@ -50,12 +61,12 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
     if (!explicitPath) return {};
 
     try {
-      const raw = readFileSync(explicitPath, 'utf8');
-      const parsed = JSON.parse(raw) as { plugins?: { entries?: Record<string, { config?: Record<string, unknown> }> } };
+      const raw = readFileSync(explicitPath, "utf8");
+      const parsed = JSON.parse(raw) as {
+        plugins?: { entries?: Record<string, { config?: Record<string, unknown> }> };
+      };
       const entries = parsed.plugins?.entries ?? {};
-      return entries["clawdstrike-security"]?.config
-        ?? entries["openclaw"]?.config
-        ?? {};
+      return entries["clawdstrike-security"]?.config ?? entries["openclaw"]?.config ?? {};
     } catch {
       return {};
     }
@@ -65,21 +76,21 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
   const getConfig = (): ClawdstrikeConfig => {
     const entries = api.config?.plugins?.entries ?? {};
     const apiPluginConfig =
-      entries["clawdstrike-security"]?.config
-      ?? entries["openclaw"]?.config
-      ?? {};
+      entries["clawdstrike-security"]?.config ?? entries["openclaw"]?.config ?? {};
     const filePluginConfig = getFileBackedPluginConfig();
-    const pluginConfig = Object.keys(apiPluginConfig).length > 0 ? apiPluginConfig : filePluginConfig;
-    const policy = typeof pluginConfig.policy === 'string' ? pluginConfig.policy : undefined;
-    const mode = typeof pluginConfig.mode === 'string' ? pluginConfig.mode : 'deterministic';
-    const logLevel = typeof pluginConfig.logLevel === 'string' ? pluginConfig.logLevel : 'info';
-    const guards = pluginConfig.guards && typeof pluginConfig.guards === 'object'
-      ? pluginConfig.guards as ClawdstrikeConfig['guards']
-      : { forbidden_path: true, egress: true, secret_leak: true, patch_integrity: true };
+    const pluginConfig =
+      Object.keys(apiPluginConfig).length > 0 ? apiPluginConfig : filePluginConfig;
+    const policy = typeof pluginConfig.policy === "string" ? pluginConfig.policy : undefined;
+    const mode = typeof pluginConfig.mode === "string" ? pluginConfig.mode : "deterministic";
+    const logLevel = typeof pluginConfig.logLevel === "string" ? pluginConfig.logLevel : "info";
+    const guards =
+      pluginConfig.guards && typeof pluginConfig.guards === "object"
+        ? (pluginConfig.guards as ClawdstrikeConfig["guards"])
+        : { forbidden_path: true, egress: true, secret_leak: true, patch_integrity: true };
     return {
       policy,
-      mode: mode as ClawdstrikeConfig['mode'],
-      logLevel: logLevel as ClawdstrikeConfig['logLevel'],
+      mode: mode as ClawdstrikeConfig["mode"],
+      logLevel: logLevel as ClawdstrikeConfig["logLevel"],
       guards,
     };
   };
@@ -116,8 +127,10 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
         const config = refreshSharedEngine();
         const engine = getSharedEngine(config);
 
-        const action = (typeof params.action === 'string' ? params.action : 'tool_call') as PolicyCheckAction;
-        const resource = typeof params.resource === 'string' ? params.resource : '';
+        const action = (
+          typeof params.action === "string" ? params.action : "tool_call"
+        ) as PolicyCheckAction;
+        const resource = typeof params.resource === "string" ? params.resource : "";
 
         const event = buildEvent(action, resource);
         const decision = await engine.evaluate(event);
@@ -127,7 +140,7 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
           guard: decision.guard,
           reason: decision.reason,
           message: formatDecision(decision),
-          suggestion: decision.status === 'deny' ? getSuggestion(action, resource) : undefined,
+          suggestion: decision.status === "deny" ? getSuggestion(action, resource) : undefined,
         };
 
         return {
@@ -144,13 +157,17 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
           content: [
             {
               type: "text",
-              text: JSON.stringify({
-                status: "deny",
-                guard: "policy_engine",
-                reason: "evaluation_error",
-                message: `Policy evaluation failed (fail-closed): ${message}`,
-                suggestion: "Check policy configuration and retry",
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  status: "deny",
+                  guard: "policy_engine",
+                  reason: "evaluation_error",
+                  message: `Policy evaluation failed (fail-closed): ${message}`,
+                  suggestion: "Check policy configuration and retry",
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -185,20 +202,20 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
         .command("check <action> <resource>")
         .description("Check if an action is allowed")
         .action(async (...args: unknown[]) => {
-          const action = typeof args[0] === 'string' ? args[0] : '';
-          const resource = typeof args[1] === 'string' ? args[1] : '';
+          const action = typeof args[0] === "string" ? args[0] : "";
+          const resource = typeof args[1] === "string" ? args[1] : "";
           const config = refreshSharedEngine();
           const engine = getSharedEngine(config);
           const event = buildEvent(action as PolicyCheckAction, resource);
           const decision = await engine.evaluate(event);
           console.log(formatDecision(decision));
-          if (decision.status === 'deny') {
+          if (decision.status === "deny") {
             console.log(`Suggestion: ${getSuggestion(action, resource)}`);
             process.exitCode = 1;
           }
         });
     },
-    { commands: ["clawdstrike"] }
+    { commands: ["clawdstrike"] },
   );
 
   // Initialize the shared policy engine once, then let each handler
@@ -223,7 +240,7 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
 
   // Register hooks — prefer named hook registration for modern runtimes,
   // but fall back to legacy registration shapes for compatibility.
-  if (typeof api.registerHook === 'function') {
+  if (typeof api.registerHook === "function") {
     const registerHook = api.registerHook.bind(api);
     const registerHookCompat = (event: string, name: string, handler: HookHandler): void => {
       const namedOpts: RegisterHookOptions = {
@@ -247,20 +264,40 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
     };
 
     // Register for both modern and legacy event names for compatibility.
-    registerHookCompat('before_tool_call', 'clawdstrike:cua-bridge:before-tool-call', wrappedCuaBridgeHandler);
-    registerHookCompat('before_tool_call', 'clawdstrike:tool-preflight:before-tool-call', wrappedToolPreflightHandler);
-    registerHookCompat('tool_call', 'clawdstrike:cua-bridge:tool-call', wrappedCuaBridgeHandler);
-    registerHookCompat('tool_call', 'clawdstrike:tool-preflight:tool-call', wrappedToolPreflightHandler);
-    registerHookCompat('tool_result_persist', 'clawdstrike:tool-guard:tool-result-persist', wrappedToolGuardHandler);
-    registerHookCompat('agent:bootstrap', 'clawdstrike:agent-bootstrap', wrappedAgentBootstrapHandler);
-  } else if (typeof api.on === 'function') {
+    registerHookCompat(
+      "before_tool_call",
+      "clawdstrike:cua-bridge:before-tool-call",
+      wrappedCuaBridgeHandler,
+    );
+    registerHookCompat(
+      "before_tool_call",
+      "clawdstrike:tool-preflight:before-tool-call",
+      wrappedToolPreflightHandler,
+    );
+    registerHookCompat("tool_call", "clawdstrike:cua-bridge:tool-call", wrappedCuaBridgeHandler);
+    registerHookCompat(
+      "tool_call",
+      "clawdstrike:tool-preflight:tool-call",
+      wrappedToolPreflightHandler,
+    );
+    registerHookCompat(
+      "tool_result_persist",
+      "clawdstrike:tool-guard:tool-result-persist",
+      wrappedToolGuardHandler,
+    );
+    registerHookCompat(
+      "agent:bootstrap",
+      "clawdstrike:agent-bootstrap",
+      wrappedAgentBootstrapHandler,
+    );
+  } else if (typeof api.on === "function") {
     const registerHook = api.on.bind(api);
-    registerHook('before_tool_call', wrappedCuaBridgeHandler);
-    registerHook('before_tool_call', wrappedToolPreflightHandler);
-    registerHook('tool_call', wrappedCuaBridgeHandler);
-    registerHook('tool_call', wrappedToolPreflightHandler);
-    registerHook('tool_result_persist', wrappedToolGuardHandler);
-    registerHook('agent:bootstrap', wrappedAgentBootstrapHandler);
+    registerHook("before_tool_call", wrappedCuaBridgeHandler);
+    registerHook("before_tool_call", wrappedToolPreflightHandler);
+    registerHook("tool_call", wrappedCuaBridgeHandler);
+    registerHook("tool_call", wrappedToolPreflightHandler);
+    registerHook("tool_result_persist", wrappedToolGuardHandler);
+    registerHook("agent:bootstrap", wrappedAgentBootstrapHandler);
   }
 
   logger.info?.("[clawdstrike] Plugin registered");
@@ -278,7 +315,7 @@ type PolicyCheckAction =
   | "tool_call";
 
 interface PluginDecision {
-  status: 'allow' | 'warn' | 'deny' | 'sanitize';
+  status: "allow" | "warn" | "deny" | "sanitize";
   guard?: string;
   reason?: string;
   message?: string;
@@ -360,16 +397,16 @@ function parseNetworkTarget(target: string): { host: string; port: number; url?:
 }
 
 function formatDecision(decision: PluginDecision): string {
-  if (decision.status === 'deny') {
+  if (decision.status === "deny") {
     const guard = decision.guard ? ` by ${decision.guard}` : "";
     const reason = decision.reason ? `: ${decision.reason}` : "";
     return `Denied${guard}${reason}`;
   }
-  if (decision.status === 'warn') {
+  if (decision.status === "warn") {
     const msg = decision.message ?? decision.reason ?? "Policy warning";
     return `Warning: ${msg}`;
   }
-  if (decision.status === 'sanitize') {
+  if (decision.status === "sanitize") {
     const reason = decision.reason ? `: ${decision.reason}` : "";
     return `Sanitized${reason}`;
   }
@@ -386,10 +423,7 @@ function getSuggestion(action: string, resource: string): string {
   if (action === "network_egress" || action === "network") {
     return "Try using an allowed domain like api.github.com or pypi.org.";
   }
-  if (
-    (action === "command_exec" || action === "command") &&
-    resource.includes("sudo")
-  ) {
+  if ((action === "command_exec" || action === "command") && resource.includes("sudo")) {
     return "Privileged commands are restricted. Try running without sudo.";
   }
   if (

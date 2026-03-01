@@ -1,7 +1,7 @@
-import { BaseToolInterceptor } from '@clawdstrike/adapter-core';
-import type { PolicyEngineLike } from '@clawdstrike/adapter-core';
+import type { PolicyEngineLike } from "@clawdstrike/adapter-core";
+import { BaseToolInterceptor } from "@clawdstrike/adapter-core";
 
-import type { LangChainClawdstrikeConfig } from './types.js';
+import type { LangChainClawdstrikeConfig } from "./types.js";
 
 export function createLangChainInterceptor(
   engine: PolicyEngineLike,
@@ -17,4 +17,3 @@ export function createLangChainInterceptor(
     normalizeToolName,
   });
 }
-

@@ -111,7 +111,9 @@ function compileMaybe(pattern: string | RegExp): RegExp | null {
   }
 }
 
-function normalizeAllowlist(cfg: AllowlistConfig | undefined): Required<AllowlistConfig> & { patterns: RegExp[] } {
+function normalizeAllowlist(
+  cfg: AllowlistConfig | undefined,
+): Required<AllowlistConfig> & { patterns: RegExp[] } {
   const exact = cfg?.exact ?? [];
   const allowTestCredentials = cfg?.allowTestCredentials ?? false;
   const patternsRaw = cfg?.patterns ?? [];
@@ -375,7 +377,10 @@ export class OutputSanitizer {
   private readonly denylist: RegExp[];
   private readonly entityRecognizer?: EntityRecognizer;
 
-  constructor(config: OutputSanitizerConfig = {}, options?: { entityRecognizer?: EntityRecognizer }) {
+  constructor(
+    config: OutputSanitizerConfig = {},
+    options?: { entityRecognizer?: EntityRecognizer },
+  ) {
     this.cfg = {
       categories: {
         secrets: config.categories?.secrets ?? true,
@@ -510,7 +515,13 @@ export class OutputSanitizer {
     findings.sort((a, b) => a.span.start - b.span.start || a.span.end - b.span.end);
 
     // Apply redactions (descending by start so indices stay valid).
-    const spans: Array<{ span: Span; strategy: RedactionStrategy; category: SensitiveCategory; dataType: string; findingId: string }> = [];
+    const spans: Array<{
+      span: Span;
+      strategy: RedactionStrategy;
+      category: SensitiveCategory;
+      dataType: string;
+      findingId: string;
+    }> = [];
     for (const f of findings) {
       spans.push({
         span: f.span,
@@ -580,7 +591,12 @@ export class OutputSanitizer {
 
 export class SanitizationStream {
   private readonly sanitizer: OutputSanitizer;
-  private readonly streamCfg: { enabled: boolean; bufferSize: number; carryBytes: number; maxInputBytes: number };
+  private readonly streamCfg: {
+    enabled: boolean;
+    bufferSize: number;
+    carryBytes: number;
+    maxInputBytes: number;
+  };
   private rawBuffer = "";
   private readonly findings: SensitiveDataFinding[] = [];
   private readonly redactions: Redaction[] = [];
@@ -609,7 +625,10 @@ export class SanitizationStream {
 
     this.rawBuffer += chunk;
 
-    const maxBuffer = Math.max(1, Math.min(this.streamCfg.bufferSize, this.streamCfg.maxInputBytes));
+    const maxBuffer = Math.max(
+      1,
+      Math.min(this.streamCfg.bufferSize, this.streamCfg.maxInputBytes),
+    );
     let out = "";
 
     while (this.rawBuffer.length > maxBuffer) {

@@ -1,4 +1,4 @@
-import type { HttpClient, HttpRequestPolicy, HttpResponse } from './types.js';
+import type { HttpClient, HttpRequestPolicy, HttpResponse } from "./types.js";
 
 export class FetchHttpClient implements HttpClient {
   async requestJson(
@@ -25,11 +25,11 @@ export class FetchHttpClient implements HttpClient {
     const requestHeaders: Record<string, string> = { ...headers };
     if (body !== null && body !== undefined) {
       requestBody = JSON.stringify(body);
-      if (Buffer.byteLength(requestBody, 'utf8') > maxRequestSizeBytes) {
+      if (Buffer.byteLength(requestBody, "utf8") > maxRequestSizeBytes) {
         throw new Error(`request too large`);
       }
-      if (!Object.keys(requestHeaders).some((k) => k.toLowerCase() === 'content-type')) {
-        requestHeaders['content-type'] = 'application/json';
+      if (!Object.keys(requestHeaders).some((k) => k.toLowerCase() === "content-type")) {
+        requestHeaders["content-type"] = "application/json";
       }
     }
 
@@ -43,7 +43,7 @@ export class FetchHttpClient implements HttpClient {
         method,
         headers: requestHeaders,
         body: requestBody,
-        redirect: 'manual',
+        redirect: "manual",
         signal: controller.signal,
       });
 
@@ -59,7 +59,7 @@ export class FetchHttpClient implements HttpClient {
 
       let json: unknown;
       try {
-        json = JSON.parse(buf.toString('utf8'));
+        json = JSON.parse(buf.toString("utf8"));
       } catch (err) {
         throw new Error(`parse json: ${String(err)}`);
       }
@@ -98,17 +98,17 @@ function enforceUrlPolicy(url: URL, method: string, policy: HttpRequestPolicy): 
     throw new Error(`http method not allowed: ${method}`);
   }
 
-  const scheme = url.protocol.replace(':', '');
-  if (scheme === 'https') return;
+  const scheme = url.protocol.replace(":", "");
+  if (scheme === "https") return;
 
   const allowInsecure = policy.allowInsecureHttpForLoopback !== false;
-  if (scheme === 'http' && allowInsecure && isLoopbackHost(hostname)) return;
+  if (scheme === "http" && allowInsecure && isLoopbackHost(hostname)) return;
 
   throw new Error(`unsupported url scheme: ${scheme}`);
 }
 
 function isLoopbackHost(hostname: string): boolean {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
 function redactUrl(url: URL): string {
@@ -124,8 +124,7 @@ function anySignal(signals: AbortSignal[]): AbortController {
       controller.abort();
       return controller;
     }
-    s.addEventListener('abort', onAbort, { once: true });
+    s.addEventListener("abort", onAbort, { once: true });
   }
   return controller;
 }
-

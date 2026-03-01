@@ -1,11 +1,19 @@
-import { NoiseGrain, Stamp } from "../ui";
 import type { ReceiptVerification } from "../../utils/receiptVerify";
+import { NoiseGrain, Stamp } from "../ui";
 
 export function ReceiptDisplay({ result }: { result: ReceiptVerification }) {
   return (
     <div className="glass-panel" style={{ padding: 20 }}>
       <NoiseGrain />
-      <div style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div
+        style={{
+          position: "relative",
+          zIndex: 2,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
         {/* Verification status */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Stamp variant={result.valid ? "allowed" : "blocked"}>
@@ -21,7 +29,10 @@ export function ReceiptDisplay({ result }: { result: ReceiptVerification }) {
         {/* Receipt fields */}
         {result.receipt && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <Field label="Signer Key" value={result.receipt.signer_public_key.slice(0, 24) + "..."} />
+            <Field
+              label="Signer Key"
+              value={result.receipt.signer_public_key.slice(0, 24) + "..."}
+            />
             <Field label="Decision" value={result.receipt.decision} />
             <Field label="Action" value={result.receipt.action_type} />
             {result.receipt.target && <Field label="Target" value={result.receipt.target} />}
@@ -39,10 +50,25 @@ export function ReceiptDisplay({ result }: { result: ReceiptVerification }) {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-      <span className="font-mono" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(214,177,90,0.55)", width: 90, flexShrink: 0 }}>
+      <span
+        className="font-mono"
+        style={{
+          fontSize: 10,
+          textTransform: "uppercase",
+          letterSpacing: "0.1em",
+          color: "rgba(214,177,90,0.55)",
+          width: 90,
+          flexShrink: 0,
+        }}
+      >
         {label}
       </span>
-      <span className="font-mono" style={{ fontSize: 12, color: "var(--text)", wordBreak: "break-all" }}>{value}</span>
+      <span
+        className="font-mono"
+        style={{ fontSize: 12, color: "var(--text)", wordBreak: "break-all" }}
+      >
+        {value}
+      </span>
     </div>
   );
 }

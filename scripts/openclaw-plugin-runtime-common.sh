@@ -48,13 +48,27 @@ openclaw_runtime_prepare() {
   fi
   if [ ! -d "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules" ] \
     || [ -z "$(find "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ] \
-    || [ ! -f "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules/@clawdstrike/adapter-core/package.json" ]; then
-    echo "[openclaw-runtime] plugin dependencies missing; restoring with npm ci" >&2
-    npm --prefix "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR" ci
+    || [ ! -f "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules/@clawdstrike/adapter-core/package.json" ] \
+    || [ ! -f "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules/@clawdstrike/policy/package.json" ]; then
+    echo "[openclaw-runtime] plugin dependencies missing; restoring with npm install" >&2
+    npm --prefix "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR" install
   fi
   if [ ! -d "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules" ]; then
     echo "[openclaw-runtime] expected plugin dependencies at $OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules" >&2
     echo "[openclaw-runtime] run: npm --prefix packages/adapters/clawdstrike-openclaw ci" >&2
+    exit 1
+  fi
+
+  if [ ! -f "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules/@clawdstrike/policy/dist/index.js" ] \
+    || [ ! -f "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules/@clawdstrike/adapter-core/dist/index.js" ]; then
+    echo "[openclaw-runtime] plugin local dependency dist artifacts missing; building local deps" >&2
+    npm --prefix "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR" run build:local-deps
+  fi
+
+  if [ ! -f "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules/@clawdstrike/policy/dist/index.js" ] \
+    || [ ! -f "$OPENCLAW_RUNTIME_PLUGIN_PACKAGE_DIR/node_modules/@clawdstrike/adapter-core/dist/index.js" ]; then
+    echo "[openclaw-runtime] local dependency dist artifacts are still missing after build" >&2
+    echo "[openclaw-runtime] expected: @clawdstrike/policy/dist/index.js and @clawdstrike/adapter-core/dist/index.js" >&2
     exit 1
   fi
 

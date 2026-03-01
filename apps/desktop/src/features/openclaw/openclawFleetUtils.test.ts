@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeGatewayUrl, originFixHint, parseCommand, selectSystemRunNodes } from "./openclawFleetUtils";
+import {
+  normalizeGatewayUrl,
+  originFixHint,
+  parseCommand,
+  selectSystemRunNodes,
+} from "./openclawFleetUtils";
 
 describe("openclawFleetUtils", () => {
   describe("parseCommand", () => {
     it("rejects empty commands", () => {
-      expect(parseCommand("   ")).toEqual({ argv: [], rawCommand: null, error: "command required" });
+      expect(parseCommand("   ")).toEqual({
+        argv: [],
+        rawCommand: null,
+        error: "command required",
+      });
     });
 
     it("parses JSON argv arrays", () => {
@@ -31,7 +40,11 @@ describe("openclawFleetUtils", () => {
     });
 
     it("splits raw commands on whitespace", () => {
-      expect(parseCommand("echo   test")).toEqual({ argv: ["echo", "test"], rawCommand: "echo   test", error: null });
+      expect(parseCommand("echo   test")).toEqual({
+        argv: ["echo", "test"],
+        rawCommand: "echo   test",
+        error: null,
+      });
     });
   });
 
@@ -78,7 +91,9 @@ describe("openclawFleetUtils", () => {
         { connected: true, commands: ["system.run"] },
       ];
 
-      expect(selectSystemRunNodes(nodes)).toEqual([{ nodeId: "a", connected: true, commands: ["system.run"] }]);
+      expect(selectSystemRunNodes(nodes)).toEqual([
+        { nodeId: "a", connected: true, commands: ["system.run"] },
+      ]);
     });
   });
 });

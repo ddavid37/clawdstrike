@@ -1,4 +1,4 @@
-export { NoiseGrain } from "./NoiseGrain";
 export { GlassButton } from "./GlassButton";
-export { Stamp } from "./Stamp";
+export { NoiseGrain } from "./NoiseGrain";
 export { Plate } from "./Plate";
+export { Stamp } from "./Stamp";

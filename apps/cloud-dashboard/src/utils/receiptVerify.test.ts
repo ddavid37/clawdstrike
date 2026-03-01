@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { verifyReceipt } from "./receiptVerify";
 
 // Helper: build a valid receipt JSON object
@@ -72,9 +72,7 @@ describe("verifyReceipt", () => {
   });
 
   it("returns error when signature is empty string", async () => {
-    const result = await verifyReceipt(
-      JSON.stringify(makeReceipt({ signature: "" })),
-    );
+    const result = await verifyReceipt(JSON.stringify(makeReceipt({ signature: "" })));
     expect(result.valid).toBe(false);
     expect(result.error).toMatch(/Missing signature or public_key/);
   });
@@ -89,9 +87,7 @@ describe("verifyReceipt", () => {
   });
 
   it("returns error when public_key is empty string", async () => {
-    const result = await verifyReceipt(
-      JSON.stringify(makeReceipt({ public_key: "" })),
-    );
+    const result = await verifyReceipt(JSON.stringify(makeReceipt({ public_key: "" })));
     expect(result.valid).toBe(false);
     expect(result.error).toMatch(/Missing signature or public_key/);
   });
@@ -169,9 +165,7 @@ describe("verifyReceipt", () => {
   });
 
   it("returns Ed25519 not supported error for Unrecognized algorithm", async () => {
-    importKeyStub.mockRejectedValue(
-      new Error("Unrecognized algorithm name"),
-    );
+    importKeyStub.mockRejectedValue(new Error("Unrecognized algorithm name"));
 
     const result = await verifyReceipt(JSON.stringify(makeReceipt()));
 

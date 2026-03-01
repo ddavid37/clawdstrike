@@ -1,8 +1,11 @@
-import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { Canvas, type ThreeEvent } from "@react-three/fiber";
 import { Html, Line, OrbitControls } from "@react-three/drei";
-import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { Canvas, type ThreeEvent } from "@react-three/fiber";
+import { type RefObject, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { calculateLayoutPositions } from "../layouts";
+import { GlyphSentinel, type Vec3 } from "../scene/sentinels/GlyphSentinel";
+import { GroundPlatform } from "../scene/terrain/GroundPlatform";
 import type {
   NexusLayoutMode,
   NexusViewMode,
@@ -11,9 +14,6 @@ import type {
   StrikecellDomainId,
   StrikecellStatus,
 } from "../types";
-import { calculateLayoutPositions } from "../layouts";
-import { GroundPlatform } from "../scene/terrain/GroundPlatform";
-import { GlyphSentinel, type Vec3 } from "../scene/sentinels/GlyphSentinel";
 
 interface NexusCanvasProps {
   strikecells: Strikecell[];
@@ -35,7 +35,7 @@ interface NexusCanvasProps {
     targetId: string,
     targetType: "strikecell" | "node",
     event: MouseEvent,
-    strikecellId?: StrikecellDomainId
+    strikecellId?: StrikecellDomainId,
   ) => void;
 }
 
@@ -57,7 +57,7 @@ function toVectorMap(
   strikecells: Strikecell[],
   layoutMode: NexusLayoutMode,
   viewMode: NexusViewMode,
-  connections: StrikecellConnection[]
+  connections: StrikecellConnection[],
 ): Map<StrikecellDomainId, THREE.Vector3> {
   const layoutNodes = strikecells.map((strikecell) => ({
     id: strikecell.id,
@@ -103,7 +103,11 @@ function CameraRig({
     const active = activeStrikecellId ? strikecellPositions.get(activeStrikecellId) : null;
     if (active) {
       controls.target.copy(active);
-      controls.object.position.set(active.x + preset.position.x * 0.26, preset.position.y, active.z + preset.position.z * 0.26);
+      controls.object.position.set(
+        active.x + preset.position.x * 0.26,
+        preset.position.y,
+        active.z + preset.position.z * 0.26,
+      );
       controls.update();
       return;
     }
@@ -140,7 +144,7 @@ export function NexusCanvas({
 
   const strikecellPositions = useMemo(
     () => toVectorMap(strikecells, layoutMode, viewMode, connections),
-    [connections, layoutMode, strikecells, viewMode]
+    [connections, layoutMode, strikecells, viewMode],
   );
 
   useEffect(() => {
@@ -174,20 +178,23 @@ export function NexusCanvas({
         if (!source || !target) return null;
         return {
           id: connection.id,
-          points: [source.toArray(), target.toArray()] as [[number, number, number], [number, number, number]],
+          points: [source.toArray(), target.toArray()] as [
+            [number, number, number],
+            [number, number, number],
+          ],
           opacity: 0.16 + connection.strength * 0.34,
           strength: connection.strength,
         };
       })
       .filter(
         (
-          line
+          line,
         ): line is {
           id: string;
           points: [[number, number, number], [number, number, number]];
           opacity: number;
           strength: number;
-        } => Boolean(line)
+        } => Boolean(line),
       );
   }, [connections, strikecellPositions]);
 
@@ -273,7 +280,12 @@ export function NexusCanvas({
                   <meshBasicMaterial color={accent} transparent opacity={ringOpacity} />
                 </mesh>
 
-                <Html center position={[0, -1.78, 0]} distanceFactor={10.5} style={{ pointerEvents: "none" }}>
+                <Html
+                  center
+                  position={[0, -1.78, 0]}
+                  distanceFactor={10.5}
+                  style={{ pointerEvents: "none" }}
+                >
                   <div className="origin-card rounded-md border border-[color:color-mix(in_srgb,var(--origin-panel-border)_55%,transparent)] px-2 py-1 text-[10px] font-mono text-sdr-text-primary whitespace-nowrap">
                     {strikecell.name}
                   </div>

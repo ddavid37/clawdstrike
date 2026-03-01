@@ -1,38 +1,38 @@
-import { load as loadYaml } from 'js-yaml';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import type { Policy as CanonicalPolicy } from '@clawdstrike/policy';
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { Policy as CanonicalPolicy } from "@clawdstrike/policy";
 import {
   loadPolicyFromFile as loadCanonicalPolicyFromFile,
   loadPolicyFromString as loadCanonicalPolicyFromString,
-} from '@clawdstrike/policy';
+} from "@clawdstrike/policy";
+import { load as loadYaml } from "js-yaml";
 
-import { resolveBuiltinPolicy } from '../config.js';
-import type { Policy } from '../types.js';
+import { resolveBuiltinPolicy } from "../config.js";
+import type { Policy } from "../types.js";
 
-import { validatePolicy } from './validator.js';
+import { validatePolicy } from "./validator.js";
 
-const RULESETS_DIR = fileURLToPath(new URL('../../rulesets/', import.meta.url));
-const CANONICAL_RULESETS_DIR = fileURLToPath(new URL('../../../../rulesets/', import.meta.url));
+const RULESETS_DIR = fileURLToPath(new URL("../../rulesets/", import.meta.url));
+const CANONICAL_RULESETS_DIR = fileURLToPath(new URL("../../../../rulesets/", import.meta.url));
 
 export class PolicyLoadError extends Error {
   readonly cause?: unknown;
 
   constructor(message: string, opts?: { cause?: unknown }) {
     super(message);
-    this.name = 'PolicyLoadError';
+    this.name = "PolicyLoadError";
     this.cause = opts?.cause;
   }
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isBuiltinRef(ref: string): string | null {
   if (!ref) return null;
-  if (ref.startsWith('clawdstrike:')) return ref;
+  if (ref.startsWith("clawdstrike:")) return ref;
   const candidate = `clawdstrike:${ref}`;
   return resolveBuiltinPolicy(candidate) ? candidate : null;
 }
@@ -71,9 +71,9 @@ export function loadPolicyFromString(content: string): Policy {
   }
 
   const policy = parsed as Policy;
-  if (policy.version === 'clawdstrike-v1.0') {
+  if (policy.version === "clawdstrike-v1.0") {
     warnLegacyCompatibility(
-      'Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.2.0 is preferred.',
+      "Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.2.0 is preferred.",
     );
   }
   return policy;
@@ -81,13 +81,16 @@ export function loadPolicyFromString(content: string): Policy {
 
 function readPolicyFile(policyPath: string): string {
   try {
-    return readFileSync(policyPath, 'utf-8');
+    return readFileSync(policyPath, "utf-8");
   } catch (err) {
     throw new PolicyLoadError(`Failed to read policy file: ${policyPath}`, { cause: err });
   }
 }
 
-function resolvePolicyRef(ref: string, baseDir?: string): { id: string; path?: string; content: string; baseDir?: string } {
+function resolvePolicyRef(
+  ref: string,
+  baseDir?: string,
+): { id: string; path?: string; content: string; baseDir?: string } {
   const builtin = isBuiltinRef(ref);
   if (builtin) {
     const fileName = resolveBuiltinPolicy(builtin);
@@ -125,7 +128,7 @@ function loadPolicyRecursive(ref: string, stack: string[]): Policy {
   const { id, content, baseDir, path: policyPath } = resolved;
 
   if (stack.includes(id)) {
-    throw new PolicyLoadError(`Circular policy extends detected: ${[...stack, id].join(' -> ')}`);
+    throw new PolicyLoadError(`Circular policy extends detected: ${[...stack, id].join(" -> ")}`);
   }
 
   const nextStack = [...stack, id];
@@ -133,37 +136,37 @@ function loadPolicyRecursive(ref: string, stack: string[]): Policy {
   if (isCanonicalPolicy(parsed)) {
     const canonical = policyPath
       ? loadCanonicalPolicyFromFile(policyPath, {
-        resolve: true,
-        rulesetsDir: CANONICAL_RULESETS_DIR,
-        onWarning: warnLegacyCompatibility,
-      })
+          resolve: true,
+          rulesetsDir: CANONICAL_RULESETS_DIR,
+          onWarning: warnLegacyCompatibility,
+        })
       : loadCanonicalPolicyFromString(content, {
-        resolve: true,
-        basePath: baseDir,
-        rulesetsDir: CANONICAL_RULESETS_DIR,
-        onWarning: warnLegacyCompatibility,
-      });
+          resolve: true,
+          basePath: baseDir,
+          rulesetsDir: CANONICAL_RULESETS_DIR,
+          onWarning: warnLegacyCompatibility,
+        });
 
     const translated = translateCanonicalPolicy(canonical);
     const report = validatePolicy(translated);
     if (!report.valid) {
-      throw new PolicyLoadError(`Policy validation failed:\n- ${report.errors.join('\n- ')}`);
+      throw new PolicyLoadError(`Policy validation failed:\n- ${report.errors.join("\n- ")}`);
     }
     return translated;
   }
 
   const policy = parsed as Policy;
-  if (policy.version === 'clawdstrike-v1.0') {
+  if (policy.version === "clawdstrike-v1.0") {
     warnLegacyCompatibility(
-      'Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.2.0 is preferred.',
+      "Loaded legacy OpenClaw policy schema (clawdstrike-v1.0); canonical 1.2.0 is preferred.",
     );
   }
 
-  const extendsRef = typeof policy.extends === 'string' ? policy.extends.trim() : undefined;
+  const extendsRef = typeof policy.extends === "string" ? policy.extends.trim() : undefined;
   if (!extendsRef) {
     const report = validatePolicy(policy);
     if (!report.valid) {
-      throw new PolicyLoadError(`Policy validation failed:\n- ${report.errors.join('\n- ')}`);
+      throw new PolicyLoadError(`Policy validation failed:\n- ${report.errors.join("\n- ")}`);
     }
     return policy;
   }
@@ -175,7 +178,7 @@ function loadPolicyRecursive(ref: string, stack: string[]): Policy {
 
   const report = validatePolicy(merged);
   if (!report.valid) {
-    throw new PolicyLoadError(`Policy validation failed:\n- ${report.errors.join('\n- ')}`);
+    throw new PolicyLoadError(`Policy validation failed:\n- ${report.errors.join("\n- ")}`);
   }
 
   return merged;
@@ -187,8 +190,8 @@ function baseDirForRef(ref: string, stack: string[]): string | undefined {
   const last = stack[stack.length - 1];
   if (!last) return undefined;
 
-  if (last.startsWith('file:')) {
-    const lastPath = last.slice('file:'.length);
+  if (last.startsWith("file:")) {
+    const lastPath = last.slice("file:".length);
     return path.dirname(lastPath);
   }
 
@@ -198,7 +201,7 @@ function baseDirForRef(ref: string, stack: string[]): string | undefined {
 
 export function loadPolicy(ref: string): Policy {
   if (!ref) {
-    throw new PolicyLoadError('Policy reference must be non-empty');
+    throw new PolicyLoadError("Policy reference must be non-empty");
   }
 
   return loadPolicyRecursive(ref, []);
@@ -209,11 +212,11 @@ function parseYamlObject(content: string): Record<string, unknown> {
   try {
     parsed = loadYaml(content);
   } catch (err) {
-    throw new PolicyLoadError('Failed to parse policy YAML', { cause: err });
+    throw new PolicyLoadError("Failed to parse policy YAML", { cause: err });
   }
 
   if (!isPlainObject(parsed)) {
-    throw new PolicyLoadError('Policy must be a YAML mapping/object');
+    throw new PolicyLoadError("Policy must be a YAML mapping/object");
   }
 
   return parsed as Record<string, unknown>;
@@ -221,7 +224,7 @@ function parseYamlObject(content: string): Record<string, unknown> {
 
 function isCanonicalPolicy(policy: Record<string, unknown>): boolean {
   const version = policy.version;
-  return typeof version === 'string' && /^(1\.1\.0|1\.2\.0)$/.test(version);
+  return typeof version === "string" && /^(1\.1\.0|1\.2\.0)$/.test(version);
 }
 
 function warnLegacyCompatibility(message: string): void {
@@ -231,77 +234,100 @@ function warnLegacyCompatibility(message: string): void {
 
 function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
   const out: Policy = {
-    version: 'clawdstrike-v1.0',
+    version: "clawdstrike-v1.0",
   };
 
   const guards = canonical.guards as Record<string, any> | undefined;
   const toggles: Record<string, boolean> = {};
   if (guards) {
-    if (typeof guards.forbidden_path === 'object') {
+    if (typeof guards.forbidden_path === "object") {
       const cfg = guards.forbidden_path as Record<string, unknown>;
       toggles.forbidden_path = cfg.enabled !== false;
       if (Array.isArray(cfg.patterns) && cfg.patterns.length > 0) {
         out.filesystem = out.filesystem ?? {};
-        out.filesystem.forbidden_paths = cfg.patterns.filter((v): v is string => typeof v === 'string');
+        out.filesystem.forbidden_paths = cfg.patterns.filter(
+          (v): v is string => typeof v === "string",
+        );
       }
     }
 
-    if (typeof guards.path_allowlist === 'object') {
+    if (typeof guards.path_allowlist === "object") {
       const cfg = guards.path_allowlist as Record<string, unknown>;
       out.filesystem = out.filesystem ?? {};
       if (Array.isArray(cfg.file_access_allow)) {
-        out.filesystem.allowed_read_paths = cfg.file_access_allow.filter((v): v is string => typeof v === 'string');
+        out.filesystem.allowed_read_paths = cfg.file_access_allow.filter(
+          (v): v is string => typeof v === "string",
+        );
       }
       if (Array.isArray(cfg.file_write_allow)) {
-        out.filesystem.allowed_write_roots = cfg.file_write_allow.filter((v): v is string => typeof v === 'string');
+        out.filesystem.allowed_write_roots = cfg.file_write_allow.filter(
+          (v): v is string => typeof v === "string",
+        );
       }
     }
 
-    if (typeof guards.egress_allowlist === 'object') {
+    if (typeof guards.egress_allowlist === "object") {
       const cfg = guards.egress_allowlist as Record<string, unknown>;
       toggles.egress = cfg.enabled !== false;
-      const allow = Array.isArray(cfg.allow) ? cfg.allow.filter((v): v is string => typeof v === 'string') : [];
-      const block = Array.isArray(cfg.block) ? cfg.block.filter((v): v is string => typeof v === 'string') : [];
-      const defaultAction = cfg.default_action === 'allow' ? 'allow' : 'block';
+      const allow = Array.isArray(cfg.allow)
+        ? cfg.allow.filter((v): v is string => typeof v === "string")
+        : [];
+      const block = Array.isArray(cfg.block)
+        ? cfg.block.filter((v): v is string => typeof v === "string")
+        : [];
+      const defaultAction = cfg.default_action === "allow" ? "allow" : "block";
       out.egress = {
-        mode: defaultAction === 'allow' && allow.includes('*') ? 'open' : allow.length === 0 && defaultAction === 'block' ? 'deny_all' : 'allowlist',
-        allowed_domains: allow.filter((v) => v !== '*'),
+        mode:
+          defaultAction === "allow" && allow.includes("*")
+            ? "open"
+            : allow.length === 0 && defaultAction === "block"
+              ? "deny_all"
+              : "allowlist",
+        allowed_domains: allow.filter((v) => v !== "*"),
         denied_domains: block,
       };
     }
 
-    if (typeof guards.patch_integrity === 'object') {
+    if (typeof guards.patch_integrity === "object") {
       const cfg = guards.patch_integrity as Record<string, unknown>;
       toggles.patch_integrity = cfg.enabled !== false;
       if (Array.isArray(cfg.forbidden_patterns) && cfg.forbidden_patterns.length > 0) {
         out.execution = out.execution ?? {};
-        out.execution.denied_patterns = cfg.forbidden_patterns.filter((v): v is string => typeof v === 'string');
+        out.execution.denied_patterns = cfg.forbidden_patterns.filter(
+          (v): v is string => typeof v === "string",
+        );
       }
     }
 
-    if (typeof guards.secret_leak === 'object') {
+    if (typeof guards.secret_leak === "object") {
       const cfg = guards.secret_leak as Record<string, unknown>;
       toggles.secret_leak = cfg.enabled !== false;
     }
 
-    if (typeof guards.mcp_tool === 'object') {
+    if (typeof guards.mcp_tool === "object") {
       const cfg = guards.mcp_tool as Record<string, unknown>;
       toggles.mcp_tool = cfg.enabled !== false;
       out.tools = {
-        allowed: Array.isArray(cfg.allow) ? cfg.allow.filter((v): v is string => typeof v === 'string') : [],
-        denied: Array.isArray(cfg.block) ? cfg.block.filter((v): v is string => typeof v === 'string') : [],
+        allowed: Array.isArray(cfg.allow)
+          ? cfg.allow.filter((v): v is string => typeof v === "string")
+          : [],
+        denied: Array.isArray(cfg.block)
+          ? cfg.block.filter((v): v is string => typeof v === "string")
+          : [],
       };
     }
 
-    if (typeof guards.computer_use === 'object') {
+    if (typeof guards.computer_use === "object") {
       const cfg = guards.computer_use as Record<string, unknown>;
-      const translated: NonNullable<Policy['guards']>['computer_use'] = {};
-      if (typeof cfg.enabled === 'boolean') translated.enabled = cfg.enabled;
-      if (typeof cfg.mode === 'string') {
-        translated.mode = cfg.mode as NonNullable<typeof translated>['mode'];
+      const translated: NonNullable<Policy["guards"]>["computer_use"] = {};
+      if (typeof cfg.enabled === "boolean") translated.enabled = cfg.enabled;
+      if (typeof cfg.mode === "string") {
+        translated.mode = cfg.mode as NonNullable<typeof translated>["mode"];
       }
       if (Array.isArray(cfg.allowed_actions)) {
-        translated.allowed_actions = cfg.allowed_actions.filter((v): v is string => typeof v === 'string');
+        translated.allowed_actions = cfg.allowed_actions.filter(
+          (v): v is string => typeof v === "string",
+        );
       }
       out.guards = {
         ...(out.guards ?? {}),
@@ -309,17 +335,25 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
       };
     }
 
-    if (typeof guards.remote_desktop_side_channel === 'object') {
+    if (typeof guards.remote_desktop_side_channel === "object") {
       const cfg = guards.remote_desktop_side_channel as Record<string, unknown>;
-      const translated: NonNullable<Policy['guards']>['remote_desktop_side_channel'] = {};
-      if (typeof cfg.enabled === 'boolean') translated.enabled = cfg.enabled;
-      if (typeof cfg.clipboard_enabled === 'boolean') translated.clipboard_enabled = cfg.clipboard_enabled;
-      if (typeof cfg.file_transfer_enabled === 'boolean') translated.file_transfer_enabled = cfg.file_transfer_enabled;
-      if (typeof cfg.audio_enabled === 'boolean') translated.audio_enabled = cfg.audio_enabled;
-      if (typeof cfg.drive_mapping_enabled === 'boolean') translated.drive_mapping_enabled = cfg.drive_mapping_enabled;
-      if (typeof cfg.printing_enabled === 'boolean') translated.printing_enabled = cfg.printing_enabled;
-      if (typeof cfg.session_share_enabled === 'boolean') translated.session_share_enabled = cfg.session_share_enabled;
-      if (typeof cfg.max_transfer_size_bytes === 'number' && Number.isFinite(cfg.max_transfer_size_bytes)) {
+      const translated: NonNullable<Policy["guards"]>["remote_desktop_side_channel"] = {};
+      if (typeof cfg.enabled === "boolean") translated.enabled = cfg.enabled;
+      if (typeof cfg.clipboard_enabled === "boolean")
+        translated.clipboard_enabled = cfg.clipboard_enabled;
+      if (typeof cfg.file_transfer_enabled === "boolean")
+        translated.file_transfer_enabled = cfg.file_transfer_enabled;
+      if (typeof cfg.audio_enabled === "boolean") translated.audio_enabled = cfg.audio_enabled;
+      if (typeof cfg.drive_mapping_enabled === "boolean")
+        translated.drive_mapping_enabled = cfg.drive_mapping_enabled;
+      if (typeof cfg.printing_enabled === "boolean")
+        translated.printing_enabled = cfg.printing_enabled;
+      if (typeof cfg.session_share_enabled === "boolean")
+        translated.session_share_enabled = cfg.session_share_enabled;
+      if (
+        typeof cfg.max_transfer_size_bytes === "number" &&
+        Number.isFinite(cfg.max_transfer_size_bytes)
+      ) {
         translated.max_transfer_size_bytes = cfg.max_transfer_size_bytes;
       }
       out.guards = {
@@ -328,14 +362,16 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
       };
     }
 
-    if (typeof guards.input_injection_capability === 'object') {
+    if (typeof guards.input_injection_capability === "object") {
       const cfg = guards.input_injection_capability as Record<string, unknown>;
-      const translated: NonNullable<Policy['guards']>['input_injection_capability'] = {};
-      if (typeof cfg.enabled === 'boolean') translated.enabled = cfg.enabled;
+      const translated: NonNullable<Policy["guards"]>["input_injection_capability"] = {};
+      if (typeof cfg.enabled === "boolean") translated.enabled = cfg.enabled;
       if (Array.isArray(cfg.allowed_input_types)) {
-        translated.allowed_input_types = cfg.allowed_input_types.filter((v): v is string => typeof v === 'string');
+        translated.allowed_input_types = cfg.allowed_input_types.filter(
+          (v): v is string => typeof v === "string",
+        );
       }
-      if (typeof cfg.require_postcondition_probe === 'boolean') {
+      if (typeof cfg.require_postcondition_probe === "boolean") {
         translated.require_postcondition_probe = cfg.require_postcondition_probe;
       }
       out.guards = {

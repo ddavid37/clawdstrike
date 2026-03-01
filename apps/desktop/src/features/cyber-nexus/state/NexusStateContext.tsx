@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useReducer,
-  type ReactNode,
-} from "react";
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useReducer } from "react";
 import type {
   NexusEscLayer,
   NexusLayoutMode,
@@ -111,7 +104,7 @@ export const initialNexusState: NexusState = {
 function cycleIndex(
   ids: StrikecellDomainId[],
   current: StrikecellDomainId | null,
-  offset: number
+  offset: number,
 ): StrikecellDomainId | null {
   if (ids.length === 0) return null;
   if (!current) return ids[0];
@@ -124,7 +117,7 @@ function cycleIndex(
 function reorder(
   ids: StrikecellDomainId[],
   id: StrikecellDomainId,
-  direction: "up" | "down"
+  direction: "up" | "down",
 ): StrikecellDomainId[] {
   const index = ids.indexOf(id);
   if (index < 0) return ids;
@@ -148,11 +141,12 @@ export function nexusReducer(state: NexusState, action: NexusAction): NexusState
       const missing = action.strikecellIds.filter((id) => !filteredOrder.includes(id));
       const strikecellOrder = [...filteredOrder, ...missing];
       const active =
-        state.selection.activeStrikecellId && strikecellOrder.includes(state.selection.activeStrikecellId)
+        state.selection.activeStrikecellId &&
+        strikecellOrder.includes(state.selection.activeStrikecellId)
           ? state.selection.activeStrikecellId
-          : strikecellOrder[0] ?? null;
+          : (strikecellOrder[0] ?? null);
       const expandedStrikecellIds = state.selection.expandedStrikecellIds.filter((id) =>
-        strikecellOrder.includes(id)
+        strikecellOrder.includes(id),
       );
       const pinnedLeft =
         state.pinnedStrikecells.left && strikecellOrder.includes(state.pinnedStrikecells.left)
@@ -278,7 +272,7 @@ export function nexusReducer(state: NexusState, action: NexusAction): NexusState
         carouselVisible: action.focused ? true : state.carouselVisible,
         carouselFocused: action.focused,
         keyboardHighlightedStrikecellId: action.focused
-          ? state.keyboardHighlightedStrikecellId ?? state.selection.activeStrikecellId
+          ? (state.keyboardHighlightedStrikecellId ?? state.selection.activeStrikecellId)
           : state.keyboardHighlightedStrikecellId,
       };
 
@@ -347,8 +341,12 @@ export function nexusReducer(state: NexusState, action: NexusAction): NexusState
         return {
           ...state,
           pinnedStrikecells: {
-            left: state.pinnedStrikecells.left === action.id ? undefined : state.pinnedStrikecells.left,
-            right: state.pinnedStrikecells.right === action.id ? undefined : state.pinnedStrikecells.right,
+            left:
+              state.pinnedStrikecells.left === action.id ? undefined : state.pinnedStrikecells.left,
+            right:
+              state.pinnedStrikecells.right === action.id
+                ? undefined
+                : state.pinnedStrikecells.right,
           },
         };
       }
@@ -504,7 +502,8 @@ export function useEscClosePriority() {
     }
 
     if (state.selection.expandedStrikecellIds.length > 0) {
-      const top = state.selection.expandedStrikecellIds[state.selection.expandedStrikecellIds.length - 1];
+      const top =
+        state.selection.expandedStrikecellIds[state.selection.expandedStrikecellIds.length - 1];
       if (top) {
         toggleExpanded(top);
         setLastEscLayer("expanded");

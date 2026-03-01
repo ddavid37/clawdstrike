@@ -1,8 +1,8 @@
-import type { PolicyEvent } from '@clawdstrike/adapter-core';
+import type { PolicyEvent } from "@clawdstrike/adapter-core";
 
-import type { AsyncExecutionMode, TimeoutBehavior } from '../policy/schema.js';
+import type { AsyncExecutionMode, TimeoutBehavior } from "../policy/schema.js";
 
-export type Severity = 'low' | 'medium' | 'high' | 'critical';
+export type Severity = "low" | "medium" | "high" | "critical";
 
 export interface GuardResult {
   allowed: boolean;
@@ -42,7 +42,7 @@ export interface AsyncGuardConfig {
   retry?: RetryConfig;
 }
 
-export type AsyncGuardErrorKind = 'timeout' | 'circuit_open' | 'http' | 'parse' | 'other';
+export type AsyncGuardErrorKind = "timeout" | "circuit_open" | "http" | "parse" | "other";
 
 export class AsyncGuardError extends Error {
   readonly kind: AsyncGuardErrorKind;
@@ -96,4 +96,3 @@ export interface AsyncGuard {
 
   checkUncached(event: PolicyEvent, http: HttpClient, signal?: AbortSignal): Promise<GuardResult>;
 }
-

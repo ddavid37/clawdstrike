@@ -1,11 +1,11 @@
-import { FrameworkToolBoundary, wrapFrameworkToolDispatcher } from '@clawdstrike/adapter-core';
 import type {
   FrameworkToolBoundaryOptions,
   FrameworkToolDispatcher,
   ToolCallTranslationInput,
-} from '@clawdstrike/adapter-core';
+} from "@clawdstrike/adapter-core";
+import { FrameworkToolBoundary, wrapFrameworkToolDispatcher } from "@clawdstrike/adapter-core";
 
-import { openAICuaTranslator } from './openai-cua-translator.js';
+import { openAICuaTranslator } from "./openai-cua-translator.js";
 
 export type OpenAIToolBoundaryOptions = FrameworkToolBoundaryOptions;
 export type OpenAIToolDispatcher<TOutput = unknown> = FrameworkToolDispatcher<TOutput>;
@@ -28,7 +28,7 @@ function composeOptions(options: OpenAIToolBoundaryOptions = {}): OpenAIToolBoun
 
 export class OpenAIToolBoundary extends FrameworkToolBoundary {
   constructor(options: OpenAIToolBoundaryOptions = {}) {
-    super('openai', composeOptions(options));
+    super("openai", composeOptions(options));
   }
 }
 

@@ -10,7 +10,10 @@ export class EventBus<T> {
     predicate?: EventPredicate<T>;
   }>();
 
-  subscribe(handler: EventHandler<T>, options: { predicate?: EventPredicate<T> } = {}): Unsubscribe {
+  subscribe(
+    handler: EventHandler<T>,
+    options: { predicate?: EventPredicate<T> } = {},
+  ): Unsubscribe {
     const entry = { handler, predicate: options.predicate };
     this.subscribers.add(entry);
     return () => {
@@ -31,4 +34,3 @@ export class EventBus<T> {
     this.subscribers.clear();
   }
 }
-

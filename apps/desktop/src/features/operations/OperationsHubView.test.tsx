@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { OperationsHubView } from "./OperationsHubView";
 
@@ -27,8 +28,9 @@ vi.mock("@/features/settings/SettingsView", () => ({
   ),
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("OperationsHubView", () => {
   let container: HTMLDivElement;
@@ -50,7 +52,7 @@ describe("OperationsHubView", () => {
           <Routes>
             <Route path="/operations" element={<OperationsHubView />} />
           </Routes>
-        </MemoryRouter>
+        </MemoryRouter>,
       );
     });
 
@@ -68,14 +70,14 @@ describe("OperationsHubView", () => {
           <Routes>
             <Route path="/operations" element={<OperationsHubView />} />
           </Routes>
-        </MemoryRouter>
+        </MemoryRouter>,
       );
     });
 
     expect(container.textContent).toContain("Fleet Tab");
 
     const preferencesButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Preferences"
+      (button) => button.textContent?.trim() === "Preferences",
     ) as HTMLButtonElement;
 
     act(() => {

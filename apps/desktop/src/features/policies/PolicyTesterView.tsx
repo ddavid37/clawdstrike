@@ -1,21 +1,19 @@
 /**
  * PolicyTesterView - Simulate canonical PolicyEvent evaluations
  */
-import { useState } from "react";
-import type { FormEvent } from "react";
+
+import { Badge, GlassHeader, GlassPanel, GlowButton, GlowInput } from "@backbay/glia/primitives";
 import { clsx } from "clsx";
-import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
-import { GlowButton } from "@backbay/glia/primitives";
-import { GlowInput } from "@backbay/glia/primitives";
-import { Badge } from "@backbay/glia/primitives";
+import type { FormEvent } from "react";
+import { useState } from "react";
 import { useConnection } from "@/context/ConnectionContext";
-import { HushdClient, type PolicyEvalResponse } from "@/services/hushdClient";
 import {
   buildPolicyTestEvent,
   getPolicyTestTargetPlaceholder,
   POLICY_TEST_EVENT_TYPES,
   type PolicyTestEventType,
 } from "@/features/forensics/policy-workbench/mapping";
+import { HushdClient, type PolicyEvalResponse } from "@/services/hushdClient";
 
 interface TestForm {
   eventType: PolicyTestEventType;
@@ -117,7 +115,9 @@ export function PolicyTesterView() {
 
           {(form.eventType === "file_write" || form.eventType === "patch_apply") && (
             <div>
-              <label className="block text-sm font-medium text-sdr-text-primary mb-2">Content</label>
+              <label className="block text-sm font-medium text-sdr-text-primary mb-2">
+                Content
+              </label>
               <textarea
                 value={form.content}
                 onChange={(event) => setForm({ ...form, content: event.target.value })}
@@ -136,7 +136,7 @@ export function PolicyTesterView() {
               <textarea
                 value={form.extra}
                 onChange={(event) => setForm({ ...form, extra: event.target.value })}
-                placeholder={form.eventType === "tool_call" ? "{\"path\":\"/tmp\"}" : "runtime"}
+                placeholder={form.eventType === "tool_call" ? '{"path":"/tmp"}' : "runtime"}
                 rows={4}
                 className="w-full px-3 py-2 bg-sdr-bg-tertiary text-sdr-text-primary placeholder:text-sdr-text-muted rounded-md border border-sdr-border focus:outline-none focus:border-sdr-accent-blue font-mono text-sm resize-none"
               />
@@ -215,7 +215,7 @@ function ActionTypeButton({
         "px-3 py-2 text-sm font-medium rounded-md border transition-colors",
         selected
           ? "bg-sdr-accent-blue/20 border-sdr-accent-blue text-sdr-accent-blue"
-          : "bg-sdr-bg-tertiary border-sdr-border text-sdr-text-secondary hover:text-sdr-text-primary"
+          : "bg-sdr-bg-tertiary border-sdr-border text-sdr-text-secondary hover:text-sdr-text-primary",
       )}
     >
       {value}
@@ -244,17 +244,13 @@ function ResultDisplay({ result }: { result: PolicyEvalResponse }) {
               ? "bg-severity-warning/10 border-severity-warning/30"
               : verdict === "DENY"
                 ? "bg-verdict-blocked/10 border-verdict-blocked/30"
-                : "bg-sdr-bg-tertiary border-sdr-border"
+                : "bg-sdr-bg-tertiary border-sdr-border",
         )}
       >
         <div className="flex items-center gap-2">
           <Badge
             variant={
-              verdict === "ALLOW"
-                ? "default"
-                : verdict === "DENY"
-                  ? "destructive"
-                  : "outline"
+              verdict === "ALLOW" ? "default" : verdict === "DENY" ? "destructive" : "outline"
             }
             className="text-lg font-semibold"
           >

@@ -5,22 +5,25 @@
  * - /:appId - Direct app access
  * - / - Redirects to Nexus (default)
  */
-import { Suspense, useMemo } from "react";
-import { Navigate, RouterProvider, createHashRouter } from "react-router-dom";
+
 import { UiThemeProvider } from "@backbay/glia/theme";
-import { ShellLayout } from "./ShellLayout";
-import { getPlugins } from "./plugins";
+import { Suspense, useMemo } from "react";
+import { createHashRouter, Navigate, RouterProvider } from "react-router-dom";
 import { ConnectionProvider } from "@/context/ConnectionContext";
 import { OpenClawProvider } from "@/context/OpenClawContext";
 import { PolicyProvider } from "@/context/PolicyContext";
 import { SwarmProvider } from "@/context/SwarmContext";
 import { MarketplaceDiscoveryBootstrap } from "./MarketplaceDiscoveryBootstrap";
+import { getPlugins } from "./plugins";
+import { ShellLayout } from "./ShellLayout";
 
 export function ShellApp() {
   const router = useMemo(() => {
     const plugins = getPlugins();
     const loadingFallback = (
-      <div className="flex h-full items-center justify-center text-sdr-text-secondary">Loading...</div>
+      <div className="flex h-full items-center justify-center text-sdr-text-secondary">
+        Loading...
+      </div>
     );
 
     return createHashRouter([

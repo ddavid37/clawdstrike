@@ -63,7 +63,7 @@ describe("SessionStore", () => {
             lastOpenedAt: 1700000000000,
           },
         ],
-      })
+      }),
     );
 
     const store = new SessionStore();

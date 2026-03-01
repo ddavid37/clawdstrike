@@ -242,6 +242,23 @@ jobs:
       - name: E2E pipeline tests
         run: cargo test -p sdr-integration-tests --test e2e_pipeline
 
+  adaptive-cloud-integration:
+    name: Adaptive Cloud Integration (NATS + Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: check
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Run cloud-api adaptive integration tests
+        run: 'cargo test -p clawdstrike-cloud-api integration_tests:: -- --nocapture'
+
   msrv:
     name: Minimum Supported Rust Version
     runs-on: ubuntu-latest
@@ -379,9 +396,13 @@ jobs:
           fi
 
           # `cargo llvm-cov` in this job targets the root Rust workspace.
-          # Exclude standalone Rust crates outside that workspace from this
-          # specific gate to avoid false negatives from missing LCOV records.
-          grep -v '^apps/agent/src-tauri/' changed_rust_files.txt > changed_rust_files.coverage.txt || true
+          # Exclude standalone Rust crates outside that workspace and test-only
+          # Rust sources that do not emit stable LCOV entries in this job.
+          grep -v '^apps/agent/src-tauri/' changed_rust_files.txt \
+            | grep -v '^apps/desktop/src-tauri/' \
+            | grep -v '^packages/sdk/hush-py/hush-native/' \
+            | grep -Ev '(^|/)tests/|_test\.rs$|_tests\.rs$|integration_tests\.rs$' \
+            > changed_rust_files.coverage.txt || true
 
           if [ ! -s changed_rust_files.coverage.txt ]; then
             echo "No workspace Rust files changed; skipping changed-file Rust coverage gate."
@@ -391,6 +412,7 @@ jobs:
           tools/scripts/check-changed-rust-coverage.py \
             --lcov lcov.info \
             --changed-files-file changed_rust_files.coverage.txt \
+            --git-diff-range "origin/${GITHUB_BASE_REF}...HEAD" \
             --threshold "${CHANGED_RUST_COVERAGE_THRESHOLD}"
 
       - name: Upload coverage to Codecov

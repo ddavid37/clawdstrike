@@ -183,15 +183,19 @@ export interface AuditEventLike {
   details?: Record<string, unknown>;
 }
 
-export function securityEventFromAuditEvent(audit: AuditEventLike, ctx: SecurityEventContext): SecurityEvent {
-  const timestamp = typeof audit.timestamp === "string" ? audit.timestamp : audit.timestamp.toISOString();
+export function securityEventFromAuditEvent(
+  audit: AuditEventLike,
+  ctx: SecurityEventContext,
+): SecurityEvent {
+  const timestamp =
+    typeof audit.timestamp === "string" ? audit.timestamp : audit.timestamp.toISOString();
 
   const decisionAllowed = audit.decision?.allowed ?? true;
   const decisionWarn = audit.decision?.warn ?? false;
   const decisionDenied = audit.decision?.denied ?? false;
 
   const severity: SecuritySeverity = decisionDenied
-    ? mapDecisionSeverity(audit.decision?.severity) ?? "high"
+    ? (mapDecisionSeverity(audit.decision?.severity) ?? "high")
     : decisionWarn
       ? "medium"
       : "info";
@@ -259,7 +263,11 @@ function mapDecisionSeverity(s: AuditDecisionSeverity): SecuritySeverity | null 
   }
 }
 
-function mapAuditTypeToEventType(type: string, allowed: boolean, warned: boolean): SecurityEventType {
+function mapAuditTypeToEventType(
+  type: string,
+  allowed: boolean,
+  warned: boolean,
+): SecurityEventType {
   if (type === "session_start") {
     return "session_start";
   }
@@ -314,7 +322,7 @@ function mapAuditTypeToCategoryAndResource(audit: AuditEventLike): {
 
 function isUuidLike(value: string): boolean {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
-    value
+    value,
   );
 }
 
@@ -346,6 +354,6 @@ export function uuidv7(): string {
 }
 
 function formatUuid(bytes: Uint8Array): string {
-  const hex = [...bytes].map(b => b.toString(16).padStart(2, "0")).join("");
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }

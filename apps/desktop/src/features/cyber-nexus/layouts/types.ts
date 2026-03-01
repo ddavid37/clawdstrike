@@ -1,4 +1,9 @@
-import type { NexusLayoutMode, StrikecellConnection, StrikecellDomainId, StrikecellStatus } from "../types";
+import type {
+  NexusLayoutMode,
+  StrikecellConnection,
+  StrikecellDomainId,
+  StrikecellStatus,
+} from "../types";
 
 export interface NexusLayoutNode {
   id: StrikecellDomainId;

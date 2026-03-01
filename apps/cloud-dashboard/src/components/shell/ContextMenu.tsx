@@ -9,10 +9,15 @@ export function ContextMenu({ state, onClose }: { state: ContextMenuState; onClo
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
-    const keyHandler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     document.addEventListener("mousedown", handler);
     document.addEventListener("keydown", keyHandler);
-    return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("keydown", keyHandler); };
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", keyHandler);
+    };
   }, [state.visible, onClose]);
 
   if (!state.visible) return null;
@@ -37,7 +42,10 @@ export function ContextMenu({ state, onClose }: { state: ContextMenuState; onClo
           <button
             key={i}
             type="button"
-            onClick={() => { item.action(); onClose(); }}
+            onClick={() => {
+              item.action();
+              onClose();
+            }}
             className="hover-row font-mono"
             style={{
               display: "block",

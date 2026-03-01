@@ -12,7 +12,7 @@ export function resolvePlaceholdersInString(input: string): string {
 }
 
 export function resolvePlaceholders(value: unknown): unknown {
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return resolvePlaceholdersInString(value);
   }
   if (Array.isArray(value)) {
@@ -29,20 +29,19 @@ export function resolvePlaceholders(value: unknown): unknown {
 }
 
 function envVarForPlaceholder(raw: string): string {
-  if (raw.startsWith('secrets.')) {
-    const name = raw.slice('secrets.'.length);
+  if (raw.startsWith("secrets.")) {
+    const name = raw.slice("secrets.".length);
     if (!name) {
-      throw new Error('placeholder ${secrets.} is invalid');
+      throw new Error("placeholder ${secrets.} is invalid");
     }
     return name;
   }
   if (!raw) {
-    throw new Error('placeholder ${} is invalid');
+    throw new Error("placeholder ${} is invalid");
   }
   return raw;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-

@@ -55,7 +55,7 @@ export function NexusBreadcrumbs({
                 "origin-focus-ring rounded border px-1.5 py-0.5 text-[10px] font-mono uppercase transition-colors",
                 index === expandedStrikecellIds.length - 1
                   ? "border-[color:color-mix(in_srgb,var(--origin-gold)_66%,transparent)] text-[color:var(--origin-gold)]"
-                  : "border-[color:color-mix(in_srgb,var(--origin-steel-bright)_48%,transparent)] text-sdr-text-secondary hover:text-sdr-text-primary"
+                  : "border-[color:color-mix(in_srgb,var(--origin-steel-bright)_48%,transparent)] text-sdr-text-secondary hover:text-sdr-text-primary",
               )}
             >
               {resolveLabel(strikecells, id)}

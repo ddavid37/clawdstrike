@@ -1260,6 +1260,37 @@ async fn gateway_request(
     Json(input): Json<GatewayRequestInput>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
     require_auth(&headers, &state)?;
+    let session_id = state.session_manager.session_id().await;
+    let policy = evaluate_policy_check(
+        state.settings.clone(),
+        &state.http_client,
+        PolicyCheckInput {
+            action_type: "mcp_tool".to_string(),
+            target: format!("openclaw.{}", input.method.trim().to_ascii_lowercase()),
+            content: None,
+            args: Some({
+                let mut args = std::collections::HashMap::new();
+                args.insert("gateway_id".to_string(), serde_json::Value::String(input.gateway_id.clone()));
+                args.insert(
+                    "method".to_string(),
+                    serde_json::Value::String(input.method.clone()),
+                );
+                if let Some(params) = input.params.as_ref() {
+                    args.insert("params".to_string(), params.clone());
+                }
+                args
+            }),
+        },
+        session_id,
+    )
+    .await;
+    if !policy.allowed {
+        let message = policy
+            .message
+            .unwrap_or_else(|| "OpenClaw request blocked by policy".to_string());
+        return Err((StatusCode::FORBIDDEN, message));
+    }
+
     let timeout_ms = input.timeout_ms.unwrap_or(12_000);
 
     let payload = state
@@ -1817,6 +1848,81 @@ mod tests {
             .unwrap_or_else(|e| panic!("request failed: {e}"));
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn gateway_request_is_denied_when_policy_blocks() {
+        let state = Arc::new(test_state());
+        {
+            let mut settings = state.settings.write().await;
+            settings.daemon_port = 1;
+        }
+        let app = Router::new()
+            .route("/api/v1/openclaw/request", post(gateway_request))
+            .with_state(state);
+
+        let request = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/openclaw/request")
+            .header("authorization", "Bearer test-token")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                r#"{"gateway_id":"gw-1","method":"node.list","timeout_ms":1000}"#,
+            ))
+            .unwrap_or_else(|e| panic!("failed to build request: {e}"));
+        let response = app
+            .oneshot(request)
+            .await
+            .unwrap_or_else(|e| panic!("request failed: {e}"));
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 64)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read body: {e}"));
+        let body_text =
+            String::from_utf8(body.to_vec()).unwrap_or_else(|e| panic!("invalid utf8 body: {e}"));
+        assert!(
+            body_text.contains("Policy daemon unreachable"),
+            "expected policy deny reason, got: {body_text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn gateway_request_reaches_relay_when_policy_allows() {
+        let state = Arc::new(test_state());
+        {
+            let mut settings = state.settings.write().await;
+            settings.enabled = false;
+        }
+
+        let app = Router::new()
+            .route("/api/v1/openclaw/request", post(gateway_request))
+            .with_state(state);
+
+        let request = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/v1/openclaw/request")
+            .header("authorization", "Bearer test-token")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                r#"{"gateway_id":"gw-1","method":"node.list","timeout_ms":1000}"#,
+            ))
+            .unwrap_or_else(|e| panic!("failed to build request: {e}"));
+        let response = app
+            .oneshot(request)
+            .await
+            .unwrap_or_else(|e| panic!("request failed: {e}"));
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 64)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read body: {e}"));
+        let body_text =
+            String::from_utf8(body.to_vec()).unwrap_or_else(|e| panic!("invalid utf8 body: {e}"));
+        assert!(
+            body_text.contains("not connected"),
+            "expected relay error from OpenClaw manager, got: {body_text}"
+        );
     }
 
     #[tokio::test]

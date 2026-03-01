@@ -1,10 +1,10 @@
 import * as React from "react";
+import { OpenClawAgentProvider, useOpenClawAgent } from "./OpenClawAgentProvider";
 import {
+  type OpenClawContextValue,
   OpenClawProvider as OpenClawDirectProvider,
   useOpenClaw as useOpenClawDirect,
-  type OpenClawContextValue,
 } from "./OpenClawDirectFallback";
-import { OpenClawAgentProvider, useOpenClawAgent } from "./OpenClawAgentProvider";
 
 export type {
   ExecApprovalDecision,
@@ -16,16 +16,16 @@ export type {
 } from "./OpenClawDirectFallback";
 export { applyGatewayEventFrame } from "./OpenClawDirectFallback";
 
-const USE_DIRECT_MODE =
-  import.meta.env.DEV && import.meta.env.VITE_OPENCLAW_DIRECT_MODE === "1";
+const USE_DIRECT_MODE = import.meta.env.DEV && import.meta.env.VITE_OPENCLAW_DIRECT_MODE === "1";
 
 export function OpenClawProvider({ children }: { children: React.ReactNode }) {
   if (USE_DIRECT_MODE) return <OpenClawDirectProvider>{children}</OpenClawDirectProvider>;
   return <OpenClawAgentProvider>{children}</OpenClawAgentProvider>;
 }
 
-export function useOpenClaw(): OpenClawContextValue {
-  if (USE_DIRECT_MODE) return useOpenClawDirect();
-  return useOpenClawAgent();
-}
+// Select hook implementation at module scope (constant after Vite env replacement).
+const useOpenClawImpl = USE_DIRECT_MODE ? useOpenClawDirect : useOpenClawAgent;
 
+export function useOpenClaw(): OpenClawContextValue {
+  return useOpenClawImpl();
+}

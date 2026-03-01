@@ -37,13 +37,7 @@ export interface ThreatIntelConfig {
   };
 }
 
-export type IndicatorType =
-  | "domain"
-  | "ipv4"
-  | "ipv6"
-  | "url"
-  | "file_hash"
-  | "file_name";
+export type IndicatorType = "domain" | "ipv4" | "ipv6" | "url" | "file_hash" | "file_name";
 
 export interface ParsedIndicator {
   id: string;
@@ -79,4 +73,3 @@ export interface StixIndicator {
 }
 
 export type StixObject = Record<string, unknown> & { type?: string };
-

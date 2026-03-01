@@ -31,9 +31,7 @@ function generateId(): string {
 
 export function useMultiInstance() {
   const [instances, setInstances] = useState<HushdInstance[]>(loadInstances);
-  const [activeId, setActiveId] = useState<string>(
-    () => localStorage.getItem(ACTIVE_KEY) || "",
-  );
+  const [activeId, setActiveId] = useState<string>(() => localStorage.getItem(ACTIVE_KEY) || "");
 
   const addInstance = useCallback((inst: Omit<HushdInstance, "id">) => {
     setInstances((prev) => {

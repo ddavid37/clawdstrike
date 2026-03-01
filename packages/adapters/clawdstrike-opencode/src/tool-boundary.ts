@@ -1,12 +1,15 @@
-import { FrameworkToolBoundary, wrapFrameworkToolDispatcher } from '@clawdstrike/adapter-core';
-import type { FrameworkToolBoundaryOptions, FrameworkToolDispatcher } from '@clawdstrike/adapter-core';
+import type {
+  FrameworkToolBoundaryOptions,
+  FrameworkToolDispatcher,
+} from "@clawdstrike/adapter-core";
+import { FrameworkToolBoundary, wrapFrameworkToolDispatcher } from "@clawdstrike/adapter-core";
 
 export type OpenCodeToolBoundaryOptions = FrameworkToolBoundaryOptions;
 export type OpenCodeToolDispatcher<TOutput = unknown> = FrameworkToolDispatcher<TOutput>;
 
 export class OpenCodeToolBoundary extends FrameworkToolBoundary {
   constructor(options: OpenCodeToolBoundaryOptions = {}) {
-    super('opencode', options);
+    super("opencode", options);
   }
 }
 

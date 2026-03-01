@@ -1,7 +1,7 @@
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { NoiseGrain, Stamp } from "../ui";
 import type { SSEEvent } from "../../hooks/useSSE";
+import { NoiseGrain, Stamp } from "../ui";
 
 interface AuditEventLike {
   id?: string;
@@ -164,9 +164,7 @@ export function EventDetailDrawer({
             {"severity" in event && event.severity && (
               <Row label="Severity" value={event.severity} />
             )}
-            {"message" in event && event.message && (
-              <Row label="Message" value={event.message} />
-            )}
+            {"message" in event && event.message && <Row label="Message" value={event.message} />}
           </div>
 
           {/* Raw JSON */}

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const restoreCapsule = vi.fn();
 const closeCapsule = vi.fn();
@@ -71,8 +72,9 @@ class MemoryStorage {
   }
 }
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("SessionRail commands dial", () => {
   let container: HTMLDivElement;
@@ -98,7 +100,7 @@ describe("SessionRail commands dial", () => {
     });
 
     const commandsButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.getAttribute("title") === "Commands - Hot command launcher"
+      (button) => button.getAttribute("title") === "Commands - Hot command launcher",
     ) as HTMLButtonElement;
 
     act(() => {
@@ -119,7 +121,7 @@ describe("SessionRail commands dial", () => {
     });
 
     const policyButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.getAttribute("title") === "Policy Workbench"
+      (button) => button.getAttribute("title") === "Policy Workbench",
     ) as HTMLButtonElement;
 
     act(() => {
@@ -139,7 +141,7 @@ describe("SessionRail commands dial", () => {
     });
 
     const echoesButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.getAttribute("title") === "Echoes - Output Log"
+      (button) => button.getAttribute("title") === "Echoes - Output Log",
     ) as HTMLButtonElement;
 
     act(() => {
@@ -159,7 +161,7 @@ describe("SessionRail commands dial", () => {
     });
 
     const relicsButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.getAttribute("title") === "Relics - Artifacts"
+      (button) => button.getAttribute("title") === "Relics - Artifacts",
     ) as HTMLButtonElement;
 
     act(() => {

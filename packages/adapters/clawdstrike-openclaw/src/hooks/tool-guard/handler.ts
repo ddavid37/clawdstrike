@@ -4,21 +4,20 @@
  * Intercepts tool results and enforces security policy.
  */
 
-import { createHash } from 'node:crypto';
-
+import { createHash } from "node:crypto";
+import { inferEventTypeFromName } from "../../classification.js";
+import { getSharedEngine, initializeEngine } from "../../engine-holder.js";
+import type { PolicyEngine } from "../../policy/engine.js";
 import type {
-  HookHandler,
-  HookEvent,
-  ToolResultPersistEvent,
   ClawdstrikeConfig,
   Decision,
+  HookEvent,
+  HookHandler,
   PolicyEvent,
-} from '../../types.js';
-import { initializeEngine, getSharedEngine } from '../../engine-holder.js';
-import type { PolicyEngine } from '../../policy/engine.js';
-import { checkAndConsumeApproval } from '../approval-state.js';
-import { extractPath, normalizeApprovalResource } from '../approval-utils.js';
-import { inferEventTypeFromName } from '../../classification.js';
+  ToolResultPersistEvent,
+} from "../../types.js";
+import { checkAndConsumeApproval } from "../approval-state.js";
+import { extractPath, normalizeApprovalResource } from "../approval-utils.js";
 
 // ── LRU Decision Cache ──────────────────────────────────────────────
 
@@ -31,21 +30,21 @@ const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_CACHE_MAX = 256;
 
 function stableStringify(value: unknown, seen = new WeakSet<object>()): string {
-  if (value === null) return 'null';
+  if (value === null) return "null";
 
   const t = typeof value;
-  if (t === 'string') return JSON.stringify(value);
-  if (t === 'number' || t === 'boolean') return String(value);
-  if (t === 'bigint') return JSON.stringify(String(value));
-  if (t === 'undefined') return '"__undefined__"';
-  if (t === 'symbol') return JSON.stringify(String(value));
-  if (t === 'function') return '"__function__"';
+  if (t === "string") return JSON.stringify(value);
+  if (t === "number" || t === "boolean") return String(value);
+  if (t === "bigint") return JSON.stringify(String(value));
+  if (t === "undefined") return '"__undefined__"';
+  if (t === "symbol") return JSON.stringify(String(value));
+  if (t === "function") return '"__function__"';
 
   if (Array.isArray(value)) {
-    return `[${value.map((v) => stableStringify(v, seen)).join(',')}]`;
+    return `[${value.map((v) => stableStringify(v, seen)).join(",")}]`;
   }
 
-  if (t !== 'object') {
+  if (t !== "object") {
     return JSON.stringify(String(value));
   }
 
@@ -57,7 +56,7 @@ function stableStringify(value: unknown, seen = new WeakSet<object>()): string {
   // Only stable-sort plain objects; for other objects (Date, Buffer, etc) defer to
   // JSON.stringify where possible.
   const tag = Object.prototype.toString.call(value);
-  if (tag !== '[object Object]') {
+  if (tag !== "[object Object]") {
     try {
       return JSON.stringify(value);
     } catch {
@@ -68,34 +67,30 @@ function stableStringify(value: unknown, seen = new WeakSet<object>()): string {
   const obj = value as Record<string, unknown>;
   const keys = Object.keys(obj).sort();
   const entries = keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k], seen)}`);
-  return `{${entries.join(',')}}`;
+  return `{${entries.join(",")}}`;
 }
 
 function shortSha256(value: unknown): string {
-  const h = createHash('sha256');
-  if (typeof value === 'string') h.update(value);
+  const h = createHash("sha256");
+  if (typeof value === "string") h.update(value);
   else h.update(stableStringify(value));
-  return h.digest('hex').slice(0, 16);
+  return h.digest("hex").slice(0, 16);
 }
 
 function policyCacheKey(policy: unknown): string {
   const version =
     policy &&
-    typeof policy === 'object' &&
-    'version' in policy &&
-    typeof (policy as { version?: unknown }).version === 'string'
+    typeof policy === "object" &&
+    "version" in policy &&
+    typeof (policy as { version?: unknown }).version === "string"
       ? (policy as { version: string }).version
-      : 'unknown';
+      : "unknown";
 
   return `${version}@${shortSha256(policy)}`;
 }
 
 /** Event types that must never be cached (destructive / non-idempotent). */
-const UNCACHEABLE_EVENT_TYPES = new Set([
-  'command_exec',
-  'patch_apply',
-  'file_write',
-]);
+const UNCACHEABLE_EVENT_TYPES = new Set(["command_exec", "patch_apply", "file_write"]);
 
 export class DecisionCache {
   private readonly maxSize: number;
@@ -146,7 +141,7 @@ export class DecisionCache {
 // ── Module State ─────────────────────────────────────────────────────
 
 let currentConfig: ClawdstrikeConfig = {};
-let cachedPolicyKey = 'unknown';
+let cachedPolicyKey = "unknown";
 
 /** Shared decision cache (reset on initialize) */
 export let decisionCache = new DecisionCache();
@@ -182,22 +177,22 @@ function getEngine(config?: ClawdstrikeConfig): PolicyEngine {
  */
 function extractResourceKey(event: PolicyEvent): string {
   switch (event.data.type) {
-    case 'file':
+    case "file":
       return event.data.path;
-    case 'network':
-      return event.data.host + ':' + event.data.port;
-    case 'tool':
+    case "network":
+      return event.data.host + ":" + event.data.port;
+    case "tool":
       // Tool-call decisions depend on parameters and outputs (e.g., secret leak checks).
       // Include both so cached allows cannot be reused for a different invocation.
-      return `${event.data.toolName}:${shortSha256(event.data.parameters)}:${shortSha256(event.data.result ?? '')}`;
-    case 'command':
-      return event.data.command + ' ' + event.data.args.join(' ');
-    case 'patch':
+      return `${event.data.toolName}:${shortSha256(event.data.parameters)}:${shortSha256(event.data.result ?? "")}`;
+    case "command":
+      return event.data.command + " " + event.data.args.join(" ");
+    case "patch":
       return event.data.filePath;
-    case 'secret':
+    case "secret":
       return event.data.secretName;
     default:
-      return '';
+      return "";
   }
 }
 
@@ -205,7 +200,7 @@ function extractResourceKey(event: PolicyEvent): string {
  * Hook handler for tool_result_persist events
  */
 const handler: HookHandler = async (event: HookEvent): Promise<void> => {
-  if (event.type !== 'tool_result_persist') {
+  if (event.type !== "tool_result_persist") {
     return;
   }
 
@@ -221,42 +216,34 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
 
   if (!priorApproval) {
     // Create policy event from tool result
-    const policyEvent = createPolicyEvent(
-      sessionId,
-      toolName,
-      params,
-      result,
-    );
+    const policyEvent = createPolicyEvent(sessionId, toolName, params, result);
 
     // Check decision cache (skip for destructive ops and advisory/audit modes)
-    const mode = currentConfig.mode ?? 'deterministic';
-    const useCache = mode === 'deterministic' && !UNCACHEABLE_EVENT_TYPES.has(policyEvent.eventType);
+    const mode = currentConfig.mode ?? "deterministic";
+    const useCache =
+      mode === "deterministic" && !UNCACHEABLE_EVENT_TYPES.has(policyEvent.eventType);
     const cacheKey = useCache
       ? DecisionCache.key(policyEvent.eventType, extractResourceKey(policyEvent), cachedPolicyKey)
-      : '';
+      : "";
 
     let decision = useCache ? decisionCache.get(cacheKey) : undefined;
     if (!decision) {
       decision = await policyEngine.evaluate(policyEvent);
-      if (useCache && decision.status === 'allow') {
+      if (useCache && decision.status === "allow") {
         decisionCache.set(cacheKey, decision);
       }
     }
 
-    if (decision.status === 'deny') {
+    if (decision.status === "deny") {
       // Block the tool result
-      toolEvent.context.toolResult.error = decision.reason ?? 'Policy violation';
-      toolEvent.messages.push(
-        `[clawdstrike] Blocked by ${decision.guard}: ${decision.reason}`,
-      );
+      toolEvent.context.toolResult.error = decision.reason ?? "Policy violation";
+      toolEvent.messages.push(`[clawdstrike] Blocked by ${decision.guard}: ${decision.reason}`);
       return;
     }
 
-    if (decision.status === 'warn') {
+    if (decision.status === "warn") {
       // Add warning message
-      toolEvent.messages.push(
-        `[clawdstrike] Warning: ${decision.message ?? decision.reason}`,
-      );
+      toolEvent.messages.push(`[clawdstrike] Warning: ${decision.message ?? decision.reason}`);
     }
   }
 
@@ -266,12 +253,12 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
     seen: WeakSet<object>,
     depth: number,
   ): { value: unknown; changed: boolean } {
-    if (typeof value === 'string') {
+    if (typeof value === "string") {
       const sanitized = sanitizeString(value);
       return { value: sanitized, changed: sanitized !== value };
     }
 
-    if (!value || typeof value !== 'object') {
+    if (!value || typeof value !== "object") {
       return { value, changed: false };
     }
 
@@ -285,7 +272,7 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
 
     // Preserve non-plain objects (Dates, Buffers, class instances, etc).
     const isArray = Array.isArray(value);
-    const isPlainObject = Object.prototype.toString.call(value) === '[object Object]';
+    const isPlainObject = Object.prototype.toString.call(value) === "[object Object]";
     if (!isArray && !isPlainObject) {
       return { value, changed: false };
     }
@@ -314,12 +301,12 @@ const handler: HookHandler = async (event: HookEvent): Promise<void> => {
   }
 
   // Redact secrets from output
-  if (result && typeof result === 'string') {
+  if (result && typeof result === "string") {
     const sanitized = policyEngine.sanitizeOutput(result);
     if (sanitized !== result) {
       toolEvent.context.toolResult.result = sanitized;
     }
-  } else if (result && typeof result === 'object') {
+  } else if (result && typeof result === "object") {
     const { value: sanitized, changed } = sanitizeUnknown(
       result,
       (s) => policyEngine.sanitizeOutput(s),
@@ -366,10 +353,8 @@ function createPolicyEvent(
 /**
  * Infer event type from tool name using the shared token-based classifier.
  */
-function inferEventType(
-  toolName: string,
-): PolicyEvent['eventType'] {
-  return inferEventTypeFromName(toolName) ?? 'tool_call';
+function inferEventType(toolName: string): PolicyEvent["eventType"] {
+  return inferEventTypeFromName(toolName) ?? "tool_call";
 }
 
 /**
@@ -379,61 +364,61 @@ function createEventData(
   toolName: string,
   params: Record<string, unknown>,
   result: unknown,
-): PolicyEvent['data'] {
+): PolicyEvent["data"] {
   const eventType = inferEventType(toolName);
 
   switch (eventType) {
-    case 'file_read':
-    case 'file_write': {
+    case "file_read":
+    case "file_write": {
       const path = extractPath(params);
-      const contentHash = typeof params.contentHash === 'string' ? params.contentHash : undefined;
+      const contentHash = typeof params.contentHash === "string" ? params.contentHash : undefined;
       const { content, contentBase64 } = extractFileContent(params, result, eventType);
       return {
-        type: 'file',
-        path: path ?? '',
+        type: "file",
+        path: path ?? "",
         content,
         contentBase64,
         contentHash,
-        operation: eventType === 'file_read' ? 'read' : 'write',
+        operation: eventType === "file_read" ? "read" : "write",
       };
     }
 
-    case 'network_egress': {
+    case "network_egress": {
       const { host, port, url } = extractNetworkInfo(params);
       return {
-        type: 'network',
+        type: "network",
         host,
         port,
         url,
       };
     }
 
-    case 'command_exec': {
+    case "command_exec": {
       const { command, args, workingDir } = extractCommandInfo(params);
       return {
-        type: 'command',
+        type: "command",
         command,
         args,
         workingDir,
       };
     }
 
-    case 'patch_apply': {
+    case "patch_apply": {
       const { filePath, patchContent } = extractPatchInfo(params, result);
       return {
-        type: 'patch',
+        type: "patch",
         filePath,
         patchContent,
       };
     }
 
-    case 'tool_call':
+    case "tool_call":
     default: {
       return {
-        type: 'tool',
+        type: "tool",
         toolName,
         parameters: params,
-        result: typeof result === 'string' ? result : JSON.stringify(result ?? ''),
+        result: typeof result === "string" ? result : JSON.stringify(result ?? ""),
       };
     }
   }
@@ -442,27 +427,30 @@ function createEventData(
 function extractFileContent(
   params: Record<string, unknown>,
   result: unknown,
-  eventType: PolicyEvent['eventType'],
+  eventType: PolicyEvent["eventType"],
 ): { content?: string; contentBase64?: string } {
   const maxChars = 2_000_000; // Best-effort cap: avoid huge payloads.
 
   const contentBase64 =
-    typeof params.contentBase64 === 'string'
+    typeof params.contentBase64 === "string"
       ? params.contentBase64
-      : typeof params.base64 === 'string'
+      : typeof params.base64 === "string"
         ? params.base64
         : undefined;
 
   if (contentBase64) {
-    return { contentBase64: contentBase64.length > maxChars ? contentBase64.slice(0, maxChars) : contentBase64 };
+    return {
+      contentBase64:
+        contentBase64.length > maxChars ? contentBase64.slice(0, maxChars) : contentBase64,
+    };
   }
 
   const content =
-    typeof params.content === 'string'
+    typeof params.content === "string"
       ? params.content
-      : typeof params.text === 'string'
+      : typeof params.text === "string"
         ? params.text
-        : eventType === 'file_read' && typeof result === 'string'
+        : eventType === "file_read" && typeof result === "string"
           ? result
           : undefined;
 
@@ -473,21 +461,31 @@ function extractFileContent(
 /**
  * Extract network info from tool params
  */
-function extractNetworkInfo(
-  params: Record<string, unknown>,
-): { host: string; port: number; url?: string } {
+function extractNetworkInfo(params: Record<string, unknown>): {
+  host: string;
+  port: number;
+  url?: string;
+} {
   // Try to get URL first
-  const url = typeof params.url === 'string' ? params.url
-    : typeof params.endpoint === 'string' ? params.endpoint
-    : typeof params.href === 'string' ? params.href
-    : undefined;
+  const url =
+    typeof params.url === "string"
+      ? params.url
+      : typeof params.endpoint === "string"
+        ? params.endpoint
+        : typeof params.href === "string"
+          ? params.href
+          : undefined;
 
   if (url) {
     try {
       const parsed = new URL(url);
       return {
         host: parsed.hostname,
-        port: parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' || parsed.protocol === 'wss:' ? 443 : 80),
+        port: parsed.port
+          ? parseInt(parsed.port, 10)
+          : parsed.protocol === "https:" || parsed.protocol === "wss:"
+            ? 443
+            : 80,
         url,
       };
     } catch {
@@ -496,14 +494,18 @@ function extractNetworkInfo(
   }
 
   // Try to extract from command
-  if (typeof params.command === 'string') {
+  if (typeof params.command === "string") {
     const urlMatch = params.command.match(/https?:\/\/[^\s'"]+/);
     if (urlMatch) {
       try {
         const parsed = new URL(urlMatch[0]);
         return {
           host: parsed.hostname,
-          port: parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === 'https:' || parsed.protocol === 'wss:' ? 443 : 80),
+          port: parsed.port
+            ? parseInt(parsed.port, 10)
+            : parsed.protocol === "https:" || parsed.protocol === "wss:"
+              ? 443
+              : 80,
           url: urlMatch[0],
         };
       } catch {
@@ -513,51 +515,56 @@ function extractNetworkInfo(
   }
 
   // Fallback
-  const host = typeof params.host === 'string' ? params.host
-    : typeof params.hostname === 'string' ? params.hostname
-    : 'unknown';
-  const port = typeof params.port === 'number' ? params.port : 80;
+  const host =
+    typeof params.host === "string"
+      ? params.host
+      : typeof params.hostname === "string"
+        ? params.hostname
+        : "unknown";
+  const port = typeof params.port === "number" ? params.port : 80;
   return { host, port, url };
 }
 
-function extractCommandInfo(
-  params: Record<string, unknown>,
-): { command: string; args: string[]; workingDir?: string } {
+function extractCommandInfo(params: Record<string, unknown>): {
+  command: string;
+  args: string[];
+  workingDir?: string;
+} {
   const workingDir =
-    typeof params.cwd === 'string'
+    typeof params.cwd === "string"
       ? params.cwd
-      : typeof params.workingDir === 'string'
+      : typeof params.workingDir === "string"
         ? params.workingDir
         : undefined;
 
   const args =
-    Array.isArray(params.args) && params.args.every((a) => typeof a === 'string')
+    Array.isArray(params.args) && params.args.every((a) => typeof a === "string")
       ? (params.args as string[])
-      : Array.isArray(params.argv) && params.argv.every((a) => typeof a === 'string')
+      : Array.isArray(params.argv) && params.argv.every((a) => typeof a === "string")
         ? (params.argv as string[])
         : undefined;
 
   const cmdLine =
-    typeof params.command === 'string'
+    typeof params.command === "string"
       ? params.command
-      : typeof params.cmd === 'string'
+      : typeof params.cmd === "string"
         ? params.cmd
         : undefined;
 
   if (cmdLine) {
     const parts = cmdLine.trim().split(/\s+/).filter(Boolean);
     if (parts.length === 0) {
-      return { command: '', args: [], workingDir };
+      return { command: "", args: [], workingDir };
     }
     const [command, ...rest] = parts;
     return { command, args: args ?? rest, workingDir };
   }
 
-  if (typeof params.tool === 'string' && args) {
+  if (typeof params.tool === "string" && args) {
     return { command: params.tool, args, workingDir };
   }
 
-  return { command: '', args: args ?? [], workingDir };
+  return { command: "", args: args ?? [], workingDir };
 }
 
 function extractPatchInfo(
@@ -565,16 +572,16 @@ function extractPatchInfo(
   result: unknown,
 ): { filePath: string; patchContent: string } {
   const filePath =
-    (typeof params.filePath === 'string' && params.filePath) ||
-    (typeof params.path === 'string' && params.path) ||
-    (typeof params.file === 'string' && params.file) ||
-    '';
+    (typeof params.filePath === "string" && params.filePath) ||
+    (typeof params.path === "string" && params.path) ||
+    (typeof params.file === "string" && params.file) ||
+    "";
 
   const patchContent =
-    (typeof params.patch === 'string' && params.patch) ||
-    (typeof params.diff === 'string' && params.diff) ||
-    (typeof params.content === 'string' && params.content) ||
-    (typeof result === 'string' ? result : JSON.stringify(result ?? ''));
+    (typeof params.patch === "string" && params.patch) ||
+    (typeof params.diff === "string" && params.diff) ||
+    (typeof params.content === "string" && params.content) ||
+    (typeof result === "string" ? result : JSON.stringify(result ?? ""));
 
   return { filePath, patchContent };
 }

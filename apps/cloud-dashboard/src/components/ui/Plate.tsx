@@ -16,9 +16,7 @@ export function Plate({
       className={`glass-panel ${className}`}
       style={{
         ...style,
-        boxShadow: goldEdge
-          ? "inset 0 1px 0 var(--gold-edge)"
-          : undefined,
+        boxShadow: goldEdge ? "inset 0 1px 0 var(--gold-edge)" : undefined,
       }}
     >
       <NoiseGrain />

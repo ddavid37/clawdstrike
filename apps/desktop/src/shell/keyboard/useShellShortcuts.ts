@@ -10,7 +10,7 @@
  * - Cmd+[/]: Previous/next view
  * - Esc: Close modal/panel
  */
-import { useEffect, useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import type { AppId } from "../plugins/types";
 
 // View mapping for quick number key navigation
@@ -106,7 +106,7 @@ export function useShellShortcuts(handlers: ShellShortcutHandlers) {
         return;
       }
     },
-    [handlers]
+    [handlers],
   );
 
   useEffect(() => {

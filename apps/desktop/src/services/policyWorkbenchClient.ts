@@ -1,12 +1,12 @@
-import { HushdClient, type DaemonPolicyResponse, type PolicyEvalResponse } from "./hushdClient";
+import { type DaemonPolicyResponse, HushdClient, type PolicyEvalResponse } from "./hushdClient";
 import {
   isTauri,
+  type PolicyLoadResult,
+  type PolicySaveResult,
   policyEvalEvent,
   policyLoad,
   policySave,
   policyValidate,
-  type PolicyLoadResult,
-  type PolicySaveResult,
 } from "./tauri";
 
 export type PolicyLoadModel = PolicyLoadResult | DaemonPolicyResponse;
@@ -31,10 +31,7 @@ export class PolicyWorkbenchClientError extends Error {
 
 function toWorkbenchError(err: unknown): PolicyWorkbenchClientError {
   if (!(err instanceof Error)) {
-    return new PolicyWorkbenchClientError(
-      "unknown_error",
-      "Unknown policy workbench error"
-    );
+    return new PolicyWorkbenchClientError("unknown_error", "Unknown policy workbench error");
   }
 
   const message = err.message || "Unknown policy workbench error";

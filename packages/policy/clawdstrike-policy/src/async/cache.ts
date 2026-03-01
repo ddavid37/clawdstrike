@@ -1,6 +1,6 @@
-import { LRUCache } from 'lru-cache';
+import { LRUCache } from "lru-cache";
 
-import type { GuardResult } from './types.js';
+import type { GuardResult } from "./types.js";
 
 export class GuardCache {
   private readonly cache: LRUCache<string, GuardResult>;
@@ -25,12 +25,11 @@ export class GuardCache {
 
 function estimateSizeBytes(key: string, value: GuardResult): number {
   // Best-effort sizing; avoid throwing for circular references.
-  let payload = '';
+  let payload = "";
   try {
     payload = JSON.stringify(value);
   } catch {
     payload = `${value.guard}:${value.message}`;
   }
-  return Buffer.byteLength(key, 'utf8') + Buffer.byteLength(payload, 'utf8');
+  return Buffer.byteLength(key, "utf8") + Buffer.byteLength(payload, "utf8");
 }
-

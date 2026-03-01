@@ -1,13 +1,13 @@
 import type { NexusLayoutMode, StrikecellConnection } from "../types";
-import type { LayoutMeta, LayoutPosition, NexusLayoutNode } from "./types";
 import { calculateForceDirectedLayout } from "./forceDirected";
 import { calculateRadialBurstLayout } from "./radialBurst";
 import { calculateTypedLanesLayout } from "./typedLanes";
+import type { LayoutMeta, LayoutPosition, NexusLayoutNode } from "./types";
 
-export * from "./types";
 export * from "./forceDirected";
 export * from "./radialBurst";
 export * from "./typedLanes";
+export * from "./types";
 
 export const LAYOUT_METADATA: Record<NexusLayoutMode, LayoutMeta> = {
   radial: {
@@ -43,7 +43,7 @@ export function getLayoutModeFromShortcut(key: string): NexusLayoutMode | null {
 export function calculateLayoutPositions(
   mode: NexusLayoutMode,
   nodes: NexusLayoutNode[],
-  connections: StrikecellConnection[]
+  connections: StrikecellConnection[],
 ): Map<NexusLayoutNode["id"], LayoutPosition> {
   switch (mode) {
     case "typed-lanes":

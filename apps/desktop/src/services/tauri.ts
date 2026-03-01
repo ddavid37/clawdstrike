@@ -7,9 +7,7 @@ export function isTauri(): boolean {
   if (typeof window === "undefined") return false;
   const win = window as unknown as Record<string, unknown>;
   return Boolean(
-    "__TAURI__" in win ||
-      "__TAURI_INTERNALS__" in win ||
-      (typeof win.__TAURI_IPC__ === "function")
+    "__TAURI__" in win || "__TAURI_INTERNALS__" in win || typeof win.__TAURI_IPC__ === "function",
   );
 }
 
@@ -137,7 +135,9 @@ export async function policyValidate(yaml: string): Promise<PolicyValidationResu
   return invoke("policy_validate", { yaml });
 }
 
-export async function policyEvalEvent(event: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function policyEvalEvent(
+  event: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   if (!isTauri()) {
     throw new Error("policyEvalEvent requires Tauri");
   }
@@ -214,7 +214,9 @@ export async function deleteWorkflow(workflowId: string): Promise<void> {
   return invoke("delete_workflow", { workflowId });
 }
 
-export async function testWorkflow(workflowId: string): Promise<{ success: boolean; message?: string }> {
+export async function testWorkflow(
+  workflowId: string,
+): Promise<{ success: boolean; message?: string }> {
   if (!isTauri()) {
     throw new Error("testWorkflow requires Tauri");
   }
@@ -303,7 +305,9 @@ export interface MarketplaceListResponse {
   warnings?: string[];
 }
 
-export async function listMarketplacePolicies(sources?: string[]): Promise<MarketplaceListResponse> {
+export async function listMarketplacePolicies(
+  sources?: string[],
+): Promise<MarketplaceListResponse> {
   if (!isTauri()) {
     throw new Error("Marketplace requires Tauri");
   }
@@ -312,13 +316,19 @@ export async function listMarketplacePolicies(sources?: string[]): Promise<Marke
   return invoke("marketplace_list_policies", { sources });
 }
 
-export async function installMarketplacePolicy(daemonUrl: string, signedBundle: SignedPolicyBundle): Promise<void> {
+export async function installMarketplacePolicy(
+  daemonUrl: string,
+  signedBundle: SignedPolicyBundle,
+): Promise<void> {
   if (!isTauri()) {
     throw new Error("Marketplace requires Tauri");
   }
 
   const invoke = await getTauriInvoke();
-  return invoke("marketplace_install_policy", { daemon_url: daemonUrl, signed_bundle: signedBundle });
+  return invoke("marketplace_install_policy", {
+    daemon_url: daemonUrl,
+    signed_bundle: signedBundle,
+  });
 }
 
 export interface NotaryVerifyResult {
@@ -328,7 +338,10 @@ export interface NotaryVerifyResult {
   error?: string | null;
 }
 
-export async function verifyMarketplaceAttestation(notaryUrl: string, uid: string): Promise<NotaryVerifyResult> {
+export async function verifyMarketplaceAttestation(
+  notaryUrl: string,
+  uid: string,
+): Promise<NotaryVerifyResult> {
   if (!isTauri()) {
     throw new Error("Marketplace requires Tauri");
   }
@@ -367,7 +380,9 @@ export interface MarketplaceDiscoveryStatus {
   last_error?: string | null;
 }
 
-export async function startMarketplaceDiscovery(config?: MarketplaceDiscoveryConfig): Promise<MarketplaceDiscoveryStatus> {
+export async function startMarketplaceDiscovery(
+  config?: MarketplaceDiscoveryConfig,
+): Promise<MarketplaceDiscoveryStatus> {
   if (!isTauri()) {
     throw new Error("Marketplace discovery requires Tauri");
   }
@@ -391,7 +406,9 @@ export async function getMarketplaceDiscoveryStatus(): Promise<MarketplaceDiscov
   return invoke("marketplace_discovery_status");
 }
 
-export async function announceMarketplaceDiscovery(announcement: MarketplaceDiscoveryAnnouncement): Promise<void> {
+export async function announceMarketplaceDiscovery(
+  announcement: MarketplaceDiscoveryAnnouncement,
+): Promise<void> {
   if (!isTauri()) {
     throw new Error("Marketplace discovery requires Tauri");
   }
@@ -418,7 +435,7 @@ export type OpenClawGatewayDiscoverResult = {
 export async function openclawAgentRequest<TPayload = unknown>(
   method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
   path: string,
-  body?: unknown
+  body?: unknown,
 ): Promise<TPayload> {
   if (!isTauri()) {
     throw new Error("OpenClaw agent request requires Tauri");
@@ -431,12 +448,17 @@ export async function openclawAgentRequest<TPayload = unknown>(
   });
 }
 
-export async function openclawGatewayDiscover(timeoutMs?: number): Promise<OpenClawGatewayDiscoverResult> {
+export async function openclawGatewayDiscover(
+  timeoutMs?: number,
+): Promise<OpenClawGatewayDiscoverResult> {
   if (!isTauri()) {
     throw new Error("OpenClaw discovery requires Tauri");
   }
   const invoke = await getTauriInvoke();
-  return invoke("openclaw_gateway_discover", typeof timeoutMs === "number" ? { timeout_ms: timeoutMs } : {});
+  return invoke(
+    "openclaw_gateway_discover",
+    typeof timeoutMs === "number" ? { timeout_ms: timeoutMs } : {},
+  );
 }
 
 export type OpenClawGatewayProbeResult = {
@@ -452,10 +474,15 @@ export type OpenClawGatewayProbeResult = {
   };
 };
 
-export async function openclawGatewayProbe(timeoutMs?: number): Promise<OpenClawGatewayProbeResult> {
+export async function openclawGatewayProbe(
+  timeoutMs?: number,
+): Promise<OpenClawGatewayProbeResult> {
   if (!isTauri()) {
     throw new Error("OpenClaw probe requires Tauri");
   }
   const invoke = await getTauriInvoke();
-  return invoke("openclaw_gateway_probe", typeof timeoutMs === "number" ? { timeout_ms: timeoutMs } : {});
+  return invoke(
+    "openclaw_gateway_probe",
+    typeof timeoutMs === "number" ? { timeout_ms: timeoutMs } : {},
+  );
 }

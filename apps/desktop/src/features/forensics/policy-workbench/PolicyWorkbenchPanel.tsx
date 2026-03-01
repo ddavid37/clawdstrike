@@ -1,5 +1,3 @@
-import * as React from "react";
-import { clsx } from "clsx";
 import {
   Badge,
   CodeBlock,
@@ -13,11 +11,14 @@ import {
   TabsList,
   TabsTrigger,
 } from "@backbay/glia/primitives";
+import { clsx } from "clsx";
+import * as React from "react";
 
 import {
   PolicyWorkbenchClient,
   PolicyWorkbenchClientError,
 } from "@/services/policyWorkbenchClient";
+import { POLICY_WORKBENCH_DIRTY_EVENT, type PolicyWorkbenchDirtyEventDetail } from "./events";
 import {
   buildPolicyTestEvent,
   getPolicyTestTargetPlaceholder,
@@ -31,10 +32,6 @@ import {
   policyWorkbenchReducer,
   type ValidationIssue,
 } from "./state";
-import {
-  POLICY_WORKBENCH_DIRTY_EVENT,
-  type PolicyWorkbenchDirtyEventDetail,
-} from "./events";
 
 type WorkbenchTab = "editor" | "test";
 
@@ -111,42 +108,41 @@ export function PolicyWorkbenchPanel({
     }
   }, []);
 
-  const readPolicy = React.useCallback(async (options?: { forceApply?: boolean }) => {
-    if (!connected) return;
-    const forceApply = Boolean(options?.forceApply);
-    const seq = ++loadSeq.current;
-    const draftAtRequest = draftYamlRef.current;
-    dispatch({ type: "load_start" });
-    try {
-      const loaded = await client.loadPolicy();
-      if (seq !== loadSeq.current) return;
-      if (!forceApply && draftYamlRef.current !== draftAtRequest) {
-        setCopyStatus("Reload skipped: local draft changed.");
+  const readPolicy = React.useCallback(
+    async (options?: { forceApply?: boolean }) => {
+      if (!connected) return;
+      const forceApply = Boolean(options?.forceApply);
+      const seq = ++loadSeq.current;
+      const draftAtRequest = draftYamlRef.current;
+      dispatch({ type: "load_start" });
+      try {
+        const loaded = await client.loadPolicy();
+        if (seq !== loadSeq.current) return;
+        if (!forceApply && draftYamlRef.current !== draftAtRequest) {
+          setCopyStatus("Reload skipped: local draft changed.");
+          window.setTimeout(() => setCopyStatus(undefined), 2200);
+          return;
+        }
+        dispatch({
+          type: "load_success",
+          yaml: loaded.yaml,
+          hash: loaded.policy_hash,
+          version: loaded.version,
+        });
+      } catch (err) {
+        if (seq !== loadSeq.current) return;
+        const message = err instanceof Error ? err.message : "Failed to load policy";
+        const code = err instanceof PolicyWorkbenchClientError ? ` (${err.code})` : "";
+        dispatch({ type: "load_error", message });
+        setCopyStatus(`Load error${code}`);
         window.setTimeout(() => setCopyStatus(undefined), 2200);
-        return;
       }
-      dispatch({
-        type: "load_success",
-        yaml: loaded.yaml,
-        hash: loaded.policy_hash,
-        version: loaded.version,
-      });
-    } catch (err) {
-      if (seq !== loadSeq.current) return;
-      const message = err instanceof Error ? err.message : "Failed to load policy";
-      const code =
-        err instanceof PolicyWorkbenchClientError ? ` (${err.code})` : "";
-      dispatch({ type: "load_error", message });
-      setCopyStatus(`Load error${code}`);
-      window.setTimeout(() => setCopyStatus(undefined), 2200);
-    }
-  }, [client, connected]);
+    },
+    [client, connected],
+  );
 
   const handleReload = React.useCallback(() => {
-    if (
-      dirty &&
-      !window.confirm("Discard unsaved policy edits and reload from daemon?")
-    ) {
+    if (dirty && !window.confirm("Discard unsaved policy edits and reload from daemon?")) {
       return;
     }
     void readPolicy({ forceApply: true });
@@ -172,7 +168,7 @@ export function PolicyWorkbenchPanel({
         dispatch({ type: "validate_error", message });
       }
     },
-    [client, connected]
+    [client, connected],
   );
 
   const handleSave = React.useCallback(async () => {
@@ -212,7 +208,10 @@ export function PolicyWorkbenchPanel({
     const normalizedVersion = validation.normalized_version ?? state.loadedVersion;
 
     if (!validation.valid) {
-      dispatch({ type: "save_error", message: "Policy is invalid. Fix validation errors before saving." });
+      dispatch({
+        type: "save_error",
+        message: "Policy is invalid. Fix validation errors before saving.",
+      });
       return;
     }
 
@@ -328,7 +327,7 @@ export function PolicyWorkbenchPanel({
         setCopyStatus(
           daemonChanged
             ? "Daemon changed. Unsaved edits preserved."
-            : "Reconnected. Unsaved edits preserved."
+            : "Reconnected. Unsaved edits preserved.",
         );
         window.setTimeout(() => setCopyStatus(undefined), 2200);
       }
@@ -361,7 +360,7 @@ export function PolicyWorkbenchPanel({
     window.dispatchEvent(
       new CustomEvent<PolicyWorkbenchDirtyEventDetail>(POLICY_WORKBENCH_DIRTY_EVENT, {
         detail: { dirty },
-      })
+      }),
     );
   }, [dirty]);
 
@@ -370,10 +369,10 @@ export function PolicyWorkbenchPanel({
       window.dispatchEvent(
         new CustomEvent<PolicyWorkbenchDirtyEventDetail>(POLICY_WORKBENCH_DIRTY_EVENT, {
           detail: { dirty: false },
-        })
+        }),
       );
     },
-    []
+    [],
   );
 
   return (
@@ -383,7 +382,7 @@ export function PolicyWorkbenchPanel({
         variant === "sidebar"
           ? "w-[460px] border-l border-white/10 bg-black/45 backdrop-blur-md"
           : "policy-workbench-panel policy-workbench-panel--shelf h-full min-h-0 w-full overflow-hidden rounded-xl border border-[rgba(213,173,87,0.3)] bg-[linear-gradient(180deg,rgba(10,13,20,0.95)_0%,rgba(6,9,14,0.96)_100%)] shadow-[0_18px_40px_rgba(0,0,0,0.46)]",
-        className
+        className,
       )}
     >
       <div className="flex h-full min-h-0 flex-col overflow-y-auto text-white/90">
@@ -449,8 +448,14 @@ export function PolicyWorkbenchPanel({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="editor" className="mt-0 flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
-            <GlassPanel variant="flush" className="mx-2 mt-2 rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]">
+          <TabsContent
+            value="editor"
+            className="mt-0 flex min-h-0 flex-1 flex-col overflow-y-auto pb-2"
+          >
+            <GlassPanel
+              variant="flush"
+              className="mx-2 mt-2 rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]"
+            >
               {variant === "sidebar" ? (
                 <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
                   Editor Actions
@@ -459,7 +464,7 @@ export function PolicyWorkbenchPanel({
               <div
                 className={clsx(
                   "flex flex-wrap items-center gap-2 px-3 py-2",
-                  variant === "shelf" ? "border-b border-white/10" : undefined
+                  variant === "shelf" ? "border-b border-white/10" : undefined,
                 )}
               >
                 <GlowButton
@@ -510,7 +515,10 @@ export function PolicyWorkbenchPanel({
                   <>
                     <p className="mb-1 text-amber-300">Validation errors</p>
                     {state.validation.errors.map((error, index) => (
-                      <p key={`${error.code}-${error.path}-${index}`} className="font-mono text-[11px] text-white/75">
+                      <p
+                        key={`${error.code}-${error.path}-${index}`}
+                        className="font-mono text-[11px] text-white/75"
+                      >
                         {error.path} [{error.code}] {error.message}
                       </p>
                     ))}
@@ -540,7 +548,10 @@ export function PolicyWorkbenchPanel({
             </GlassPanel>
           </TabsContent>
 
-          <TabsContent value="test" className="mt-0 flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
+          <TabsContent
+            value="test"
+            className="mt-0 flex min-h-0 flex-1 flex-col overflow-y-auto pb-2"
+          >
             <GlassPanel
               variant="flush"
               className="mx-2 mt-2 rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]"
@@ -552,7 +563,9 @@ export function PolicyWorkbenchPanel({
               ) : null}
               <div className="space-y-2 px-3 py-3">
                 <div>
-                  <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">Event Type</label>
+                  <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">
+                    Event Type
+                  </label>
                   <select
                     data-testid="policy-test-event-type"
                     value={testForm.eventType}
@@ -573,11 +586,15 @@ export function PolicyWorkbenchPanel({
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">Target / Resource</label>
+                  <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">
+                    Target / Resource
+                  </label>
                   <GlowInput
                     data-testid="policy-test-target"
                     value={testForm.target}
-                    onChange={(event) => setTestForm((prev) => ({ ...prev, target: event.target.value }))}
+                    onChange={(event) =>
+                      setTestForm((prev) => ({ ...prev, target: event.target.value }))
+                    }
                     placeholder={getPolicyTestTargetPlaceholder(testForm.eventType)}
                     className="w-full font-mono text-xs"
                   />
@@ -585,12 +602,18 @@ export function PolicyWorkbenchPanel({
 
                 {(testForm.eventType === "file_write" || testForm.eventType === "patch_apply") && (
                   <div>
-                    <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">Content</label>
+                    <label className="mb-1 block text-[11px] uppercase tracking-wide text-white/55">
+                      Content
+                    </label>
                     <GlassTextarea
                       value={testForm.content}
-                      onChange={(event) => setTestForm((prev) => ({ ...prev, content: event.target.value }))}
+                      onChange={(event) =>
+                        setTestForm((prev) => ({ ...prev, content: event.target.value }))
+                      }
                       className="h-20 w-full resize-none font-mono text-xs"
-                      placeholder={testForm.eventType === "patch_apply" ? "--- patch diff ---" : "file content"}
+                      placeholder={
+                        testForm.eventType === "patch_apply" ? "--- patch diff ---" : "file content"
+                      }
                     />
                   </div>
                 )}
@@ -602,9 +625,13 @@ export function PolicyWorkbenchPanel({
                     </label>
                     <GlassTextarea
                       value={testForm.extra}
-                      onChange={(event) => setTestForm((prev) => ({ ...prev, extra: event.target.value }))}
+                      onChange={(event) =>
+                        setTestForm((prev) => ({ ...prev, extra: event.target.value }))
+                      }
                       className="h-16 w-full resize-none font-mono text-xs"
-                      placeholder={testForm.eventType === "tool_call" ? "{\"path\":\"/tmp\"}" : "runtime"}
+                      placeholder={
+                        testForm.eventType === "tool_call" ? '{"path":"/tmp"}' : "runtime"
+                      }
                     />
                   </div>
                 )}
@@ -612,13 +639,17 @@ export function PolicyWorkbenchPanel({
                 <div className="grid grid-cols-2 gap-2">
                   <GlowInput
                     value={testForm.sessionId}
-                    onChange={(event) => setTestForm((prev) => ({ ...prev, sessionId: event.target.value }))}
+                    onChange={(event) =>
+                      setTestForm((prev) => ({ ...prev, sessionId: event.target.value }))
+                    }
                     placeholder="sessionId (optional)"
                     className="font-mono text-xs"
                   />
                   <GlowInput
                     value={testForm.agentId}
-                    onChange={(event) => setTestForm((prev) => ({ ...prev, agentId: event.target.value }))}
+                    onChange={(event) =>
+                      setTestForm((prev) => ({ ...prev, agentId: event.target.value }))
+                    }
                     placeholder="agentId (optional)"
                     className="font-mono text-xs"
                   />
@@ -638,7 +669,10 @@ export function PolicyWorkbenchPanel({
             </GlassPanel>
 
             <div className="min-h-[220px] flex-1 overflow-y-auto px-2 py-2">
-              <GlassPanel variant="flush" className="rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]">
+              <GlassPanel
+                variant="flush"
+                className="rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]"
+              >
                 <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
                   Decision Output
                 </GlassHeader>
@@ -655,12 +689,17 @@ export function PolicyWorkbenchPanel({
                       onCopy={() => void copyJson(testResult, "Result JSON")}
                     />
                   ) : (
-                    <p className="text-xs text-white/50">Run a policy test to see structured decision output.</p>
+                    <p className="text-xs text-white/50">
+                      Run a policy test to see structured decision output.
+                    </p>
                   )}
                 </div>
               </GlassPanel>
 
-              <GlassPanel variant="flush" className="mt-2 rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]">
+              <GlassPanel
+                variant="flush"
+                className="mt-2 rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]"
+              >
                 <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
                   History
                 </GlassHeader>
@@ -670,7 +709,8 @@ export function PolicyWorkbenchPanel({
                   ) : (
                     <ul data-testid="policy-test-history" className="space-y-2">
                       {history.map((entry) => {
-                        const decision = (entry.response.decision as Record<string, unknown> | undefined) ?? {};
+                        const decision =
+                          (entry.response.decision as Record<string, unknown> | undefined) ?? {};
                         const verdict = decision.denied
                           ? "deny"
                           : decision.warn
@@ -685,14 +725,16 @@ export function PolicyWorkbenchPanel({
                             className="rounded border border-white/10 bg-black/20 p-2 text-xs"
                           >
                             <div className="mb-1 flex items-center justify-between gap-2">
-                              <span className="font-mono text-white/65">{new Date(entry.at).toLocaleTimeString()}</span>
+                              <span className="font-mono text-white/65">
+                                {new Date(entry.at).toLocaleTimeString()}
+                              </span>
                               <span
                                 className={clsx(
                                   "rounded px-1.5 py-0.5 uppercase tracking-wide",
                                   verdict === "allow" && "bg-emerald-500/20 text-emerald-300",
                                   verdict === "warn" && "bg-amber-500/20 text-amber-300",
                                   verdict === "deny" && "bg-red-500/20 text-red-300",
-                                  verdict === "unknown" && "bg-white/15 text-white/65"
+                                  verdict === "unknown" && "bg-white/15 text-white/65",
                                 )}
                               >
                                 {verdict}
@@ -701,10 +743,13 @@ export function PolicyWorkbenchPanel({
                             <p className="truncate font-mono text-white/65">
                               {String((entry.request.eventType as string | undefined) ?? "event")} ·{" "}
                               {String(
-                                ((entry.request.data as Record<string, unknown> | undefined)?.path as string | undefined) ??
-                                  ((entry.request.data as Record<string, unknown> | undefined)?.host as string | undefined) ??
-                                  ((entry.request.data as Record<string, unknown> | undefined)?.toolName as string | undefined) ??
-                                  "-"
+                                ((entry.request.data as Record<string, unknown> | undefined)
+                                  ?.path as string | undefined) ??
+                                  ((entry.request.data as Record<string, unknown> | undefined)
+                                    ?.host as string | undefined) ??
+                                  ((entry.request.data as Record<string, unknown> | undefined)
+                                    ?.toolName as string | undefined) ??
+                                  "-",
                               )}
                             </p>
                             <div className="mt-2 flex items-center gap-2">
@@ -715,7 +760,9 @@ export function PolicyWorkbenchPanel({
                               >
                                 Copy JSON
                               </button>
-                              {entry.error && <span className="text-[11px] text-red-300">{entry.error}</span>}
+                              {entry.error && (
+                                <span className="text-[11px] text-red-300">{entry.error}</span>
+                              )}
                             </div>
                             <details className="mt-2">
                               <summary className="cursor-pointer text-[11px] uppercase tracking-wide text-white/60">
@@ -770,7 +817,11 @@ function MetricChip({
   );
 }
 
-function ValidationBadge({ status }: { status: "idle" | "running" | "valid" | "invalid" | "error" }) {
+function ValidationBadge({
+  status,
+}: {
+  status: "idle" | "running" | "valid" | "invalid" | "error";
+}) {
   if (status === "running") return <Badge variant="outline">Validating</Badge>;
   if (status === "valid") return <Badge variant="default">Valid</Badge>;
   if (status === "invalid") return <Badge variant="destructive">Invalid</Badge>;
@@ -778,13 +829,7 @@ function ValidationBadge({ status }: { status: "idle" | "running" | "valid" | "i
   return <Badge variant="outline">Idle</Badge>;
 }
 
-function ResultCard({
-  result,
-  onCopy,
-}: {
-  result: Record<string, unknown>;
-  onCopy: () => void;
-}) {
+function ResultCard({ result, onCopy }: { result: Record<string, unknown>; onCopy: () => void }) {
   const decision = (result.decision as Record<string, unknown> | undefined) ?? {};
   const verdict = decision.denied
     ? "DENY"
@@ -804,7 +849,7 @@ function ResultCard({
             verdict === "ALLOW" && "bg-emerald-500/20 text-emerald-300",
             verdict === "WARN" && "bg-amber-500/20 text-amber-300",
             verdict === "DENY" && "bg-red-500/20 text-red-300",
-            verdict === "UNKNOWN" && "bg-white/15 text-white/70"
+            verdict === "UNKNOWN" && "bg-white/15 text-white/70",
           )}
         >
           {verdict}
@@ -849,7 +894,10 @@ function YamlEditor({
 }) {
   return (
     <div className="flex min-h-[420px] flex-col gap-2">
-      <GlassPanel variant="flush" className="flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]">
+      <GlassPanel
+        variant="flush"
+        className="flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]"
+      >
         <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
           Editable YAML
         </GlassHeader>
@@ -866,7 +914,10 @@ function YamlEditor({
         </div>
       </GlassPanel>
 
-      <GlassPanel variant="flush" className="flex min-h-[180px] flex-1 flex-col overflow-hidden rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]">
+      <GlassPanel
+        variant="flush"
+        className="flex min-h-[180px] flex-1 flex-col overflow-hidden rounded-lg border border-[rgba(213,173,87,0.24)] bg-[rgba(8,12,19,0.82)]"
+      >
         <GlassHeader className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-white/60">
           Read-only Preview
         </GlassHeader>

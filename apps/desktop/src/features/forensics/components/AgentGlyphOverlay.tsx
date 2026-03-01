@@ -1,8 +1,8 @@
-import * as React from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
 import { CrystallineOrganism } from "@backbay/glia-three/three";
-import * as THREE from "three";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { clsx } from "clsx";
+import * as React from "react";
+import * as THREE from "three";
 import type { AgentGlyphState } from "@/features/forensics/hooks/useAgentCognitionState";
 
 type AgentGlyphOverlayProps = {
@@ -32,11 +32,7 @@ function AgentGlyphNode({ glyph }: { glyph: AgentGlyphState }) {
   });
 
   return (
-    <group
-      ref={groupRef}
-      position={glyph.position}
-      scale={glyph.isFocused ? 1.24 : 1}
-    >
+    <group ref={groupRef} position={glyph.position} scale={glyph.isFocused ? 1.24 : 1}>
       <CrystallineOrganism.CrystallineOrganism
         id={`river:${glyph.id}`}
         type="agent"
@@ -77,13 +73,9 @@ export function AgentGlyphOverlay({ glyphs, className }: AgentGlyphOverlayProps)
         <pointLight position={[8, 4, 4]} intensity={0.36} color="#c8a96b" />
 
         {glyphs.map((glyph) => (
-          <AgentGlyphNode
-            key={glyph.id}
-            glyph={glyph}
-          />
+          <AgentGlyphNode key={glyph.id} glyph={glyph} />
         ))}
       </Canvas>
     </div>
   );
 }
-

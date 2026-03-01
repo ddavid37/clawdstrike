@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useConnection } from "@/context/ConnectionContext";
+import { loadMarketplaceFeedSources } from "@/services/marketplaceSettings";
 import { useSocData } from "@/services/socDataService";
 import {
   isTauri,
@@ -9,30 +10,32 @@ import {
   type MarketplacePolicyDto,
   type Workflow,
 } from "@/services/tauri";
-import { loadMarketplaceFeedSources } from "@/services/marketplaceSettings";
 import { dispatchShellOpenCommandPalette } from "@/shell/events";
+import { NexusAppRail } from "./components/NexusAppRail";
+import { NexusCanvas } from "./components/NexusCanvas";
+import { NexusControlStrip } from "./components/NexusControlStrip";
+import { NexusHeroOverlay } from "./components/NexusHeroOverlay";
+import { NexusOverlayDrawer } from "./components/NexusOverlayDrawer";
+import { StrikecellCarousel } from "./components/StrikecellCarousel";
+import {
+  buildNexusNodesAndConnections,
+  buildStrikecellsFromSocData,
+} from "./data/strikecellAdapter";
 import { CYBER_NEXUS_COMMAND_EVENT, type CyberNexusCommand } from "./events";
+import { getLayoutModeFromShortcut } from "./layouts";
 import {
   CYBER_NEXUS_MODE_EVENT,
   getNexusModeDescriptor,
   getNexusOperationMode,
   setNexusOperationMode,
 } from "./mode";
-import { buildNexusNodesAndConnections, buildStrikecellsFromSocData } from "./data/strikecellAdapter";
-import type { NexusLayoutMode, NexusOperationMode, Strikecell, StrikecellDomainId } from "./types";
 import {
+  type NexusContextMenuState,
   NexusStateProvider,
   useEscClosePriority,
   useNexusState,
-  type NexusContextMenuState,
 } from "./state/NexusStateContext";
-import { getLayoutModeFromShortcut } from "./layouts";
-import { NexusControlStrip } from "./components/NexusControlStrip";
-import { StrikecellCarousel } from "./components/StrikecellCarousel";
-import { NexusCanvas } from "./components/NexusCanvas";
-import { NexusAppRail } from "./components/NexusAppRail";
-import { NexusOverlayDrawer } from "./components/NexusOverlayDrawer";
-import { NexusHeroOverlay } from "./components/NexusHeroOverlay";
+import type { NexusLayoutMode, NexusOperationMode, Strikecell, StrikecellDomainId } from "./types";
 
 const NEXUS_FOCUS_STORAGE_KEY = "sdr:cyber-nexus:lastFocus";
 const NEXUS_HERO_DISMISSED_KEY = "sdr:cyber-nexus:heroDismissed";
@@ -44,17 +47,18 @@ const SEARCH_GROUP_LABELS: Record<(typeof SEARCH_GROUP_ORDER)[number], string> =
   intel: "Intelligence Exchange",
 };
 
-const SEARCH_GROUP_BY_STRIKECELL: Record<StrikecellDomainId, (typeof SEARCH_GROUP_ORDER)[number]> = {
-  "security-overview": "core",
-  "threat-radar": "core",
-  "attack-graph": "core",
-  "network-map": "core",
-  "forensics-river": "core",
-  workflows: "operations",
-  events: "operations",
-  policies: "operations",
-  marketplace: "intel",
-};
+const SEARCH_GROUP_BY_STRIKECELL: Record<StrikecellDomainId, (typeof SEARCH_GROUP_ORDER)[number]> =
+  {
+    "security-overview": "core",
+    "threat-radar": "core",
+    "attack-graph": "core",
+    "network-map": "core",
+    "forensics-river": "core",
+    workflows: "operations",
+    events: "operations",
+    policies: "operations",
+    marketplace: "intel",
+  };
 
 function statusChipClass(status: Strikecell["status"]) {
   switch (status) {
@@ -162,7 +166,9 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
 
   const escClose = useEscClosePriority();
   const [searchQuery, setSearchQuery] = useState("");
-  const [operationMode, setOperationModeState] = useState<NexusOperationMode>(() => getNexusOperationMode());
+  const [operationMode, setOperationModeState] = useState<NexusOperationMode>(() =>
+    getNexusOperationMode(),
+  );
   const [heroVisible, setHeroVisible] = useState(() => {
     try {
       return localStorage.getItem(NEXUS_HERO_DISMISSED_KEY) !== "1";
@@ -206,16 +212,18 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
 
   const graph = useMemo(() => buildNexusNodesAndConnections(strikecells), [strikecells]);
   const activeStrikecell = useMemo(
-    () => strikecells.find((strikecell) => strikecell.id === state.selection.activeStrikecellId) ?? null,
-    [state.selection.activeStrikecellId, strikecells]
+    () =>
+      strikecells.find((strikecell) => strikecell.id === state.selection.activeStrikecellId) ??
+      null,
+    [state.selection.activeStrikecellId, strikecells],
   );
   const operationModeDescriptor = useMemo(
     () => getNexusModeDescriptor(operationMode),
-    [operationMode]
+    [operationMode],
   );
   const drawerStrikecell = useMemo(
     () => strikecells.find((strikecell) => strikecell.id === state.drawerAppId) ?? null,
-    [state.drawerAppId, strikecells]
+    [state.drawerAppId, strikecells],
   );
 
   const filteredStrikecells = useMemo(() => {
@@ -443,7 +451,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
     (routeId: string) => {
       navigate(`/${routeId}`);
     },
-    [navigate]
+    [navigate],
   );
 
   const handleSearchSelect = useCallback(
@@ -453,7 +461,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
       setSearchOpen(false);
       setSearchQuery("");
     },
-    [setActiveStrikecell, setKeyboardHighlight, setSearchOpen]
+    [setActiveStrikecell, setKeyboardHighlight, setSearchOpen],
   );
 
   const handleContextAction = useCallback(
@@ -462,7 +470,8 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
       if (!menu) return;
 
       const strikecellId =
-        menu.strikecellId ?? (menu.targetType === "strikecell" ? (menu.targetId as StrikecellDomainId) : null);
+        menu.strikecellId ??
+        (menu.targetType === "strikecell" ? (menu.targetId as StrikecellDomainId) : null);
 
       if (action === "focus" && strikecellId) {
         setActiveStrikecell(strikecellId);
@@ -488,7 +497,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
       state.contextMenu,
       strikecells,
       toggleExpanded,
-    ]
+    ],
   );
 
   const empty = strikecells.length === 0;
@@ -592,7 +601,10 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
           <div className="absolute inset-0 z-50 flex items-start justify-center bg-[rgba(2,3,7,0.76)] pt-20 backdrop-blur-md">
             <div className="premium-panel premium-panel--lens w-full max-w-[760px] overflow-hidden rounded-2xl">
               <div className="flex items-center gap-3 px-4 py-3">
-                <span className="origin-glyph-orb origin-glyph-orb--small shrink-0" aria-hidden="true" />
+                <span
+                  className="origin-glyph-orb origin-glyph-orb--small shrink-0"
+                  aria-hidden="true"
+                />
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -655,7 +667,9 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
                           className="premium-result-row origin-focus-ring block w-full px-3 py-2 text-left"
                         >
                           <div className="flex items-center justify-between gap-3">
-                            <div className="text-[15px] leading-snug text-sdr-text-primary">{strikecell.name}</div>
+                            <div className="text-[15px] leading-snug text-sdr-text-primary">
+                              {strikecell.name}
+                            </div>
                             <span
                               className={[
                                 "premium-chip px-2 py-0.5 text-[8px] font-mono uppercase tracking-[0.12em]",
@@ -665,7 +679,9 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
                               {strikecell.status}
                             </span>
                           </div>
-                          <div className="mt-0.5 text-xs text-sdr-text-muted">{strikecell.description}</div>
+                          <div className="mt-0.5 text-xs text-sdr-text-muted">
+                            {strikecell.description}
+                          </div>
                         </button>
                       ))}
                     </div>
@@ -690,11 +706,20 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
               onClick={(event) => event.stopPropagation()}
             >
               <ContextMenuAction label="Focus" onClick={() => handleContextAction("focus")} />
-              <ContextMenuAction label="Toggle Expand" onClick={() => handleContextAction("expand")} />
-              <ContextMenuAction label="Open Full View" onClick={() => handleContextAction("open")} />
+              <ContextMenuAction
+                label="Toggle Expand"
+                onClick={() => handleContextAction("expand")}
+              />
+              <ContextMenuAction
+                label="Open Full View"
+                onClick={() => handleContextAction("open")}
+              />
               <div className="my-1 h-px bg-[color:color-mix(in_srgb,var(--origin-panel-border-muted)_55%,transparent)]" />
               <ContextMenuAction label="Pin Left" onClick={() => handleContextAction("pin-left")} />
-              <ContextMenuAction label="Pin Right" onClick={() => handleContextAction("pin-right")} />
+              <ContextMenuAction
+                label="Pin Right"
+                onClick={() => handleContextAction("pin-right")}
+              />
               <ContextMenuAction label="Unpin" onClick={() => handleContextAction("unpin")} />
               <div className="my-1 h-px bg-[color:color-mix(in_srgb,var(--origin-panel-border-muted)_55%,transparent)]" />
               <ContextMenuAction
@@ -739,7 +764,8 @@ function ContextMenuAction({
 
 export function CyberNexusView() {
   const { status } = useConnection();
-  const { threats, attacks, network, overview, workflows, marketplacePolicies } = useCyberNexusExternalData();
+  const { threats, attacks, network, overview, workflows, marketplacePolicies } =
+    useCyberNexusExternalData();
 
   const strikecells = useMemo(() => {
     return buildStrikecellsFromSocData({

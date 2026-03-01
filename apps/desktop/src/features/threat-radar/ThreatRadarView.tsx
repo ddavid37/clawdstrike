@@ -4,15 +4,15 @@
  * Consumes live SDR events via useSpineEvents and maps them to radar blips.
  * Falls back to demo mode when no spine/NATS connection is available.
  */
-import { Suspense, useState } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import { ThreatRadar, type Threat, type ThreatType } from "@backbay/glia-three/three";
-import { GlassPanel, GlassHeader } from "@backbay/glia/primitives";
-import { Badge } from "@backbay/glia/primitives";
+
+import { Badge, GlassHeader, GlassPanel } from "@backbay/glia/primitives";
 import { EnvironmentLayer } from "@backbay/glia-three/environment";
-import { useSpineEvents } from "@/hooks/useSpineEvents";
+import { type Threat, ThreatRadar, type ThreatType } from "@backbay/glia-three/three";
+import { OrbitControls } from "@react-three/drei";
+import { Canvas } from "@react-three/fiber";
+import { Suspense, useState } from "react";
 import { SpineStatusIndicator } from "@/components/SpineStatusIndicator";
+import { useSpineEvents } from "@/hooks/useSpineEvents";
 
 const SEVERITY_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   critical: "destructive",
@@ -104,47 +104,48 @@ export function ThreatRadarView() {
       <GlassPanel className="w-80 h-full overflow-y-auto border-l border-white/5" variant="flush">
         <GlassHeader>
           <span className="text-sm font-semibold text-white/90">Threat Feed</span>
-          <Badge variant="destructive">
-            {threats.filter((t) => t.active).length} Active
-          </Badge>
+          <Badge variant="destructive">{threats.filter((t) => t.active).length} Active</Badge>
         </GlassHeader>
 
         <div className="p-3 space-y-2">
           {threats.length === 0 ? (
-            <div className="text-center text-white/30 text-sm py-8">
-              Waiting for events...
-            </div>
+            <div className="text-center text-white/30 text-sm py-8">Waiting for events...</div>
           ) : (
-            [...threats].sort((a, b) => b.severity - a.severity).map((threat) => {
-              const level = getSeverityLabel(threat.severity);
-              return (
-                <button
-                  key={threat.id}
-                  onClick={() => setSelectedThreat(threat)}
-                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                    selectedThreat?.id === threat.id
-                      ? "border-cyan-500/40 bg-cyan-500/10"
-                      : "border-white/5 bg-white/[0.02] hover:bg-white/[0.05]"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-mono uppercase" style={{ color: THREAT_TYPE_COLORS[threat.type] }}>
-                      {threat.type}
-                    </span>
-                    <Badge variant={SEVERITY_VARIANT[level]}>
-                      {level}
-                    </Badge>
-                  </div>
-                  <div className="text-sm text-white/80 font-medium truncate">{threat.label}</div>
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-xs text-white/40">{formatTime(getEventTimestamp(threat.id))}</span>
-                    {threat.active && (
-                      <span className="text-xs text-red-400 font-mono">ACTIVE</span>
-                    )}
-                  </div>
-                </button>
-              );
-            })
+            [...threats]
+              .sort((a, b) => b.severity - a.severity)
+              .map((threat) => {
+                const level = getSeverityLabel(threat.severity);
+                return (
+                  <button
+                    key={threat.id}
+                    onClick={() => setSelectedThreat(threat)}
+                    className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                      selectedThreat?.id === threat.id
+                        ? "border-cyan-500/40 bg-cyan-500/10"
+                        : "border-white/5 bg-white/[0.02] hover:bg-white/[0.05]"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span
+                        className="text-xs font-mono uppercase"
+                        style={{ color: THREAT_TYPE_COLORS[threat.type] }}
+                      >
+                        {threat.type}
+                      </span>
+                      <Badge variant={SEVERITY_VARIANT[level]}>{level}</Badge>
+                    </div>
+                    <div className="text-sm text-white/80 font-medium truncate">{threat.label}</div>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-xs text-white/40">
+                        {formatTime(getEventTimestamp(threat.id))}
+                      </span>
+                      {threat.active && (
+                        <span className="text-xs text-red-400 font-mono">ACTIVE</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })
           )}
         </div>
       </GlassPanel>

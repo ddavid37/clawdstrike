@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { afterEach, describe, expect, it } from "vitest";
 import {
-  NexusStateProvider,
   initialNexusState,
-  nexusReducer,
   type NexusAction,
   type NexusContextValue,
+  NexusStateProvider,
+  nexusReducer,
   useEscClosePriority,
   useNexusState,
 } from "./NexusStateContext";
@@ -105,7 +106,7 @@ describe("useEscClosePriority", () => {
       root.render(
         <NexusStateProvider>
           <Harness />
-        </NexusStateProvider>
+        </NexusStateProvider>,
       );
     });
 

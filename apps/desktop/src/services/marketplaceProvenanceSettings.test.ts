@@ -30,7 +30,9 @@ beforeEach(() => {
 
 describe("marketplaceProvenanceSettings", () => {
   it("parses one attester per line and ignores comments", () => {
-    const attesters = parseMarketplaceTrustedAttestersInput(["", "# comment", " 0xabc ", "0xdef"].join("\n"));
+    const attesters = parseMarketplaceTrustedAttestersInput(
+      ["", "# comment", " 0xabc ", "0xdef"].join("\n"),
+    );
     expect(attesters).toEqual(["0xabc", "0xdef"]);
   });
 
@@ -64,4 +66,3 @@ describe("marketplaceProvenanceSettings", () => {
     expect(loadMarketplaceProvenanceSettings()).toEqual(DEFAULT_MARKETPLACE_PROVENANCE_SETTINGS);
   });
 });
-

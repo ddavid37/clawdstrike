@@ -1,6 +1,6 @@
-import type { SecurityContext } from './context.js';
-import type { RedactionInfo } from './sanitizer.js';
-import type { Decision } from './types.js';
+import type { SecurityContext } from "./context.js";
+import type { RedactionInfo } from "./sanitizer.js";
+import type { Decision } from "./types.js";
 
 export interface InterceptResult {
   proceed: boolean;
@@ -36,10 +36,5 @@ export interface ToolInterceptor<TInput = unknown, TOutput = unknown> {
     context: SecurityContext,
   ): Promise<ProcessedOutput>;
 
-  onError(
-    toolName: string,
-    input: TInput,
-    error: Error,
-    context: SecurityContext,
-  ): Promise<void>;
+  onError(toolName: string, input: TInput, error: Error, context: SecurityContext): Promise<void>;
 }

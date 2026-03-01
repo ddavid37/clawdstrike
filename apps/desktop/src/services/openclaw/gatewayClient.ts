@@ -4,7 +4,11 @@ import type {
   GatewayFrame,
   GatewayResponseError,
 } from "./gatewayProtocol";
-import { createRequestId, GATEWAY_PROTOCOL_VERSION, safeParseGatewayFrame } from "./gatewayProtocol";
+import {
+  createRequestId,
+  GATEWAY_PROTOCOL_VERSION,
+  safeParseGatewayFrame,
+} from "./gatewayProtocol";
 
 export type GatewayConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
@@ -61,7 +65,10 @@ export class GatewayRpcError extends Error {
   readonly retryable?: boolean;
   readonly retryAfterMs?: number;
 
-  constructor(message: string, opts?: { code?: string; details?: unknown; retryable?: boolean; retryAfterMs?: number }) {
+  constructor(
+    message: string,
+    opts?: { code?: string; details?: unknown; retryable?: boolean; retryAfterMs?: number },
+  ) {
     super(message);
     this.name = "GatewayRpcError";
     this.code = opts?.code;
@@ -101,7 +108,7 @@ export class OpenClawGatewayClient {
 
   constructor(
     readonly gatewayUrl: string,
-    private readonly options: GatewayClientOptions = {}
+    private readonly options: GatewayClientOptions = {},
   ) {}
 
   getStatusSnapshot(): GatewayStatusSnapshot {
@@ -220,7 +227,10 @@ export class OpenClawGatewayClient {
     const backoffFactor = Math.max(1.0, config?.backoffFactor ?? 1.6);
     const jitterRatio = Math.max(0, Math.min(1, config?.jitterRatio ?? 0.15));
 
-    const expDelay = Math.min(maxDelayMs, Math.round(initialDelayMs * Math.pow(backoffFactor, attempt)));
+    const expDelay = Math.min(
+      maxDelayMs,
+      Math.round(initialDelayMs * Math.pow(backoffFactor, attempt)),
+    );
     const jitterMs = jitterRatio ? Math.round(expDelay * jitterRatio * (Math.random() * 2 - 1)) : 0;
     const delayMs = Math.max(0, expDelay + jitterMs);
 
@@ -309,7 +319,12 @@ export class OpenClawGatewayClient {
             instanceId: this.options.instanceId,
           },
           role: "operator",
-          scopes: this.options.scopes ?? ["operator.read", "operator.write", "operator.approvals", "operator.pairing"],
+          scopes: this.options.scopes ?? [
+            "operator.read",
+            "operator.write",
+            "operator.approvals",
+            "operator.pairing",
+          ],
           auth: {
             token: this.options.token,
             deviceToken: this.options.deviceToken,
@@ -329,7 +344,7 @@ export class OpenClawGatewayClient {
               id: connectReqId,
               method: "connect",
               params,
-            })
+            }),
           );
         } catch (err) {
           finishErr(err);
@@ -475,27 +490,20 @@ export class OpenClawGatewayClient {
   async request<TPayload = unknown>(
     method: string,
     params?: unknown,
-    opts?: { timeoutMs?: number; id?: string; retries?: number }
+    opts?: { timeoutMs?: number; id?: string; retries?: number },
   ): Promise<TPayload> {
     const maxRetries = Math.max(0, opts?.retries ?? this.options.maxRetries ?? 2);
 
     let lastError: unknown;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const attemptOpts =
-          attempt === 0 || !opts
-            ? opts
-            : { ...opts, id: undefined };
+        const attemptOpts = attempt === 0 || !opts ? opts : { ...opts, id: undefined };
         return await this.requestOnce<TPayload>(method, params, attemptOpts);
       } catch (err) {
         lastError = err;
 
         // Only retry GatewayRpcErrors that are explicitly marked retryable.
-        if (
-          attempt < maxRetries &&
-          err instanceof GatewayRpcError &&
-          err.retryable === true
-        ) {
+        if (attempt < maxRetries && err instanceof GatewayRpcError && err.retryable === true) {
           const delayMs = Math.min(err.retryAfterMs ?? 1000, 5000);
           await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
           continue;
@@ -512,7 +520,7 @@ export class OpenClawGatewayClient {
   private requestOnce<TPayload = unknown>(
     method: string,
     params?: unknown,
-    opts?: { timeoutMs?: number; id?: string }
+    opts?: { timeoutMs?: number; id?: string },
   ): Promise<TPayload> {
     if (!this.ws || this.status !== "connected") {
       return Promise.reject(new Error("not connected"));
@@ -545,7 +553,10 @@ export class OpenClawGatewayClient {
   }
 }
 
-function normalizeGatewayError(error: GatewayResponseError | undefined, fallbackMessage: string): GatewayRpcError {
+function normalizeGatewayError(
+  error: GatewayResponseError | undefined,
+  fallbackMessage: string,
+): GatewayRpcError {
   if (!error) return new GatewayRpcError(fallbackMessage);
   return new GatewayRpcError(error.message || fallbackMessage, {
     code: error.code,

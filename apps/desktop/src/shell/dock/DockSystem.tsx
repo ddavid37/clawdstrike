@@ -7,21 +7,21 @@
  * - Shelf panel when opened
  */
 
+import { clsx } from "clsx";
 import {
+  type ReactNode,
+  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { clsx } from "clsx";
-import { useDock } from "./DockContext";
 import { Capsule } from "./Capsule";
+import { useDock } from "./DockContext";
 import { SessionRail } from "./SessionRail";
+import type { CapsuleViewMode, DockCapsuleState, ShelfMode } from "./types";
 import { useDockDemo } from "./useDockDemo";
-import type { DockCapsuleState, CapsuleViewMode, ShelfMode } from "./types";
 
 // =============================================================================
 // Design Tokens
@@ -154,12 +154,12 @@ function clampShelfBounds(next: ShelfBounds): ShelfBounds {
   const maxWidth = clamp(
     window.innerWidth - navRailWidth - SHELF_MARGIN_PX * 2,
     SHELF_MIN_WIDTH_PX,
-    SHELF_MAX_WIDTH_PX
+    SHELF_MAX_WIDTH_PX,
   );
   const maxHeight = clamp(
     window.innerHeight - SHELF_RAIL_HEIGHT_PX - SHELF_MARGIN_PX * 3,
     SHELF_MIN_HEIGHT_PX,
-    SHELF_MAX_HEIGHT_PX
+    SHELF_MAX_HEIGHT_PX,
   );
   const width = clamp(next.width, SHELF_MIN_WIDTH_PX, maxWidth);
   const height = clamp(next.height, SHELF_MIN_HEIGHT_PX, maxHeight);
@@ -186,7 +186,7 @@ function defaultShelfBounds(): ShelfBounds {
   const height = clamp(
     window.innerHeight * 0.62,
     SHELF_MIN_HEIGHT_PX,
-    Math.min(SHELF_MAX_HEIGHT_PX, window.innerHeight - SHELF_RAIL_HEIGHT_PX - SHELF_MARGIN_PX * 3)
+    Math.min(SHELF_MAX_HEIGHT_PX, window.innerHeight - SHELF_RAIL_HEIGHT_PX - SHELF_MARGIN_PX * 3),
   );
   const x = navRailWidth + SHELF_MARGIN_PX;
   const y = window.innerHeight - SHELF_RAIL_HEIGHT_PX - SHELF_MARGIN_PX - height;
@@ -211,7 +211,12 @@ function ShelfPanel({ mode, onClose, children }: ShelfPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const previousBoundsRef = useRef<ShelfBounds | null>(null);
   const dragRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
-  const resizeRef = useRef<{ startX: number; startY: number; width: number; height: number } | null>(null);
+  const resizeRef = useRef<{
+    startX: number;
+    startY: number;
+    width: number;
+    height: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!isFiniteShelfBounds(bounds)) {
@@ -226,6 +231,7 @@ function ShelfPanel({ mode, onClose, children }: ShelfPanelProps) {
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bounds is read only for the finite check guard; the resize handler uses the setBounds updater form
   }, [expanded]);
 
   useEffect(() => {
@@ -262,7 +268,7 @@ function ShelfPanel({ mode, onClose, children }: ShelfPanelProps) {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
-  }, [bounds.height, bounds.width, bounds.x, bounds.y]);
+  }, [bounds]);
 
   const handleHeaderPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest("[data-shelf-control='true']")) return;
@@ -288,7 +294,7 @@ function ShelfPanel({ mode, onClose, children }: ShelfPanelProps) {
   const handleToggleExpand = () => {
     if (expanded) {
       setExpanded(false);
-      setBounds((previousBoundsRef.current ?? defaultShelfBounds()));
+      setBounds(previousBoundsRef.current ?? defaultShelfBounds());
       previousBoundsRef.current = null;
       return;
     }
@@ -297,7 +303,9 @@ function ShelfPanel({ mode, onClose, children }: ShelfPanelProps) {
     setBounds(expandedShelfBounds());
   };
 
-  const normalizedBounds = isFiniteShelfBounds(bounds) ? clampShelfBounds(bounds) : defaultShelfBounds();
+  const normalizedBounds = isFiniteShelfBounds(bounds)
+    ? clampShelfBounds(bounds)
+    : defaultShelfBounds();
   const showCompactHeader = mode === "events";
 
   const content = (
@@ -316,7 +324,9 @@ function ShelfPanel({ mode, onClose, children }: ShelfPanelProps) {
       <div className="dock-shelf-header" onPointerDown={handleHeaderPointerDown}>
         <div className="dock-shelf-header-title-wrap">
           {showCompactHeader ? null : <h3 className="dock-shelf-title">{shelfTitles[mode]}</h3>}
-          <span className="dock-shelf-drag-hint">{showCompactHeader ? "Drag panel" : "Drag to move"}</span>
+          <span className="dock-shelf-drag-hint">
+            {showCompactHeader ? "Drag panel" : "Drag to move"}
+          </span>
         </div>
         <div className="dock-shelf-header-actions">
           <button
@@ -341,7 +351,12 @@ function ShelfPanel({ mode, onClose, children }: ShelfPanelProps) {
           </button>
         </div>
       </div>
-      <div className={clsx("dock-shelf-content", mode === "events" ? "dock-shelf-content--events" : undefined)}>
+      <div
+        className={clsx(
+          "dock-shelf-content",
+          mode === "events" ? "dock-shelf-content--events" : undefined,
+        )}
+      >
         {children || (
           <div className="dock-shelf-empty">
             <span className="dock-shelf-empty-icon" aria-hidden="true">
@@ -384,8 +399,18 @@ function ShelfPanel({ mode, onClose, children }: ShelfPanelProps) {
 
 const DEMO_CHRONICLE = [
   { type: "kernel", message: "Kernel awakened, scanning beads graph", time: "2m ago", icon: "hex" },
-  { type: "dispatch", message: "Issue #42 routed to Claude Opus", time: "1m 45s ago", icon: "route" },
-  { type: "workcell", message: "Workcell wc-8a3f manifested for #42", time: "1m 30s ago", icon: "branch" },
+  {
+    type: "dispatch",
+    message: "Issue #42 routed to Claude Opus",
+    time: "1m 45s ago",
+    icon: "route",
+  },
+  {
+    type: "workcell",
+    message: "Workcell wc-8a3f manifested for #42",
+    time: "1m 30s ago",
+    icon: "branch",
+  },
   { type: "dispatch", message: "Issue #43 routed to Codex", time: "1m 15s ago", icon: "route" },
   { type: "forge", message: "World generation: enchanted_forest", time: "1m ago", icon: "world" },
   { type: "gate", message: "Gate passed: terrain_quality", time: "45s ago", icon: "check" },
@@ -426,30 +451,135 @@ const DEMO_RELICS = [
 ];
 
 function ChronicleIcon({ type }: { type: string }) {
-  const iconProps = { width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.5 };
+  const iconProps = {
+    width: 14,
+    height: 14,
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.5,
+  };
   switch (type) {
-    case "kernel": return <svg {...iconProps}><path d="M8 2l5 3v6l-5 3-5-3V5z" /></svg>;
-    case "dispatch": return <svg {...iconProps}><path d="M2 8h12M10 4l4 4-4 4" /></svg>;
-    case "workcell": return <svg {...iconProps}><path d="M4 4v8M4 8h4v4M12 4v8" /></svg>;
-    case "forge": return <svg {...iconProps}><circle cx="8" cy="8" r="5" /><path d="M8 5v6M5 8h6" /></svg>;
-    case "gate": return <svg {...iconProps}><path d="M5 8l2 2 4-4" /><circle cx="8" cy="8" r="6" /></svg>;
-    case "proof": return <svg {...iconProps}><path d="M4 2h8v12H4z" /><path d="M6 5h4M6 8h4M6 11h2" /></svg>;
-    case "verify": return <svg {...iconProps}><path d="M8 2l2 2-4 8-2-2z" /><circle cx="5" cy="12" r="2" /></svg>;
-    case "merge": return <svg {...iconProps}><path d="M4 4v8M12 4v4c0 2-2 4-4 4h-4" /><circle cx="4" cy="4" r="1.5" fill="currentColor" /><circle cx="12" cy="4" r="1.5" fill="currentColor" /></svg>;
-    default: return <svg {...iconProps}><circle cx="8" cy="8" r="2" fill="currentColor" /></svg>;
+    case "kernel":
+      return (
+        <svg {...iconProps}>
+          <path d="M8 2l5 3v6l-5 3-5-3V5z" />
+        </svg>
+      );
+    case "dispatch":
+      return (
+        <svg {...iconProps}>
+          <path d="M2 8h12M10 4l4 4-4 4" />
+        </svg>
+      );
+    case "workcell":
+      return (
+        <svg {...iconProps}>
+          <path d="M4 4v8M4 8h4v4M12 4v8" />
+        </svg>
+      );
+    case "forge":
+      return (
+        <svg {...iconProps}>
+          <circle cx="8" cy="8" r="5" />
+          <path d="M8 5v6M5 8h6" />
+        </svg>
+      );
+    case "gate":
+      return (
+        <svg {...iconProps}>
+          <path d="M5 8l2 2 4-4" />
+          <circle cx="8" cy="8" r="6" />
+        </svg>
+      );
+    case "proof":
+      return (
+        <svg {...iconProps}>
+          <path d="M4 2h8v12H4z" />
+          <path d="M6 5h4M6 8h4M6 11h2" />
+        </svg>
+      );
+    case "verify":
+      return (
+        <svg {...iconProps}>
+          <path d="M8 2l2 2-4 8-2-2z" />
+          <circle cx="5" cy="12" r="2" />
+        </svg>
+      );
+    case "merge":
+      return (
+        <svg {...iconProps}>
+          <path d="M4 4v8M12 4v4c0 2-2 4-4 4h-4" />
+          <circle cx="4" cy="4" r="1.5" fill="currentColor" />
+          <circle cx="12" cy="4" r="1.5" fill="currentColor" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...iconProps}>
+          <circle cx="8" cy="8" r="2" fill="currentColor" />
+        </svg>
+      );
   }
 }
 
 function RelicIcon({ type }: { type: string }) {
-  const iconProps = { width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.5 };
+  const iconProps = {
+    width: 16,
+    height: 16,
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.5,
+  };
   switch (type) {
-    case "patch": return <svg {...iconProps}><path d="M4 2h8v12H4z" /><path d="M6 5h4M6 8h4M6 11h2" /></svg>;
-    case "asset": return <svg {...iconProps}><path d="M3 3h10v10H3z" /><path d="M3 10l3-3 2 2 3-3 2 2" /></svg>;
-    case "texture": return <svg {...iconProps}><rect x="3" y="3" width="10" height="10" rx="1" /><path d="M3 8h10M8 3v10" /></svg>;
-    case "data": return <svg {...iconProps}><path d="M4 2h5l3 3v9H4z" /><path d="M9 2v3h3" /></svg>;
-    case "proof": return <svg {...iconProps}><path d="M8 2l6 4v4l-6 4-6-4V6z" /></svg>;
-    case "report": return <svg {...iconProps}><path d="M4 2h8v12H4z" /><path d="M6 5h4M6 7h4M6 9h4M6 11h2" /></svg>;
-    default: return <svg {...iconProps}><path d="M4 2h8v12H4z" /></svg>;
+    case "patch":
+      return (
+        <svg {...iconProps}>
+          <path d="M4 2h8v12H4z" />
+          <path d="M6 5h4M6 8h4M6 11h2" />
+        </svg>
+      );
+    case "asset":
+      return (
+        <svg {...iconProps}>
+          <path d="M3 3h10v10H3z" />
+          <path d="M3 10l3-3 2 2 3-3 2 2" />
+        </svg>
+      );
+    case "texture":
+      return (
+        <svg {...iconProps}>
+          <rect x="3" y="3" width="10" height="10" rx="1" />
+          <path d="M3 8h10M8 3v10" />
+        </svg>
+      );
+    case "data":
+      return (
+        <svg {...iconProps}>
+          <path d="M4 2h5l3 3v9H4z" />
+          <path d="M9 2v3h3" />
+        </svg>
+      );
+    case "proof":
+      return (
+        <svg {...iconProps}>
+          <path d="M8 2l6 4v4l-6 4-6-4V6z" />
+        </svg>
+      );
+    case "report":
+      return (
+        <svg {...iconProps}>
+          <path d="M4 2h8v12H4z" />
+          <path d="M6 5h4M6 7h4M6 9h4M6 11h2" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...iconProps}>
+          <path d="M4 2h8v12H4z" />
+        </svg>
+      );
   }
 }
 
@@ -458,7 +588,9 @@ function DemoChronicleContent() {
     <div className="shelf-chronicle">
       {DEMO_CHRONICLE.map((event, i) => (
         <div key={i} className="chronicle-entry">
-          <span className="chronicle-icon"><ChronicleIcon type={event.type} /></span>
+          <span className="chronicle-icon">
+            <ChronicleIcon type={event.type} />
+          </span>
           <span className="chronicle-type">{event.type}</span>
           <span className="chronicle-message">{event.message}</span>
           <span className="chronicle-time">{event.time}</span>
@@ -481,10 +613,14 @@ function DemoRelicsContent() {
     <div className="shelf-relics">
       {DEMO_RELICS.map((relic, i) => (
         <div key={i} className="relic-entry">
-          <span className="relic-icon"><RelicIcon type={relic.type} /></span>
+          <span className="relic-icon">
+            <RelicIcon type={relic.type} />
+          </span>
           <div className="relic-info">
             <span className="relic-name">{relic.name}</span>
-            <span className="relic-meta">{relic.type} - {relic.size}</span>
+            <span className="relic-meta">
+              {relic.type} - {relic.size}
+            </span>
           </div>
           <span className="relic-time">{relic.time}</span>
         </div>
@@ -495,10 +631,14 @@ function DemoRelicsContent() {
 
 function getDemoShelfContent(mode: ShelfMode) {
   switch (mode) {
-    case "events": return <DemoChronicleContent />;
-    case "output": return <DemoEchoesContent />;
-    case "artifacts": return <DemoRelicsContent />;
-    default: return null;
+    case "events":
+      return <DemoChronicleContent />;
+    case "output":
+      return <DemoEchoesContent />;
+    case "artifacts":
+      return <DemoRelicsContent />;
+    default:
+      return null;
   }
 }
 
@@ -514,15 +654,15 @@ function OutputContent({ capsule }: CapsuleContentProps) {
   const output = capsule.sourceData as string | undefined;
   return (
     <div className="capsule-content-output">
-      <pre className="capsule-output-log">
-        {output || "Awaiting echoes from the void..."}
-      </pre>
+      <pre className="capsule-output-log">{output || "Awaiting echoes from the void..."}</pre>
     </div>
   );
 }
 
 function EventsContent({ capsule }: CapsuleContentProps) {
-  const events = capsule.sourceData as Array<{ type: string; message: string; timestamp: string }> | undefined;
+  const events = capsule.sourceData as
+    | Array<{ type: string; message: string; timestamp: string }>
+    | undefined;
   return (
     <div className="capsule-content-events">
       {events?.length ? (
@@ -570,9 +710,7 @@ function InspectorContent({ capsule }: CapsuleContentProps) {
 function TerminalContent({ capsule }: CapsuleContentProps) {
   return (
     <div className="capsule-content-terminal">
-      <div className="capsule-terminal-placeholder">
-        Terminal: {capsule.sourceId || capsule.id}
-      </div>
+      <div className="capsule-terminal-placeholder">Terminal: {capsule.sourceId || capsule.id}</div>
     </div>
   );
 }
@@ -596,11 +734,7 @@ function ActionContent({ capsule }: CapsuleContentProps) {
   const action = capsule.sourceData as ActionData | undefined;
 
   if (!action) {
-    return (
-      <div className="capsule-content-action capsule-empty">
-        No visions from the oracle
-      </div>
-    );
+    return <div className="capsule-content-action capsule-empty">No visions from the oracle</div>;
   }
 
   const priorityClass = `action-priority-${action.priority}`;
@@ -611,9 +745,7 @@ function ActionContent({ capsule }: CapsuleContentProps) {
       <div className="action-header">
         <ActionTypeIcon type={action.type} />
         <span className="action-agent">{action.agentName || "Agent"}</span>
-        {action.priority === "critical" && (
-          <span className="action-urgent-badge">Urgent</span>
-        )}
+        {action.priority === "critical" && <span className="action-urgent-badge">Urgent</span>}
       </div>
 
       {/* Description */}
@@ -629,9 +761,7 @@ function ActionContent({ capsule }: CapsuleContentProps) {
               className={`action-option-btn ${opt.variant === "primary" ? "primary" : ""} ${opt.variant === "destructive" ? "destructive" : ""}`}
             >
               <span className="action-option-label">{opt.label}</span>
-              {opt.description && (
-                <span className="action-option-desc">{opt.description}</span>
-              )}
+              {opt.description && <span className="action-option-desc">{opt.description}</span>}
             </button>
           ))}
         </div>
@@ -693,7 +823,10 @@ function ChatContent({ capsule }: CapsuleContentProps) {
                 )}
                 <div className="chat-message-content">{msg.content}</div>
                 <span className="chat-message-time">
-                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {new Date(msg.timestamp).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </span>
               </div>
             ))}
@@ -701,17 +834,15 @@ function ChatContent({ capsule }: CapsuleContentProps) {
           {chat.isTyping && (
             <div className="chat-typing">
               <span className="chat-typing-dots">
-                <span /><span /><span />
+                <span />
+                <span />
+                <span />
               </span>
               Agent is typing...
             </div>
           )}
           <div className="chat-input-area">
-            <input
-              type="text"
-              className="chat-input"
-              placeholder="Whisper to the agents..."
-            />
+            <input type="text" className="chat-input" placeholder="Whisper to the agents..." />
             <button type="button" className="chat-send-btn">
               <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
                 <path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11z" />
@@ -768,7 +899,11 @@ function SocialContent({ capsule }: CapsuleContentProps) {
               <div className="social-connection-info">
                 <span className="social-connection-name">{conn.name}</span>
                 <span className="social-connection-status">
-                  {conn.status === "online" ? "Online" : conn.status === "away" ? "Away" : conn.lastSeen || "Offline"}
+                  {conn.status === "online"
+                    ? "Online"
+                    : conn.status === "away"
+                      ? "Away"
+                      : conn.lastSeen || "Offline"}
                 </span>
               </div>
             </div>
@@ -839,12 +974,7 @@ interface CapsuleStackProps {
   onToggleViewMode: (id: string, mode: CapsuleViewMode) => void;
 }
 
-function CapsuleStack({
-  capsules,
-  onClose,
-  onMinimize,
-  onToggleViewMode,
-}: CapsuleStackProps) {
+function CapsuleStack({ capsules, onClose, onMinimize, onToggleViewMode }: CapsuleStackProps) {
   return (
     <div className="dock-capsule-stack">
       {capsules.map((capsule, index) => (
@@ -898,28 +1028,26 @@ export function DockSystem({
   className,
 }: DockSystemProps) {
   // Enable demo mode with sample Oracle/Whisper/Coven data
-  useDockDemo(demoMode ? {
-    showOracle: true,
-    showWhisper: true,
-    showCoven: true,
-    showSessions: true,
-    oracleCount: 3,
-    whisperCount: 2,
-  } : {
-    showOracle: false,
-    showWhisper: false,
-    showCoven: false,
-    showSessions: false,
-  });
+  useDockDemo(
+    demoMode
+      ? {
+          showOracle: true,
+          showWhisper: true,
+          showCoven: true,
+          showSessions: true,
+          oracleCount: 3,
+          whisperCount: 2,
+        }
+      : {
+          showOracle: false,
+          showWhisper: false,
+          showCoven: false,
+          showSessions: false,
+        },
+  );
 
-  const {
-    visibleCapsules,
-    shelf,
-    closeCapsule,
-    minimizeCapsule,
-    setViewMode,
-    closeShelf,
-  } = useDock();
+  const { visibleCapsules, shelf, closeCapsule, minimizeCapsule, setViewMode, closeShelf } =
+    useDock();
 
   let customShelfContent: ReactNode | undefined;
   if (shelf.isOpen && shelf.mode) {
@@ -940,14 +1068,15 @@ export function DockSystem({
     (id: string, mode: CapsuleViewMode) => {
       setViewMode(id, mode);
     },
-    [setViewMode]
+    [setViewMode],
   );
 
-  const shelfContent = shelf.isOpen && shelf.mode ? (
-    <ShelfPanel key={`shelf:${shelf.mode}`} mode={shelf.mode} onClose={closeShelf}>
-      {customShelfContent || (demoMode && getDemoShelfContent(shelf.mode))}
-    </ShelfPanel>
-  ) : null;
+  const shelfContent =
+    shelf.isOpen && shelf.mode ? (
+      <ShelfPanel key={`shelf:${shelf.mode}`} mode={shelf.mode} onClose={closeShelf}>
+        {customShelfContent || (demoMode && getDemoShelfContent(shelf.mode))}
+      </ShelfPanel>
+    ) : null;
 
   return (
     <div className={`dock-system ${className ?? ""}`}>
@@ -978,8 +1107,8 @@ export function DockSystem({
 // Export index
 // =============================================================================
 
-export { DockProvider, useDock, useCapsule, useCapsulesByKind } from "./DockContext";
 export { Capsule, CapsuleTab } from "./Capsule";
+export { DockProvider, useCapsule, useCapsulesByKind, useDock } from "./DockContext";
 export { SessionRail } from "./SessionRail";
 export type * from "./types";
 

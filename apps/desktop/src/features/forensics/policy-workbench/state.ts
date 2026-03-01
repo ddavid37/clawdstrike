@@ -41,7 +41,12 @@ export type PolicyWorkbenchAction =
   | { type: "edit"; yaml: string }
   | { type: "revert" }
   | { type: "validate_start" }
-  | { type: "validate_success"; valid: boolean; errors: ValidationIssue[]; warnings: ValidationIssue[] }
+  | {
+      type: "validate_success";
+      valid: boolean;
+      errors: ValidationIssue[];
+      warnings: ValidationIssue[];
+    }
   | { type: "validate_error"; message: string }
   | { type: "save_start" }
   | { type: "save_success"; yaml: string; hash?: string; version?: string }
@@ -50,7 +55,7 @@ export type PolicyWorkbenchAction =
 
 export function policyWorkbenchReducer(
   state: PolicyWorkbenchState,
-  action: PolicyWorkbenchAction
+  action: PolicyWorkbenchAction,
 ): PolicyWorkbenchState {
   switch (action.type) {
     case "load_start":

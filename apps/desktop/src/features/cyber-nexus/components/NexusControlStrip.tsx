@@ -1,8 +1,8 @@
 import * as React from "react";
 import type { ConnectionStatus } from "@/context/ConnectionContext";
-import type { NexusLayoutMode, Strikecell } from "../types";
-import { ALL_LAYOUT_MODES, LAYOUT_METADATA } from "../layouts";
 import { ProfileMenu } from "@/shell/components/ProfileMenu";
+import { ALL_LAYOUT_MODES, LAYOUT_METADATA } from "../layouts";
+import type { NexusLayoutMode, Strikecell } from "../types";
 
 interface NexusControlStripProps {
   connectionStatus: ConnectionStatus;
@@ -60,7 +60,11 @@ function ControlButton({
 
 function formatRunId(id: string | undefined) {
   if (!id) return "----";
-  return id.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4).padEnd(4, "0");
+  return id
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 4)
+    .padEnd(4, "0");
 }
 
 export function NexusControlStrip({
@@ -99,11 +103,17 @@ export function NexusControlStrip({
   }, [layoutDropdownOpen, onCloseLayoutDropdown]);
 
   return (
-    <header ref={rootRef} className="titlebar-drag nexus-command-rail relative z-40 ml-0 mr-3 mt-3 flex items-center gap-2.5 overflow-visible">
+    <header
+      ref={rootRef}
+      className="titlebar-drag nexus-command-rail relative z-40 ml-0 mr-3 mt-3 flex items-center gap-2.5 overflow-visible"
+    >
       <div className="titlebar-no-drag premium-panel premium-panel--allow-overflow premium-panel--dense premium-panel--identity nexus-title-plate nexus-title-plate--docked flex h-12 shrink-0 items-center gap-3 rounded-[16px] px-4">
         <span className="nexus-orb-bus-line" aria-hidden="true" />
         <span className="nexus-orb-dock-notch" aria-hidden="true" />
-        <span className="origin-glyph-orb origin-glyph-orb--small nexus-plate-orb" aria-hidden="true" />
+        <span
+          className="origin-glyph-orb origin-glyph-orb--small nexus-plate-orb"
+          aria-hidden="true"
+        />
         <div className="flex flex-col">
           <span className="nexus-wordmark text-[15px] leading-none" aria-label="CLAWDSTRIKE">
             <span className="nexus-wordmark-main">CL</span>
@@ -163,7 +173,9 @@ export function NexusControlStrip({
           />
           {layoutDropdownOpen ? (
             <div className="nexus-layout-dropdown premium-panel premium-panel--dropdown absolute right-0 top-[calc(100%+8px)] z-[80] min-w-[240px] rounded-lg p-1.5">
-              <div className="origin-label px-2 pt-1.5 pb-1 text-[10px] leading-[1.35]">Layout Mode</div>
+              <div className="origin-label px-2 pt-1.5 pb-1 text-[10px] leading-[1.35]">
+                Layout Mode
+              </div>
               <div className="premium-separator mb-1 h-px w-full" />
               {ALL_LAYOUT_MODES.map((mode) => (
                 <button
@@ -178,7 +190,9 @@ export function NexusControlStrip({
                   ].join(" ")}
                 >
                   <span>{LAYOUT_METADATA[mode].name}</span>
-                  <span className="text-[10px] text-sdr-text-muted">{LAYOUT_METADATA[mode].shortcut}</span>
+                  <span className="text-[10px] text-sdr-text-muted">
+                    {LAYOUT_METADATA[mode].shortcut}
+                  </span>
                 </button>
               ))}
             </div>

@@ -1,14 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import type { PolicyEngineLike } from "@clawdstrike/adapter-core";
+import { describe, expect, it } from "vitest";
 
-import type { PolicyEngineLike } from '@clawdstrike/adapter-core';
+import { LangChainAdapter } from "./langchain-adapter.js";
 
-import { LangChainAdapter } from './langchain-adapter.js';
-
-describe('LangChainAdapter', () => {
-  it('evaluates tool calls via FrameworkAdapter interface', async () => {
+describe("LangChainAdapter", () => {
+  it("evaluates tool calls via FrameworkAdapter interface", async () => {
     const engine: PolicyEngineLike = {
-      evaluate: event => ({
-        status: event.eventType === 'command_exec' ? 'deny' : 'allow',
+      evaluate: (event) => ({
+        status: event.eventType === "command_exec" ? "deny" : "allow",
       }),
     };
 
@@ -18,11 +17,11 @@ describe('LangChainAdapter', () => {
     const context = adapter.createContext();
 
     const result = await adapter.interceptToolCall(context, {
-      id: '1',
-      name: 'bash',
-      parameters: { cmd: 'rm -rf /' },
+      id: "1",
+      name: "bash",
+      parameters: { cmd: "rm -rf /" },
       timestamp: new Date(),
-      source: 'test',
+      source: "test",
     });
 
     expect(result.proceed).toBe(false);
@@ -30,4 +29,3 @@ describe('LangChainAdapter', () => {
     expect(summary.sessionId).toBe(context.sessionId);
   });
 });
-
