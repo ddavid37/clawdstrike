@@ -2721,12 +2721,11 @@ output:
         );
 
         let output: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
-        assert_eq!(
+        assert!(
             output["data"]["summary"]["policy_violations_found"]
                 .as_u64()
                 .unwrap_or(0)
                 > 0,
-            true,
             "summary must still reflect full-set policy violations"
         );
         assert_eq!(

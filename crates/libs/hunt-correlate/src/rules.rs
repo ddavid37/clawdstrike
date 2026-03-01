@@ -413,8 +413,16 @@ output:
             "private destination in real Hubble-style summary must match"
         );
         assert!(
+            re.is_match("egress TCP 10.0.0.1:8080 -> 172.16.0.1"),
+            "private destination without an explicit port must still match"
+        );
+        assert!(
             re.is_match("10.0.0.1 -> 172.16.0.1:443"),
             "private destination should match even when summary starts with source IP"
+        );
+        assert!(
+            !re.is_match("egress TCP 10.0.0.1:8080 -> 172.16.0.1443"),
+            "bare trailing digits must not be treated as an implicit port"
         );
         assert!(
             !re.is_match("172.160.0.1"),
