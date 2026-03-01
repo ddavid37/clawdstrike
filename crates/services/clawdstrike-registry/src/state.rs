@@ -109,17 +109,52 @@ fn load_or_generate_keypair(config: &Config) -> anyhow::Result<Keypair> {
     let pub_path = config.keys_dir().join("registry.pub");
 
     if key_path.exists() {
+        tighten_private_key_permissions(&key_path)?;
         let hex = std::fs::read_to_string(&key_path)?.trim().to_string();
         let keypair = Keypair::from_hex(&hex)
             .map_err(|e| RegistryError::Internal(format!("failed to load registry key: {e}")))?;
         Ok(keypair)
     } else {
         let keypair = Keypair::generate();
-        std::fs::write(&key_path, keypair.to_hex())?;
+        write_private_key_file(&key_path, &keypair.to_hex())?;
+        tighten_private_key_permissions(&key_path)?;
         std::fs::write(&pub_path, keypair.public_key().to_hex())?;
         tracing::info!("Generated new registry keypair");
         Ok(keypair)
     }
+}
+
+#[cfg(unix)]
+fn write_private_key_file(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
+    use std::fs::OpenOptions;
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(contents.as_bytes())?;
+    file.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_private_key_file(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
+    std::fs::write(path, contents)
+}
+
+#[cfg(unix)]
+fn tighten_private_key_permissions(path: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn tighten_private_key_permissions(_path: &std::path::Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 #[cfg(test)]
@@ -132,6 +167,7 @@ mod tests {
             port: 0,
             data_dir: dir.to_path_buf(),
             api_key: String::new(),
+            allow_insecure_no_auth: false,
             max_upload_bytes: 1024 * 1024,
         }
     }
@@ -252,5 +288,22 @@ mod tests {
 
         let state = AppState::new(cfg).expect("legacy unindexed versions should be ignored");
         assert_eq!(state.merkle_tree.lock().unwrap().tree_size(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_or_generate_keypair_sets_private_key_mode_600() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = test_config(tmp.path());
+        std::fs::create_dir_all(cfg.keys_dir()).unwrap();
+        let _ = load_or_generate_keypair(&cfg).unwrap();
+        let mode = std::fs::metadata(cfg.keys_dir().join("registry.key"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
     }
 }

@@ -80,11 +80,17 @@ pub async fn get_proof(
     let checkpoint_timestamp = chrono::Utc::now().to_rfc3339();
     let checkpoint_message =
         checkpoint_signature_message(&root, proof.tree_size, &checkpoint_timestamp);
-    let checkpoint_sig = state
-        .registry_keypair
-        .sign(checkpoint_message.as_bytes())
-        .to_hex();
-    let checkpoint_key = state.registry_keypair.public_key().to_hex();
+    let (checkpoint_sig, checkpoint_key) = {
+        let key_mgr = state
+            .key_manager
+            .lock()
+            .map_err(|e| RegistryError::Internal(format!("key_manager lock poisoned: {e}")))?;
+        let current_keypair = key_mgr.current_keypair();
+        (
+            current_keypair.sign(checkpoint_message.as_bytes()).to_hex(),
+            current_keypair.public_key().to_hex(),
+        )
+    };
 
     Ok(Json(InclusionProofResponse {
         name,

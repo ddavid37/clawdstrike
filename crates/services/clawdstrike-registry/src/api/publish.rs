@@ -18,7 +18,9 @@ fn extract_oidc_provider(headers: &axum::http::HeaderMap) -> Option<String> {
     headers
         .get("X-Clawdstrike-Oidc-Provider")
         .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 #[derive(Deserialize)]

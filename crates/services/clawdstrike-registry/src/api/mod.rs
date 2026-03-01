@@ -132,6 +132,7 @@ mod tests {
             port: 0,
             data_dir: tmp.path().to_path_buf(),
             api_key: String::new(),
+            allow_insecure_no_auth: false,
             max_upload_bytes: 5 * 1024 * 1024,
         };
         let state = crate::state::AppState::new(cfg).unwrap();

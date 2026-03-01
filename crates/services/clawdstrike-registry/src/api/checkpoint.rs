@@ -57,9 +57,15 @@ pub async fn get_checkpoint(
     // Build the canonical checkpoint message.
     let checkpoint_msg = checkpoint_signature_message(&root_hex, tree_size, &timestamp);
 
-    let signature = state.registry_keypair.sign(checkpoint_msg.as_bytes());
-    let sig_hex = signature.to_hex();
-    let key_hex = state.registry_keypair.public_key().to_hex();
+    let (sig_hex, key_hex) = {
+        let key_mgr = state
+            .key_manager
+            .lock()
+            .map_err(|e| RegistryError::Internal(format!("key_manager lock poisoned: {e}")))?;
+        let current_keypair = key_mgr.current_keypair();
+        let signature = current_keypair.sign(checkpoint_msg.as_bytes());
+        (signature.to_hex(), current_keypair.public_key().to_hex())
+    };
 
     Ok(Json(CheckpointResponse {
         root: root_hex,
@@ -97,6 +103,7 @@ mod tests {
             port: 0,
             data_dir: tmp.path().to_path_buf(),
             api_key: String::new(),
+            allow_insecure_no_auth: false,
             max_upload_bytes: 1024 * 1024,
         };
         crate::state::AppState::new(cfg).unwrap()

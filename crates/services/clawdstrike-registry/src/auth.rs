@@ -134,20 +134,17 @@ pub fn verify_signed_caller(headers: &HeaderMap, payload: &str) -> Result<String
 
 /// Middleware that validates a bearer token against the configured API key.
 ///
-/// If no API key is configured (empty string), all requests are allowed through.
-/// OIDC-authenticated publish requests are pre-validated here (signature/issuer/
-/// audience). The publish handler then performs package-specific trusted-
-/// publisher matching.
+/// OIDC-authenticated publish requests are pre-validated here (signature/
+/// issuer/audience). The publish handler then performs package-specific
+/// trusted-publisher matching.
+///
+/// Non-OIDC routes require an API key unless the operator explicitly enables
+/// insecure no-auth mode (`CLAWDSTRIKE_REGISTRY_ALLOW_INSECURE_NO_AUTH=true`).
 pub async fn require_publish_auth(
     State(state): State<AppState>,
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Skip auth if no API key is configured.
-    if state.config.api_key.is_empty() {
-        return Ok(next.run(req).await);
-    }
-
     // OIDC requests carry a CI/CD identity token instead of an API key.
     // This bypass is limited to package publish; all other authenticated routes
     // must still use the configured API key.
@@ -164,6 +161,20 @@ pub async fn require_publish_auth(
                 oidc_prevalidation_status(&e)
             })?;
         return Ok(next.run(req).await);
+    }
+
+    if state.config.api_key.is_empty() {
+        if state.config.allow_insecure_no_auth {
+            tracing::warn!(
+                "Registry API key is unset and insecure no-auth mode is enabled; authenticated routes are open"
+            );
+            return Ok(next.run(req).await);
+        }
+
+        tracing::error!(
+            "Registry API key is unset; refusing authenticated route because insecure no-auth mode is disabled"
+        );
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
     }
 
     let token = extract_bearer_token(&req).ok_or(StatusCode::UNAUTHORIZED)?;
@@ -247,7 +258,9 @@ pub fn authorize_unscoped_package_admin(
 mod tests {
     use super::*;
     use axum::http::header;
+    use axum::{middleware, routing::post, Router};
     use hush_core::Keypair;
+    use tower::ServiceExt;
 
     fn make_request(auth: Option<&str>) -> Request<Body> {
         let mut builder = Request::builder();
@@ -508,5 +521,58 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         assert!(!is_oidc_publish_request(&req));
+    }
+
+    fn middleware_state(api_key: &str, allow_insecure_no_auth: bool) -> crate::state::AppState {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = crate::config::Config {
+            host: "127.0.0.1".to_string(),
+            port: 0,
+            data_dir: tmp.path().to_path_buf(),
+            api_key: api_key.to_string(),
+            allow_insecure_no_auth,
+            max_upload_bytes: 1024 * 1024,
+        };
+        crate::state::AppState::new(cfg).unwrap()
+    }
+
+    #[tokio::test]
+    async fn middleware_fails_closed_when_api_key_missing() {
+        let state = middleware_state("", false);
+        let app = Router::new()
+            .route("/api/v1/orgs", post(|| async { StatusCode::OK }))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                require_publish_auth,
+            ))
+            .with_state(state);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/orgs")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn middleware_allows_no_auth_only_with_explicit_override() {
+        let state = middleware_state("", true);
+        let app = Router::new()
+            .route("/api/v1/orgs", post(|| async { StatusCode::OK }))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                require_publish_auth,
+            ))
+            .with_state(state);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/orgs")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

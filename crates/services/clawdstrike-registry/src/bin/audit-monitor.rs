@@ -353,8 +353,10 @@ mod tests {
             registry_sig: sig,
             registry_key: kp.public_key().to_hex(),
         };
-        let err =
-            verify_checkpoint_signature(&checkpoint, &other.public_key().to_hex()).unwrap_err();
+        let err = match verify_checkpoint_signature(&checkpoint, &other.public_key().to_hex()) {
+            Ok(()) => panic!("mismatched trust anchor should fail signature verification"),
+            Err(err) => err,
+        };
         assert!(err.to_string().contains("mismatch"));
     }
 }
