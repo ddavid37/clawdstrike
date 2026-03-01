@@ -19,14 +19,6 @@ const SUPPORTED_SCHEMA: &str = "clawdstrike.hunt.correlation.v1";
 // Duration helpers
 // ---------------------------------------------------------------------------
 
-/// Parse a human-readable duration string such as `"30s"`, `"5m"`, `"1h"`, `"2d"`.
-///
-/// Supports multi-character suffixes like `"sec"`, `"min"`, `"hrs"`, `"days"`.
-/// Returns `None` if the string cannot be parsed.
-pub fn parse_duration_str(s: &str) -> Option<Duration> {
-    hush_core::parse_human_duration(s)
-}
-
 /// Format a `Duration` back to a human-readable string.
 fn format_duration(dur: &Duration) -> String {
     let secs = dur.num_seconds();
@@ -47,7 +39,8 @@ where
     D: Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
-    parse_duration_str(&s).ok_or_else(|| de::Error::custom(format!("invalid duration: {s}")))
+    hush_core::parse_human_duration(&s)
+        .ok_or_else(|| de::Error::custom(format!("invalid duration: {s}")))
 }
 
 /// Serde serializer for duration → string.
@@ -69,7 +62,7 @@ where
     match opt {
         None => Ok(None),
         Some(s) => {
-            let dur = parse_duration_str(&s)
+            let dur = hush_core::parse_human_duration(&s)
                 .ok_or_else(|| de::Error::custom(format!("invalid duration: {s}")))?;
             Ok(Some(dur))
         }
@@ -605,40 +598,85 @@ output:
 
     #[test]
     fn parse_duration_str_various() {
-        assert_eq!(parse_duration_str("30s"), Some(Duration::seconds(30)));
-        assert_eq!(parse_duration_str("5m"), Some(Duration::minutes(5)));
-        assert_eq!(parse_duration_str("1h"), Some(Duration::hours(1)));
-        assert_eq!(parse_duration_str("2d"), Some(Duration::days(2)));
-        assert_eq!(parse_duration_str("0s"), Some(Duration::seconds(0)));
-        assert_eq!(parse_duration_str(""), None);
-        assert_eq!(parse_duration_str("abc"), None);
-        assert_eq!(parse_duration_str("10x"), None);
-        assert_eq!(parse_duration_str("s"), None);
+        assert_eq!(
+            hush_core::parse_human_duration("30s"),
+            Some(Duration::seconds(30))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("5m"),
+            Some(Duration::minutes(5))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("1h"),
+            Some(Duration::hours(1))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("2d"),
+            Some(Duration::days(2))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("0s"),
+            Some(Duration::seconds(0))
+        );
+        assert_eq!(hush_core::parse_human_duration(""), None);
+        assert_eq!(hush_core::parse_human_duration("abc"), None);
+        assert_eq!(hush_core::parse_human_duration("10x"), None);
+        assert_eq!(hush_core::parse_human_duration("s"), None);
     }
 
     #[test]
     fn parse_duration_str_multi_char_suffixes() {
-        assert_eq!(parse_duration_str("30sec"), Some(Duration::seconds(30)));
-        assert_eq!(parse_duration_str("5min"), Some(Duration::minutes(5)));
-        assert_eq!(parse_duration_str("5mins"), Some(Duration::minutes(5)));
-        assert_eq!(parse_duration_str("1hr"), Some(Duration::hours(1)));
-        assert_eq!(parse_duration_str("2hrs"), Some(Duration::hours(2)));
-        assert_eq!(parse_duration_str("1hour"), Some(Duration::hours(1)));
-        assert_eq!(parse_duration_str("3days"), Some(Duration::days(3)));
-        assert_eq!(parse_duration_str("1day"), Some(Duration::days(1)));
-        assert_eq!(parse_duration_str("10seconds"), Some(Duration::seconds(10)));
-        assert_eq!(parse_duration_str("2minutes"), Some(Duration::minutes(2)));
+        assert_eq!(
+            hush_core::parse_human_duration("30sec"),
+            Some(Duration::seconds(30))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("5min"),
+            Some(Duration::minutes(5))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("5mins"),
+            Some(Duration::minutes(5))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("1hr"),
+            Some(Duration::hours(1))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("2hrs"),
+            Some(Duration::hours(2))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("1hour"),
+            Some(Duration::hours(1))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("3days"),
+            Some(Duration::days(3))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("1day"),
+            Some(Duration::days(1))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("10seconds"),
+            Some(Duration::seconds(10))
+        );
+        assert_eq!(
+            hush_core::parse_human_duration("2minutes"),
+            Some(Duration::minutes(2))
+        );
     }
 
     #[test]
     fn parse_duration_str_multibyte_utf8_returns_none() {
         // Multi-byte UTF-8 suffixes must not panic (previously used split_at
         // which could panic on non-ASCII boundaries).
-        assert_eq!(parse_duration_str("30秒"), None);
-        assert_eq!(parse_duration_str("5分"), None);
-        assert_eq!(parse_duration_str("1時間"), None);
+        assert_eq!(hush_core::parse_human_duration("30秒"), None);
+        assert_eq!(hush_core::parse_human_duration("5分"), None);
+        assert_eq!(hush_core::parse_human_duration("1時間"), None);
         // Emoji suffix.
-        assert_eq!(parse_duration_str("10🕐"), None);
+        assert_eq!(hush_core::parse_human_duration("10🕐"), None);
     }
 
     #[test]

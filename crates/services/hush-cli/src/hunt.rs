@@ -1455,7 +1455,7 @@ async fn cmd_hunt_watch(
     let rules_loaded = all_rules.len();
 
     // Parse max_window duration
-    let max_window = match hunt_correlate::rules::parse_duration_str(&args.max_window) {
+    let max_window = match hush_core::parse_human_duration(&args.max_window) {
         Some(dur) => dur,
         None => {
             return emit_hunt_error(
@@ -1911,8 +1911,8 @@ fn parse_timestamp_or_relative(
         return Ok(dt.with_timezone(&chrono::Utc));
     }
 
-    // Fallback: try relative duration via hunt_correlate's parser.
-    if let Some(dur) = hunt_correlate::rules::parse_duration_str(s) {
+    // Fallback: try relative duration.
+    if let Some(dur) = hush_core::parse_human_duration(s) {
         return Ok(chrono::Utc::now() - dur);
     }
 
