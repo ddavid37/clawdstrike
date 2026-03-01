@@ -81,7 +81,7 @@ class TestAlertToDict:
 
 class TestToDataframe:
     def test_requires_pandas(self) -> None:
-        pd = pytest.importorskip("pandas")
+        pytest.importorskip("pandas")
         events = [_make_event(), _make_event(summary="second")]
         df = to_dataframe(events)
         assert len(df) == 2
@@ -89,14 +89,14 @@ class TestToDataframe:
         assert "verdict" in df.columns
 
     def test_empty_events(self) -> None:
-        pd = pytest.importorskip("pandas")
+        pytest.importorskip("pandas")
         df = to_dataframe([])
         assert len(df) == 0
 
 
 class TestToPolars:
     def test_requires_polars(self) -> None:
-        pl = pytest.importorskip("polars")
+        pytest.importorskip("polars")
         events = [_make_event()]
         df = to_polars(events)
         assert df.shape[0] == 1
@@ -105,7 +105,7 @@ class TestToPolars:
 
 class TestAlertsToDataframe:
     def test_converts_alerts(self) -> None:
-        pd = pytest.importorskip("pandas")
+        pytest.importorskip("pandas")
         alerts = [_make_alert()]
         df = alerts_to_dataframe(alerts)
         assert len(df) == 1

@@ -165,8 +165,8 @@ export function toStix(
 export function toCSV(items: (Alert | TimelineEvent)[]): string {
   if (items.length === 0) return '';
 
-  const first = items[0];
-  if (isAlert(first)) {
+  const alerts = items.filter(isAlert);
+  if (alerts.length > 0) {
     const headers = [
       'ruleName',
       'severity',
@@ -175,7 +175,7 @@ export function toCSV(items: (Alert | TimelineEvent)[]): string {
       'description',
       'evidenceCount',
     ];
-    const rows = (items as Alert[]).map((a) =>
+    const rows = alerts.map((a) =>
       [
         a.ruleName,
         a.severity,
@@ -189,6 +189,7 @@ export function toCSV(items: (Alert | TimelineEvent)[]): string {
     );
     return [headers.join(','), ...rows].join('\n');
   } else {
+    const events = items as TimelineEvent[];
     const headers = [
       'timestamp',
       'source',
@@ -198,7 +199,7 @@ export function toCSV(items: (Alert | TimelineEvent)[]): string {
       'process',
       'actionType',
     ];
-    const rows = (items as TimelineEvent[]).map((e) =>
+    const rows = events.map((e) =>
       [
         e.timestamp.toISOString(),
         e.source,

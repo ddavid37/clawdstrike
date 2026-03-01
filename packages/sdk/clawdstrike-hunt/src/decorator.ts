@@ -53,7 +53,7 @@ export function guarded<T extends (...args: unknown[]) => unknown>(
 
     const result = fn.apply(this, args);
     if (result && typeof result === 'object' && typeof (result as Promise<unknown>).then === 'function') {
-      return (result as Promise<unknown>).then(undefined, undefined);
+      return result;
     }
     return result;
   } as unknown as T & { alerts: Alert[] };
