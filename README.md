@@ -78,7 +78,7 @@ Your org provisioned 50 agents. Shadow IT spun up 50 more outside your asset inv
 
 ## What Clawdstrike Is
 
-Clawdstrike is a **fail-closed policy engine and cryptographic attestation runtime** for autonomous AI agents. It sits at the tool boundary, the exact point where an agent's intent becomes a real-world action, and enforces security policy with signed proof. From a single SDK install to a fleet of thousands of managed agents, the same engine, the same receipts, the same guarantees.
+Clawdstrike is a **fail-closed policy engine and cryptographic attestation runtime** for AI agent systems. It sits at the tool boundary, the exact point where an agent's intent becomes a real-world action, and enforces security policy with signed proof. From a single SDK install to a fleet of thousands of managed agents, the same engine, the same receipts, the same guarantees.
 
 Every action. Every agent. Every time. No exceptions.
 
