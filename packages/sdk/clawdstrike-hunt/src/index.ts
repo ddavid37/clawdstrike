@@ -7,6 +7,8 @@ export {
   IocError,
   WatchError,
   ReportError,
+  HuntAlertError,
+  PlaybookError,
 } from './errors.js';
 
 export {
@@ -68,6 +70,17 @@ export {
 // Watch
 export { runWatch } from './watch.js';
 
+// Decorators
+export { guarded } from './decorator.js';
+export type { GuardedOptions } from './decorator.js';
+
+// Serialize
+export { eventsToJSON, alertsToJSON, eventsToCSV, alertsToCSV } from './serialize.js';
+
+// Playbook
+export { Playbook } from './playbook.js';
+export type { PlaybookResult } from './playbook.js';
+
 // Testing
 export { testRule, event } from './testing.js';
 export type { TestResult, TestRuleOptions } from './testing.js';
@@ -75,3 +88,11 @@ export type { TestResult, TestRuleOptions } from './testing.js';
 // Replay
 export { replay } from './replay.js';
 export type { ReplayResult, ReplayOptions } from './replay.js';
+
+// MITRE
+export { mapEventToMitre, mapAlertToMitre, coverageMatrix } from './mitre.js';
+export type { MitreTechnique } from './mitre.js';
+
+// Anomaly
+export { Baseline, scoreAnomalies } from './anomaly.js';
+export type { ScoredEvent, BaselineData } from './anomaly.js';

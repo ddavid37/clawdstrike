@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from clawdstrike.hunt.errors import (
     CorrelationError,
+    HuntAlertError,
     HuntError,
     IocError,
     IoError,
     ParseError,
+    PlaybookError,
     QueryError,
     ReportError,
     WatchError,
@@ -39,6 +41,26 @@ from clawdstrike.hunt.report import (
 )
 from clawdstrike.hunt.testing import TestResult, event, test_rule
 from clawdstrike.hunt.replay import ReplayResult, replay
+from clawdstrike.hunt.decorator import guarded
+from clawdstrike.hunt.dataframe import (
+    alerts_to_dataframe,
+    display_timeline,
+    to_dataframe,
+    to_polars,
+)
+from clawdstrike.hunt.playbook import Playbook, PlaybookResult
+from clawdstrike.hunt.mitre import (
+    MitreTechnique,
+    coverage_matrix,
+    map_alert_to_mitre,
+    map_event_to_mitre,
+)
+from clawdstrike.hunt.anomaly import (
+    Baseline,
+    BaselineData,
+    ScoredEvent,
+    score_anomalies,
+)
 from clawdstrike.hunt.timeline import merge_timeline, parse_envelope
 from clawdstrike.hunt.types import (
     Alert,
@@ -124,6 +146,28 @@ __all__ = [
     # replay
     "replay",
     "ReplayResult",
+    # decorator
+    "guarded",
+    "HuntAlertError",
+    "PlaybookError",
+    # dataframe
+    "to_dataframe",
+    "to_polars",
+    "alerts_to_dataframe",
+    "display_timeline",
+    # playbook
+    "Playbook",
+    "PlaybookResult",
+    # mitre
+    "MitreTechnique",
+    "map_event_to_mitre",
+    "map_alert_to_mitre",
+    "coverage_matrix",
+    # anomaly
+    "ScoredEvent",
+    "BaselineData",
+    "Baseline",
+    "score_anomalies",
     # watch (lazy import — requires nats-py)
     "run_watch",
 ]
