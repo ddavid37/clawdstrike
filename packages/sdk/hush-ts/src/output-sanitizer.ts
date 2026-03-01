@@ -1,4 +1,5 @@
 import { getWasmModule } from "./crypto/backend.js";
+import { camelToSnake, toSnakeCaseKeys } from "./case-convert.js";
 
 export type SensitiveCategory = "secret" | "pii" | "internal" | "custom";
 
@@ -90,22 +91,6 @@ export interface EntityRecognizer {
   detect(text: string): EntityFinding[];
 }
 
-function camelToSnake(s: string): string {
-  return s.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`);
-}
-
-function toSnakeCaseKeys(obj: unknown): unknown {
-  if (Array.isArray(obj)) return obj.map(toSnakeCaseKeys);
-  if (obj !== null && typeof obj === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-      out[camelToSnake(k)] = toSnakeCaseKeys(v);
-    }
-    return out;
-  }
-  return obj;
-}
-
 function prepareConfig(config: OutputSanitizerConfig): unknown {
   const prepared: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(config)) {
@@ -129,7 +114,7 @@ function prepareConfig(config: OutputSanitizerConfig): unknown {
 
 export class OutputSanitizer {
   // biome-ignore lint/suspicious/noExplicitAny: WASM instance type is dynamic
-  private inner: any;
+  private readonly inner: any;
 
   constructor(config?: OutputSanitizerConfig) {
     const wasm = getWasmModule();
@@ -145,13 +130,6 @@ export class OutputSanitizer {
 
   sanitize(text: string): SanitizationResult {
     return JSON.parse(this.inner.sanitize(text));
-  }
-
-  /**
-   * @deprecated Use `sanitize()` instead. Alias retained for backward compatibility.
-   */
-  sanitizeSync(text: string): SanitizationResult {
-    return this.sanitize(text);
   }
 
   createStream(config?: StreamingConfig): SanitizationStream {

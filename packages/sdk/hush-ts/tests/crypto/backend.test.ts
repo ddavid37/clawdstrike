@@ -16,29 +16,16 @@ afterEach(() => {
 });
 
 describe("getBackend", () => {
-  it("returns noble by default", () => {
-    // WASM is always initialized in the setup file (detection modules require it).
+  it("returns wasm after setup", () => {
     expect(getBackend().name).toBe("wasm");
   });
 });
 
 describe("setBackend", () => {
   it("switches active backend", () => {
-    const mockBackend: CryptoBackend = {
-      name: "wasm",
-      sha256: () => new Uint8Array(32),
-      keccak256: () => new Uint8Array(32),
-      generateKeypair: async () => ({
-        privateKey: new Uint8Array(32),
-        publicKey: new Uint8Array(32),
-      }),
-      signMessage: async () => new Uint8Array(64),
-      verifySignature: async () => true,
-      publicKeyFromPrivate: async () => new Uint8Array(32),
-    };
-
-    setBackend(mockBackend);
-    expect(getBackend().name).toBe("wasm");
+    const nobleBackend = createNobleBackend();
+    setBackend(nobleBackend);
+    expect(getBackend().name).toBe("noble");
   });
 });
 

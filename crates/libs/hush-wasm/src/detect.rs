@@ -1,16 +1,9 @@
 //! WASM exports for clawdstrike detection modules.
-//!
-//! Provides browser/Node.js access to jailbreak detection, output sanitization,
-//! prompt injection detection, instruction hierarchy enforcement, and canonical JSON.
 
 use wasm_bindgen::prelude::*;
 
 use clawdstrike::jailbreak::{JailbreakDetector, JailbreakGuardConfig};
 use clawdstrike::output_sanitizer::{OutputSanitizer, OutputSanitizerConfig};
-
-// ============================================================================
-// JSON key conversion: snake_case → camelCase
-// ============================================================================
 
 fn snake_to_camel(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
@@ -52,13 +45,6 @@ fn serialize_camel_case<T: serde::Serialize>(value: &T) -> Result<String, JsErro
         .map_err(|e| JsError::new(&format!("JSON stringify failed: {e}")))
 }
 
-// ============================================================================
-// Jailbreak Detection (stateful — holds session state and cache)
-// ============================================================================
-
-/// Jailbreak detector with 4-layer detection: heuristic, statistical, ML, and optional LLM judge.
-///
-/// Holds internal session aggregation state and an LRU cache. Create one instance and reuse it.
 #[wasm_bindgen]
 pub struct WasmJailbreakDetector {
     inner: JailbreakDetector,
@@ -66,13 +52,6 @@ pub struct WasmJailbreakDetector {
 
 #[wasm_bindgen]
 impl WasmJailbreakDetector {
-    /// Create a new jailbreak detector.
-    ///
-    /// # Arguments
-    /// * `config_json` - Optional JSON-serialized `JailbreakGuardConfig`. Uses defaults if omitted.
-    ///
-    /// # Returns
-    /// A new `WasmJailbreakDetector` instance.
     #[wasm_bindgen(constructor)]
     pub fn new(config_json: Option<String>) -> Result<WasmJailbreakDetector, JsError> {
         let config = match config_json {
@@ -85,14 +64,6 @@ impl WasmJailbreakDetector {
         })
     }
 
-    /// Run synchronous jailbreak detection on the given text.
-    ///
-    /// # Arguments
-    /// * `text` - The input text to analyze
-    /// * `session_id` - Optional session ID for session-level risk aggregation
-    ///
-    /// # Returns
-    /// JSON string of `JailbreakDetectionResult` with camelCase keys.
     pub fn detect(
         &self,
         text: &str,
@@ -103,13 +74,6 @@ impl WasmJailbreakDetector {
     }
 }
 
-// ============================================================================
-// Output Sanitization (stateful — holds compiled patterns)
-// ============================================================================
-
-/// Output sanitizer for redacting secrets, PII, and internal data from model/tool outputs.
-///
-/// Holds compiled regex patterns. Create one instance and reuse it.
 #[wasm_bindgen]
 pub struct WasmOutputSanitizer {
     inner: OutputSanitizer,
@@ -117,13 +81,6 @@ pub struct WasmOutputSanitizer {
 
 #[wasm_bindgen]
 impl WasmOutputSanitizer {
-    /// Create a new output sanitizer.
-    ///
-    /// # Arguments
-    /// * `config_json` - Optional JSON-serialized `OutputSanitizerConfig`. Uses defaults if omitted.
-    ///
-    /// # Returns
-    /// A new `WasmOutputSanitizer` instance.
     #[wasm_bindgen(constructor)]
     pub fn new(config_json: Option<String>) -> Result<WasmOutputSanitizer, JsError> {
         let sanitizer = match config_json {
@@ -137,31 +94,12 @@ impl WasmOutputSanitizer {
         Ok(Self { inner: sanitizer })
     }
 
-    /// Sanitize text by detecting and redacting sensitive data.
-    ///
-    /// # Arguments
-    /// * `text` - The text to sanitize
-    ///
-    /// # Returns
-    /// JSON string of `SanitizationResult` with camelCase keys.
     pub fn sanitize(&self, text: &str) -> Result<String, JsError> {
         let result = self.inner.sanitize_sync(text);
         serialize_camel_case(&result)
     }
 }
 
-// ============================================================================
-// Prompt Injection Detection (stateless)
-// ============================================================================
-
-/// Detect prompt-injection signals in untrusted text.
-///
-/// # Arguments
-/// * `text` - The untrusted text to analyze
-/// * `max_scan_bytes` - Optional limit on bytes to scan (default: 200,000)
-///
-/// # Returns
-/// JSON string of `PromptInjectionReport` with camelCase keys.
 #[wasm_bindgen]
 pub fn detect_prompt_injection(
     text: &str,
@@ -174,14 +112,6 @@ pub fn detect_prompt_injection(
     serialize_camel_case(&result)
 }
 
-// ============================================================================
-// Instruction Hierarchy Enforcement (stateless per call, but enforcer is reusable)
-// ============================================================================
-
-/// Instruction hierarchy enforcer for maintaining privilege ordering.
-///
-/// Wraps low-privilege content, detects conflicts, and enforces the hierarchy:
-/// Platform > System > User > ToolOutput > External.
 #[wasm_bindgen]
 pub struct WasmInstructionHierarchyEnforcer {
     inner: std::cell::RefCell<clawdstrike::instruction_hierarchy::InstructionHierarchyEnforcer>,
@@ -189,10 +119,6 @@ pub struct WasmInstructionHierarchyEnforcer {
 
 #[wasm_bindgen]
 impl WasmInstructionHierarchyEnforcer {
-    /// Create a new instruction hierarchy enforcer.
-    ///
-    /// # Arguments
-    /// * `config_json` - Optional JSON-serialized `HierarchyEnforcerConfig`. Uses defaults if omitted.
     #[wasm_bindgen(constructor)]
     pub fn new(config_json: Option<String>) -> Result<WasmInstructionHierarchyEnforcer, JsError> {
         let config = match config_json {
@@ -211,18 +137,13 @@ impl WasmInstructionHierarchyEnforcer {
         })
     }
 
-    /// Enforce instruction hierarchy on a set of messages.
-    ///
-    /// # Arguments
-    /// * `messages_json` - JSON array of `HierarchyMessage` objects
-    ///
-    /// # Returns
-    /// JSON string of `HierarchyEnforcementResult` with camelCase keys.
     pub fn enforce(&self, messages_json: &str) -> Result<String, JsError> {
         let messages: Vec<clawdstrike::instruction_hierarchy::HierarchyMessage> =
             serde_json::from_str(messages_json)
                 .map_err(|e| JsError::new(&format!("Invalid messages JSON: {e}")))?;
-        let mut enforcer = self.inner.borrow_mut();
+        let mut enforcer = self.inner.try_borrow_mut().map_err(|_| {
+            JsError::new("InstructionHierarchyEnforcer is already borrowed (reentrant call?)")
+        })?;
         let result = enforcer
             .enforce_sync(messages)
             .map_err(|e| JsError::new(&format!("Enforcement failed: {e:?}")))?;
@@ -230,27 +151,12 @@ impl WasmInstructionHierarchyEnforcer {
     }
 }
 
-// ============================================================================
-// Canonical JSON (RFC 8785)
-// ============================================================================
-
-/// Canonicalize a JSON string according to RFC 8785 (JCS).
-///
-/// # Arguments
-/// * `json_str` - A valid JSON string
-///
-/// # Returns
-/// Canonical JSON string with sorted keys, no extra whitespace.
 #[wasm_bindgen]
 pub fn canonicalize_json(json_str: &str) -> Result<String, JsError> {
     let value: serde_json::Value = serde_json::from_str(json_str)
         .map_err(|e| JsError::new(&format!("Invalid JSON: {e}")))?;
     hush_core::canonical::canonicalize(&value).map_err(|e| JsError::new(&e.to_string()))
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -295,7 +201,6 @@ mod tests {
             .unwrap();
         let v: serde_json::Value = serde_json::from_str(&result_json).unwrap();
         assert!(v["wasRedacted"].as_bool().unwrap());
-        assert!(v.get("findingsCount").is_none()); // findingsCount is inside stats
         assert!(v["stats"]["findingsCount"].as_u64().unwrap() > 0);
     }
 
@@ -327,7 +232,6 @@ mod tests {
 
     #[test]
     fn canonicalize_json_rejects_invalid() {
-        // JsError can't be constructed on non-wasm targets, so test the underlying parse.
         let result: Result<serde_json::Value, _> = serde_json::from_str("not json");
         assert!(result.is_err());
     }

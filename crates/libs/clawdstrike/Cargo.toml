@@ -39,6 +39,9 @@ uuid = { workspace = true, features = ["v4"], optional = true }
 reqwest = { workspace = true, optional = true }
 wasmtime = { version = "41.0.3", optional = true, default-features = false, features = ["runtime", "cranelift", "std"] }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 proptest = "1.10"

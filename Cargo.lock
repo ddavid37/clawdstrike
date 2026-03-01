@@ -1643,6 +1643,7 @@ dependencies = [
  "hush-core",
  "hush-proxy",
  "hush-spine",
+ "js-sys",
  "proptest",
  "regex",
  "reqwest 0.13.2",

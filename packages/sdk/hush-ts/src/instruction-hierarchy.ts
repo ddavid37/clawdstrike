@@ -5,6 +5,7 @@
  */
 
 import { getWasmModule } from "./crypto/backend.js";
+import { toSnakeCaseKeys } from "./case-convert.js";
 
 export enum InstructionLevel {
   Platform = 0,
@@ -92,22 +93,6 @@ export interface HierarchyEnforcerConfig {
   };
 }
 
-function camelToSnake(s: string): string {
-  return s.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`);
-}
-
-function toSnakeCaseKeys(obj: unknown): unknown {
-  if (Array.isArray(obj)) return obj.map(toSnakeCaseKeys);
-  if (obj !== null && typeof obj === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-      out[camelToSnake(k)] = toSnakeCaseKeys(v);
-    }
-    return out;
-  }
-  return obj;
-}
-
 /** Map numeric InstructionLevel to the string variant expected by Rust serde. */
 const LEVEL_NAMES: Record<number, string> = {
   [InstructionLevel.Platform]: "Platform",
@@ -121,7 +106,7 @@ const LEVEL_NAMES: Record<number, string> = {
 function prepareMessages(messages: HierarchyMessage[]): unknown[] {
   return messages.map((m) => ({
     id: m.id,
-    level: typeof m.level === "number" ? (LEVEL_NAMES[m.level] ?? "User") : m.level,
+    level: typeof m.level === "number" ? (LEVEL_NAMES[m.level] ?? "External") : m.level,
     role: m.role,
     content: m.content,
     ...(m.source ? { source: m.source } : {}),

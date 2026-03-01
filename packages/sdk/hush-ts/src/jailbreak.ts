@@ -1,8 +1,5 @@
 import { getWasmModule } from "./crypto/backend.js";
-
-// ---------------------------------------------------------------------------
-// Type exports (kept for index.ts re-exports; shapes match WASM camelCase JSON)
-// ---------------------------------------------------------------------------
+import { toSnakeCaseKeys } from "./case-convert.js";
 
 export type JailbreakSeverity = "safe" | "suspicious" | "likely" | "confirmed";
 
@@ -77,10 +74,8 @@ export interface JailbreakDetectorConfig {
   maxInputBytes?: number;
   sessionAggregation?: boolean;
   sessionMaxEntries?: number;
-  sessionTtlMs?: number;
-  sessionHalfLifeMs?: number;
-  /** @deprecated JS session stores are not supported with WASM backend. Sessions are managed internally. */
-  sessionStore?: unknown;
+  sessionTtlSeconds?: number;
+  sessionHalfLifeSeconds?: number;
 }
 
 export interface JailbreakLinearModelConfig {
@@ -94,36 +89,9 @@ export interface JailbreakLinearModelConfig {
   wSymbolRun?: number;
 }
 
-// ---------------------------------------------------------------------------
-// Key-casing helpers (camelCase TS config → snake_case Rust config)
-// ---------------------------------------------------------------------------
-
-function camelToSnake(s: string): string {
-  return s.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`);
-}
-
-function toSnakeCaseKeys(obj: unknown): unknown {
-  if (Array.isArray(obj)) return obj.map(toSnakeCaseKeys);
-  if (obj !== null && typeof obj === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-      out[camelToSnake(k)] = toSnakeCaseKeys(v);
-    }
-    return out;
-  }
-  return obj;
-}
-
-// ---------------------------------------------------------------------------
-// Thin WASM wrapper
-// ---------------------------------------------------------------------------
-
 /**
- * Jailbreak detector backed by the Rust implementation compiled to WASM.
- *
- * Requires `initWasm()` to have been called before construction.
- * All detection logic (heuristic, statistical, ML linear-model, session
- * aggregation, canonicalization) is performed inside the WASM module.
+ * Jailbreak detector backed by Rust compiled to WASM.
+ * Requires `initWasm()` before construction.
  */
 export class JailbreakDetector {
   // biome-ignore lint/suspicious/noExplicitAny: WasmJailbreakDetector is untyped
@@ -140,7 +108,7 @@ export class JailbreakDetector {
     const RUST_FIELDS = new Set([
       "layers", "linearModel", "blockThreshold", "warnThreshold",
       "maxInputBytes", "sessionAggregation", "sessionMaxEntries",
-      "sessionTtlMs", "sessionHalfLifeMs",
+      "sessionTtlSeconds", "sessionHalfLifeSeconds",
     ]);
     const filtered: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(config ?? {})) {
