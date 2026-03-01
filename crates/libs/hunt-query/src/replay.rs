@@ -34,8 +34,9 @@ fn truncate_to_newest(events: &mut Vec<TimelineEvent>, limit: usize) {
         return;
     }
     if events.len() > limit {
+        events.sort_by_key(|e| e.timestamp);
         let keep_from = events.len() - limit;
-        *events = events.split_off(keep_from);
+        events.drain(0..keep_from);
     }
 }
 
@@ -91,6 +92,10 @@ pub async fn replay_stream_with_timeout(
     verify: bool,
     idle_timeout: Duration,
 ) -> Result<Vec<TimelineEvent>> {
+    if query.limit == 0 {
+        return Ok(Vec::new());
+    }
+
     let stream_name = source.stream_name();
 
     // Get stream — if missing, warn and return empty
@@ -174,10 +179,15 @@ pub async fn replay_stream_with_timeout(
 
             if query.matches(&event) {
                 events.push(event);
+                let trim_threshold = query.limit.saturating_mul(2);
+                if trim_threshold > 0 && events.len() > trim_threshold {
+                    truncate_to_newest(&mut events, query.limit);
+                }
             }
         }
     }
 
+    truncate_to_newest(&mut events, query.limit);
     Ok(events)
 }
 
@@ -204,7 +214,13 @@ pub async fn replay_all(
 
     for source in &query.effective_sources() {
         match replay_stream(&js, source, query, verify).await {
-            Ok(events) => all_events.extend(events),
+            Ok(events) => {
+                all_events.extend(events);
+                let trim_threshold = query.limit.saturating_mul(2);
+                if trim_threshold > 0 && all_events.len() > trim_threshold {
+                    truncate_to_newest(&mut all_events, query.limit);
+                }
+            }
             Err(e) => {
                 tracing::warn!("failed to replay {source} stream: {e}");
             }
@@ -335,6 +351,59 @@ mod tests {
                 verdict: timeline::NormalizedVerdict::Allow,
                 severity: None,
                 summary: "newest".to_string(),
+                process: None,
+                namespace: None,
+                pod: None,
+                action_type: None,
+                signature_valid: None,
+                raw: None,
+            },
+        ];
+
+        truncate_to_newest(&mut events, 2);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].summary, "middle");
+        assert_eq!(events[1].summary, "newest");
+    }
+
+    #[test]
+    fn truncate_to_newest_keeps_most_recent_events_when_unsorted() {
+        let mut events = vec![
+            TimelineEvent {
+                timestamp: Utc.with_ymd_and_hms(2026, 2, 1, 12, 0, 0).unwrap(),
+                source: EventSource::Receipt,
+                kind: timeline::TimelineEventKind::GuardDecision,
+                verdict: timeline::NormalizedVerdict::Allow,
+                severity: None,
+                summary: "newest".to_string(),
+                process: None,
+                namespace: None,
+                pod: None,
+                action_type: None,
+                signature_valid: None,
+                raw: None,
+            },
+            TimelineEvent {
+                timestamp: Utc.with_ymd_and_hms(2026, 2, 1, 10, 0, 0).unwrap(),
+                source: EventSource::Receipt,
+                kind: timeline::TimelineEventKind::GuardDecision,
+                verdict: timeline::NormalizedVerdict::Allow,
+                severity: None,
+                summary: "oldest".to_string(),
+                process: None,
+                namespace: None,
+                pod: None,
+                action_type: None,
+                signature_valid: None,
+                raw: None,
+            },
+            TimelineEvent {
+                timestamp: Utc.with_ymd_and_hms(2026, 2, 1, 11, 0, 0).unwrap(),
+                source: EventSource::Receipt,
+                kind: timeline::TimelineEventKind::GuardDecision,
+                verdict: timeline::NormalizedVerdict::Allow,
+                severity: None,
+                summary: "middle".to_string(),
                 process: None,
                 namespace: None,
                 pod: None,
