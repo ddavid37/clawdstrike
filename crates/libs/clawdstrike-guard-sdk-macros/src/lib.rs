@@ -14,8 +14,7 @@ use syn::{parse_macro_input, DeriveInput};
 /// - `clawdstrike_guard_init` — returns ABI version 1
 /// - `clawdstrike_guard_handles` — reads action type from memory, delegates to `Guard::handles`
 /// - `clawdstrike_guard_check` — reads input envelope from memory, delegates to `Guard::check`,
-///   serializes output via `set_output` hostcall
-/// - Host import declarations for `set_output` and `request_capability`
+///   serializes output via `host::set_output`
 /// - A global static instance of the guard (via `Default`)
 ///
 /// # Requirements
@@ -47,25 +46,7 @@ pub fn clawdstrike_guard(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #input
 
-        // Fixed memory locations matching the host ABI.
-        const _CLAWDSTRIKE_ACTION_PTR: usize = 1024;
-        const _CLAWDSTRIKE_INPUT_PTR: usize = 8192;
         const _CLAWDSTRIKE_ABI_VERSION: i32 = 1;
-
-        #[cfg(target_arch = "wasm32")]
-        extern "C" {
-            #[link_name = "set_output"]
-            fn __clawdstrike_host_set_output(ptr: i32, len: i32) -> i32;
-            #[link_name = "request_capability"]
-            fn __clawdstrike_host_request_capability(cap_kind: i32) -> i32;
-        }
-
-        // Provide no-op stubs for native builds so the crate compiles on the
-        // host for unit testing.
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe fn __clawdstrike_host_set_output(_ptr: i32, _len: i32) -> i32 { 0 }
-        #[cfg(not(target_arch = "wasm32"))]
-        unsafe fn __clawdstrike_host_request_capability(_cap_kind: i32) -> i32 { 0 }
 
         /// ABI init — returns the guard ABI version.
         #[unsafe(no_mangle)]
@@ -120,36 +101,26 @@ pub fn clawdstrike_guard(_attr: TokenStream, item: TokenStream) -> TokenStream {
             let input: clawdstrike_guard_sdk::GuardInput = match serde_json::from_slice(slice) {
                 Ok(v) => v,
                 Err(_) => {
-                    // Write an error output and return fault status.
+                    // Write an explicit deny output so the host can surface the
+                    // actual parse error instead of a generic sandbox fault.
                     let err_output = clawdstrike_guard_sdk::GuardOutput::deny(
                         clawdstrike_guard_sdk::Severity::Error,
                         "Failed to deserialize guard input envelope",
                     );
-                    let _ = __clawdstrike_write_output(&err_output);
-                    return 1;
+                    return if clawdstrike_guard_sdk::host::set_output(&err_output).is_ok() {
+                        0
+                    } else {
+                        1
+                    };
                 }
             };
 
             let output = <#struct_name as clawdstrike_guard_sdk::Guard>::check(&guard, input);
 
-            match __clawdstrike_write_output(&output) {
+            match clawdstrike_guard_sdk::host::set_output(&output) {
                 Ok(()) => 0,
                 Err(_) => 1,
             }
-        }
-
-        fn __clawdstrike_write_output(
-            output: &clawdstrike_guard_sdk::GuardOutput,
-        ) -> Result<(), ()> {
-            let json = match serde_json::to_vec(output) {
-                Ok(v) => v,
-                Err(_) => return Err(()),
-            };
-            let ptr = json.as_ptr() as i32;
-            let len = json.len() as i32;
-            // Safety: we are passing a valid pointer and length to the host.
-            let rc = unsafe { __clawdstrike_host_set_output(ptr, len) };
-            if rc == 0 { Ok(()) } else { Err(()) }
         }
     };
 

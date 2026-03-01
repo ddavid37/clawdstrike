@@ -431,6 +431,10 @@ sandbox = "wasm"
         let err = registry
             .register_from_package(&pkg_manifest, tmp.path())
             .expect_err("should fail without WASM file");
-        assert!(err.to_string().contains("failed to read WASM entrypoint"));
+        assert!(
+            err.to_string().contains("WASM entrypoint"),
+            "unexpected error: {}",
+            err
+        );
     }
 }

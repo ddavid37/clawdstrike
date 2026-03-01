@@ -8,6 +8,7 @@ use crate::error::{Error, Result};
 use crate::plugins::{
     PluginCapabilities, PluginClawdstrikeCompatibility, PluginResourceLimits, PluginTrust,
 };
+use crate::semver_utils::is_strict_semver;
 
 /// Package type discriminator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,18 +130,6 @@ fn is_valid_pkg_name(name: &str) -> bool {
     } else {
         is_valid_unscoped_name(name)
     }
-}
-
-/// Strict semver check: exactly `major.minor.patch` with numeric parts.
-fn is_strict_semver(value: &str) -> bool {
-    let mut parts = value.split('.');
-    let ok = (|| {
-        parts.next()?.parse::<u32>().ok()?;
-        parts.next()?.parse::<u32>().ok()?;
-        parts.next()?.parse::<u32>().ok()?;
-        Some(())
-    })();
-    ok.is_some() && parts.next().is_none()
 }
 
 impl PkgManifest {

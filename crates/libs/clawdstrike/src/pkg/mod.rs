@@ -17,6 +17,24 @@ pub mod test_runner;
 pub mod trust;
 pub mod version;
 
+/// Normalize package names for filesystem/cache keys.
+///
+/// `@scope/name` becomes `scope--name`; unscoped names pass through.
+pub(crate) fn normalize_package_name(name: &str) -> String {
+    if let Some(rest) = name.strip_prefix('@') {
+        rest.replace('/', "--")
+    } else {
+        name.to_string()
+    }
+}
+
+/// Percent-encode a package name for use in a single URL path segment.
+pub(crate) fn encode_url_path_segment(name: &str) -> String {
+    name.replace('%', "%25")
+        .replace('@', "%40")
+        .replace('/', "%2F")
+}
+
 pub use archive::{content_hash, pack, unpack};
 pub use index::{
     IndexVersion, MockRegistryIndex, PackageIndexEntry, RegistryIndex, DEFAULT_REGISTRY_URL,

@@ -3,7 +3,7 @@
 use axum::{
     body::Body,
     extract::State,
-    http::{HeaderMap, Request, StatusCode},
+    http::{HeaderMap, Method, Request, StatusCode},
     middleware::Next,
     response::Response,
 };
@@ -43,6 +43,10 @@ pub fn is_oidc_auth(req: &Request<Body>) -> bool {
         .and_then(|v| v.to_str().ok())
         .map(|v| v.eq_ignore_ascii_case("oidc"))
         .unwrap_or(false)
+}
+
+fn is_oidc_publish_request(req: &Request<Body>) -> bool {
+    is_oidc_auth(req) && req.method() == Method::POST && req.uri().path() == "/api/v1/packages"
 }
 
 /// Build canonical bytes for caller-auth signatures.
@@ -113,8 +117,9 @@ pub async fn require_publish_auth(
     }
 
     // OIDC requests carry a CI/CD identity token instead of an API key.
-    // The token will be validated in the publish handler itself.
-    if is_oidc_auth(&req) {
+    // This bypass is limited to package publish; all other authenticated routes
+    // must still use the configured API key.
+    if is_oidc_publish_request(&req) {
         // Still require a bearer token to be present.
         let _token = extract_bearer_token(&req).ok_or(StatusCode::UNAUTHORIZED)?;
         return Ok(next.run(req).await);
@@ -404,5 +409,38 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         assert!(!is_oidc_auth(&req));
+    }
+
+    #[test]
+    fn oidc_bypass_allowed_for_publish_route_only() {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/packages")
+            .header("X-Clawdstrike-Auth-Type", "oidc")
+            .body(Body::empty())
+            .unwrap();
+        assert!(is_oidc_publish_request(&req));
+    }
+
+    #[test]
+    fn oidc_bypass_rejected_for_non_publish_routes() {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/orgs")
+            .header("X-Clawdstrike-Auth-Type", "oidc")
+            .body(Body::empty())
+            .unwrap();
+        assert!(!is_oidc_publish_request(&req));
+    }
+
+    #[test]
+    fn oidc_bypass_rejected_for_non_post_publish() {
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/v1/packages")
+            .header("X-Clawdstrike-Auth-Type", "oidc")
+            .body(Body::empty())
+            .unwrap();
+        assert!(!is_oidc_publish_request(&req));
     }
 }

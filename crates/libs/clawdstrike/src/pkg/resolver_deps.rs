@@ -11,6 +11,7 @@ use pubgrub::{
     PubGrubError, Ranges, Reporter,
 };
 
+use super::encode_url_path_segment;
 use super::index::{IndexVersion, PackageIndexEntry};
 use super::lockfile::{LockedDependency, LockedPackage, Lockfile};
 use super::manifest::PkgType;
@@ -364,9 +365,15 @@ impl<'a> DependencyProvider for PubGrubProvider<'a> {
 ///
 /// We use the semver crate's comparators to build precise ranges.
 fn version_req_to_range(req: &VersionReq) -> std::result::Result<VS, ResolverError> {
+    // Defensively preserve the semantics of bare `*` even if upstream parser
+    // behavior changes in future semver releases.
+    if req.to_string() == "*" {
+        return Ok(Ranges::full());
+    }
+
     let semver_req = req.inner();
 
-    // If there are no comparators, it matches everything (like `*`).
+    // If there are no comparators, it matches everything.
     if semver_req.comparators.is_empty() {
         return Ok(Ranges::full());
     }
@@ -492,7 +499,7 @@ fn comparator_to_range(comp: &semver::Comparator) -> std::result::Result<VS, Res
             Ok(Ranges::between(lo, hi))
         }
         semver::Op::Wildcard => {
-            // X.Y.* or X.* or *
+            // X.Y.* or X.* (bare `*` handled above).
             if let Some(min_val) = minor {
                 // X.Y.*: >=X.Y.0, <X.(Y+1).0
                 let lo = semver::Version::new(major, min_val, 0);
@@ -515,15 +522,6 @@ fn comparator_to_range(comp: &semver::Comparator) -> std::result::Result<VS, Res
 /// Build a `semver::Version` from major/optional-minor/optional-patch.
 fn make_version(major: u64, minor: Option<u64>, patch: Option<u64>) -> semver::Version {
     semver::Version::new(major, minor.unwrap_or(0), patch.unwrap_or(0))
-}
-
-/// Percent-encode characters in a package name that are not safe in URL path
-/// segments (`@` and `/`). This ensures scoped names like `@acme/firewall`
-/// produce a single path segment instead of multiple segments.
-fn encode_url_path_segment(name: &str) -> String {
-    name.replace('%', "%25")
-        .replace('@', "%40")
-        .replace('/', "%2F")
 }
 
 // ---------------------------------------------------------------------------
@@ -916,6 +914,24 @@ mod tests {
         let range = version_req_to_range(&req).unwrap();
         assert!(range.contains(&semver::Version::new(0, 0, 1)));
         assert!(range.contains(&semver::Version::new(99, 0, 0)));
+    }
+
+    #[test]
+    fn version_req_to_range_wildcard_major_only() {
+        let req = VersionReq::parse("1.*").unwrap();
+        let range = version_req_to_range(&req).unwrap();
+        assert!(range.contains(&semver::Version::new(1, 0, 0)));
+        assert!(range.contains(&semver::Version::new(1, 99, 99)));
+        assert!(!range.contains(&semver::Version::new(2, 0, 0)));
+    }
+
+    #[test]
+    fn version_req_to_range_wildcard_zero_major() {
+        let req = VersionReq::parse("0.*").unwrap();
+        let range = version_req_to_range(&req).unwrap();
+        assert!(range.contains(&semver::Version::new(0, 0, 0)));
+        assert!(range.contains(&semver::Version::new(0, 50, 0)));
+        assert!(!range.contains(&semver::Version::new(1, 0, 0)));
     }
 
     #[test]

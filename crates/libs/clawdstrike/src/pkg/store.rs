@@ -10,6 +10,7 @@ use crate::error::{Error, Result};
 
 use super::archive;
 use super::manifest::parse_pkg_manifest_toml;
+use super::normalize_package_name;
 
 /// An installed package record.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,16 +35,6 @@ pub struct StoreMetadata {
 /// Local package store rooted at `~/.clawdstrike/packages/` by default.
 pub struct PackageStore {
     root: PathBuf,
-}
-
-/// Normalize a package name for the filesystem.
-/// `@scope/name` becomes `scope--name`; unscoped names pass through.
-fn normalize_name(name: &str) -> String {
-    if let Some(rest) = name.strip_prefix('@') {
-        rest.replace('/', "--")
-    } else {
-        name.to_string()
-    }
 }
 
 /// Reverse the directory name back to a package name (**legacy fallback**).
@@ -78,7 +69,7 @@ impl PackageStore {
 
     /// Return the directory path for a given package name and version.
     pub fn package_dir(&self, name: &str, version: &str) -> PathBuf {
-        self.root.join(normalize_name(name)).join(version)
+        self.root.join(normalize_package_name(name)).join(version)
     }
 
     /// Install a package from a `.cpkg` archive file.
@@ -120,7 +111,7 @@ impl PackageStore {
 
         let name = &manifest.package.name;
         let version = &manifest.package.version;
-        let dir_name = normalize_name(name);
+        let dir_name = normalize_package_name(name);
         let target = self.root.join(&dir_name).join(version);
 
         if let Some(parent) = target.parent() {
@@ -175,7 +166,7 @@ impl PackageStore {
 
     /// Look up an installed package by name and version.
     pub fn get(&self, name: &str, version: &str) -> Result<Option<InstalledPackage>> {
-        let dir_name = normalize_name(name);
+        let dir_name = normalize_package_name(name);
         let pkg_dir = self.root.join(&dir_name).join(version);
         if !pkg_dir.exists() {
             return Ok(None);
@@ -262,7 +253,7 @@ impl PackageStore {
 
     /// Remove an installed package.
     pub fn remove(&self, name: &str, version: &str) -> Result<()> {
-        let dir_name = normalize_name(name);
+        let dir_name = normalize_package_name(name);
         let pkg_dir = self.root.join(&dir_name).join(version);
         if !pkg_dir.exists() {
             return Err(Error::PkgError(format!(

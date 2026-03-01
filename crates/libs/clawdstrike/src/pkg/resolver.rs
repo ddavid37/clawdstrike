@@ -474,4 +474,26 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("no policy YAML found"));
     }
+
+    #[test]
+    fn rejects_subpath_traversal_outside_package() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store_root = tmp.path().join("store");
+        let store = PackageStore::with_root(store_root.clone()).unwrap();
+        let pkg_dir = fake_install(&store_root, "safe-pack", "1.0.0");
+        std::fs::create_dir_all(pkg_dir.join("policies")).unwrap();
+        std::fs::write(pkg_dir.join("policies/main.yaml"), "version: \"1.2.0\"\n").unwrap();
+
+        let outside = tmp.path().join("outside.yaml");
+        std::fs::write(&outside, "version: \"1.2.0\"\nname: outside\n").unwrap();
+
+        let resolver = PackagePolicyResolver::new(store);
+        let err = resolver
+            .resolve(
+                "pkg:safe-pack@1.0.0/../../../outside.yaml",
+                &PolicyLocation::None,
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("path traversal"));
+    }
 }

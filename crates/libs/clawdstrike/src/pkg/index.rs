@@ -6,10 +6,12 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use super::manifest::PkgType;
+use super::{encode_url_path_segment, normalize_package_name};
 use crate::error::{Error, Result};
 
 /// Default registry base URL.
@@ -57,17 +59,6 @@ struct CacheMetadata {
     etag: Option<String>,
 }
 
-/// Normalize a package name for cache file paths.
-///
-/// `@scope/name` -> `scope--name`, otherwise pass through.
-fn normalize_name(name: &str) -> String {
-    if let Some(rest) = name.strip_prefix('@') {
-        rest.replace('/', "--")
-    } else {
-        name.to_string()
-    }
-}
-
 impl RegistryIndex {
     /// Create a new index client with default cache directory
     /// (`~/.clawdstrike/registry-cache/index/`).
@@ -102,7 +93,7 @@ impl RegistryIndex {
     ///
     /// HTTP ETag headers are used for cache revalidation.
     pub fn fetch_package_versions(&self, name: &str) -> Result<PackageIndexEntry> {
-        let normalized = normalize_name(name);
+        let normalized = normalize_package_name(name);
         let cache_path = self.cache_dir.join(format!("{normalized}.json"));
         let meta_path = self.cache_dir.join(format!("{normalized}.meta.json"));
 
@@ -112,21 +103,50 @@ impl RegistryIndex {
             .and_then(|s| serde_json::from_str::<CacheMetadata>(&s).ok())
             .and_then(|m| m.etag);
 
-        let url = format!("{}/api/v1/index/{}", self.base_url, normalized);
+        let url = format!(
+            "{}/api/v1/index/{}",
+            self.base_url,
+            encode_url_path_segment(name)
+        );
+        let package_name = name.to_string();
 
-        // Build the request.
-        let client = build_blocking_client()?;
-        let mut request = client.get(&url);
-        if let Some(etag) = &cached_etag {
-            request = request.header("If-None-Match", etag.as_str());
-        }
+        let (status, etag, body) = run_blocking_http(move || {
+            let client = build_blocking_client()?;
+            let mut request = client.get(&url);
+            if let Some(etag) = cached_etag.as_deref() {
+                request = request.header("If-None-Match", etag);
+            }
 
-        let response = request
-            .send()
-            .map_err(|e| Error::PkgError(format!("failed to fetch index for '{}': {}", name, e)))?;
+            let response = request.send().map_err(|e| {
+                Error::PkgError(format!(
+                    "failed to fetch index for '{}': {}",
+                    package_name, e
+                ))
+            })?;
+
+            let status = response.status();
+            let etag = response
+                .headers()
+                .get("etag")
+                .and_then(|v: &reqwest::header::HeaderValue| v.to_str().ok())
+                .map(String::from);
+
+            let body = if status == reqwest::StatusCode::NOT_MODIFIED {
+                None
+            } else {
+                Some(response.text().map_err(|e| {
+                    Error::PkgError(format!(
+                        "failed to read index body for '{}': {}",
+                        package_name, e
+                    ))
+                })?)
+            };
+
+            Ok((status, etag, body))
+        })?;
 
         // 304 Not Modified — use cached version.
-        if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+        if status == reqwest::StatusCode::NOT_MODIFIED {
             let cached = fs::read_to_string(&cache_path).map_err(|e| {
                 Error::PkgError(format!(
                     "cache hit (304) but failed to read cached index for '{}': {}",
@@ -137,30 +157,25 @@ impl RegistryIndex {
             return Ok(entry);
         }
 
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
+        if status == reqwest::StatusCode::NOT_FOUND {
             return Err(Error::PkgError(format!(
                 "package '{}' not found in registry",
                 name
             )));
         }
 
-        if !response.status().is_success() {
+        if !status.is_success() {
             return Err(Error::PkgError(format!(
                 "registry returned HTTP {} for package '{}'",
-                response.status(),
-                name
+                status, name
             )));
         }
 
-        // Extract ETag from response headers before consuming the body.
-        let etag = response
-            .headers()
-            .get("etag")
-            .and_then(|v: &reqwest::header::HeaderValue| v.to_str().ok())
-            .map(String::from);
-
-        let body = response.text().map_err(|e| {
-            Error::PkgError(format!("failed to read index body for '{}': {}", name, e))
+        let body = body.ok_or_else(|| {
+            Error::PkgError(format!(
+                "registry returned success without body for package '{}'",
+                name
+            ))
         })?;
 
         // Validate JSON before caching.
@@ -179,7 +194,7 @@ impl RegistryIndex {
 
     /// Invalidate the cached index entry for a package.
     pub fn invalidate_cache(&self, name: &str) -> Result<()> {
-        let normalized = normalize_name(name);
+        let normalized = normalize_package_name(name);
         let cache_path = self.cache_dir.join(format!("{normalized}.json"));
         let meta_path = self.cache_dir.join(format!("{normalized}.meta.json"));
         let _ = fs::remove_file(&cache_path);
@@ -190,22 +205,24 @@ impl RegistryIndex {
 
 /// Build a blocking HTTP client suitable for registry communication.
 fn build_blocking_client() -> Result<reqwest::blocking::Client> {
-    let build = || {
-        reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .user_agent(format!("clawdstrike-pkg/{}", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|e| Error::PkgError(format!("failed to build HTTP client: {}", e)))
-    };
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .user_agent(format!("clawdstrike-pkg/{}", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| Error::PkgError(format!("failed to build HTTP client: {}", e)))
+}
 
-    // If we are inside a Tokio runtime, build in a separate thread to avoid
-    // panic from nested blocking inside async context.
+fn run_blocking_http<T, F>(f: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T> + Send + 'static,
+{
     if tokio::runtime::Handle::try_current().is_ok() {
-        std::thread::spawn(build)
+        std::thread::spawn(f)
             .join()
-            .unwrap_or_else(|_| Err(Error::PkgError("failed to build HTTP client".to_string())))
+            .map_err(|_| Error::PkgError("blocking HTTP worker panicked".to_string()))?
     } else {
-        build()
+        f()
     }
 }
 
@@ -345,8 +362,8 @@ mod tests {
 
     #[test]
     fn normalize_scoped_name() {
-        assert_eq!(normalize_name("@acme/firewall"), "acme--firewall");
-        assert_eq!(normalize_name("simple-name"), "simple-name");
+        assert_eq!(normalize_package_name("@acme/firewall"), "acme--firewall");
+        assert_eq!(normalize_package_name("simple-name"), "simple-name");
     }
 
     #[test]

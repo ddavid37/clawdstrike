@@ -88,11 +88,10 @@ pub async fn create_org(
     if !req
         .name
         .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
     {
         return Err(RegistryError::BadRequest(
-            "organization name must contain only alphanumeric characters, hyphens, or underscores"
-                .into(),
+            "organization name must contain only lowercase letters, digits, or hyphens".into(),
         ));
     }
 
@@ -225,6 +224,13 @@ pub async fn invite_member(
                 name
             )));
         }
+    }
+
+    // Maintainers may invite members/maintainers but cannot mint new owners.
+    if caller_role.as_deref() == Some("maintainer") && req.role == "owner" {
+        return Err(RegistryError::Unauthorized(
+            "maintainers cannot promote members to owner".into(),
+        ));
     }
 
     db.add_org_member(org.id, &req.publisher_key, &req.role, Some(&caller_key))?;

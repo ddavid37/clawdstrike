@@ -63,6 +63,7 @@ pub mod plugins;
 pub mod policy;
 pub mod policy_bundle;
 pub mod posture;
+mod semver_utils;
 pub mod spine_bridge;
 pub mod text_utils;
 pub mod watermarking;

@@ -581,7 +581,30 @@ mod tests {
         .unwrap_err();
         assert!(err
             .to_string()
-            .contains("must contain only alphanumeric characters"));
+            .contains("organization name must contain only lowercase letters, digits, or hyphens"));
+    }
+
+    #[tokio::test]
+    async fn create_org_rejects_scope_incompatible_name() {
+        let (state, _tmp) = test_state();
+        let owner = Keypair::from_seed(&[52u8; 32]);
+        let owner_key = owner.public_key().to_hex();
+        let payload = format!("org:create:Acme_Team:{owner_key}:Acme Team");
+
+        let err = org::create_org(
+            State(state),
+            signed_headers(&owner, &payload),
+            Json(org::CreateOrgRequest {
+                name: "Acme_Team".to_string(),
+                display_name: Some("Acme Team".to_string()),
+                publisher_key: owner_key,
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("organization name must contain only lowercase letters, digits, or hyphens"));
     }
 
     #[tokio::test]
@@ -689,6 +712,46 @@ mod tests {
         assert!(err
             .to_string()
             .contains("maintainers cannot remove organization owners"));
+    }
+
+    #[tokio::test]
+    async fn maintainer_cannot_invite_owner() {
+        let (state, _tmp) = test_state();
+        let owner = Keypair::from_seed(&[53u8; 32]);
+        let maintainer = Keypair::from_seed(&[54u8; 32]);
+        let promoted = Keypair::from_seed(&[55u8; 32]);
+        create_org_owned_by(state.clone(), "acme", &owner).await;
+
+        let maintainer_key = maintainer.public_key().to_hex();
+        let invite_maintainer_payload = format!("org:invite:acme:{maintainer_key}:maintainer");
+        let _ = org::invite_member(
+            State(state.clone()),
+            Path("acme".to_string()),
+            signed_headers(&owner, &invite_maintainer_payload),
+            Json(org::InviteMemberRequest {
+                publisher_key: maintainer_key,
+                role: "maintainer".to_string(),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let promoted_key = promoted.public_key().to_hex();
+        let promote_payload = format!("org:invite:acme:{promoted_key}:owner");
+        let err = org::invite_member(
+            State(state),
+            Path("acme".to_string()),
+            signed_headers(&maintainer, &promote_payload),
+            Json(org::InviteMemberRequest {
+                publisher_key: promoted_key,
+                role: "owner".to_string(),
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("maintainers cannot promote members to owner"));
     }
 
     #[tokio::test]
