@@ -303,7 +303,12 @@ function pickComparableDecision(d) {
 
 // Guards that require WASM to function — mismatches involving these guards
 // are expected when the WASM backend is unavailable.
-const WASM_DEPENDENT_GUARDS = new Set(['jailbreak_detection', 'output_sanitization', 'instruction_hierarchy']);
+const WASM_DEPENDENT_GUARDS = new Set([
+  'prompt_injection',
+  'jailbreak_detection',
+  'output_sanitization',
+  'instruction_hierarchy',
+]);
 
 function compare(tsById, hushOutput) {
   const results = hushOutput?.results ?? [];
