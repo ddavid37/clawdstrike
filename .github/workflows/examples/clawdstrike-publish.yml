@@ -5,9 +5,8 @@
 #
 # Required secrets:
 #   CLAWDSTRIKE_TOKEN - Registry authentication token (from `clawdstrike pkg login`)
-#
-# Optional environment variables:
-#   CLAWDSTRIKE_REGISTRY_URL - Override the default registry URL
+#   CLAWDSTRIKE_REGISTRY_URL - Your hosted registry base URL
+#                              (placeholder example: https://registry.example.com)
 
 name: Publish to Registry
 
@@ -46,7 +45,18 @@ jobs:
             clawdstrike pkg install "$f" --allow-unverified
           done
 
+      - name: Validate registry URL secret
+        env:
+          CLAWDSTRIKE_REGISTRY_URL: ${{ secrets.CLAWDSTRIKE_REGISTRY_URL }}
+        run: |
+          if [ -z "${CLAWDSTRIKE_REGISTRY_URL}" ]; then
+            echo "::error::Missing repository secret CLAWDSTRIKE_REGISTRY_URL"
+            echo "Set it to your hosted registry URL (for example: https://registry.example.com)"
+            exit 1
+          fi
+
       - name: Publish
         env:
           CLAWDSTRIKE_AUTH_TOKEN: ${{ secrets.CLAWDSTRIKE_TOKEN }}
-        run: clawdstrike pkg publish --registry "${CLAWDSTRIKE_REGISTRY_URL:-https://registry.clawdstrike.com}"
+          CLAWDSTRIKE_REGISTRY_URL: ${{ secrets.CLAWDSTRIKE_REGISTRY_URL }}
+        run: clawdstrike pkg publish --registry "${CLAWDSTRIKE_REGISTRY_URL}"
