@@ -35,25 +35,24 @@ jobs:
       - name: Lint policies
         run: |
           exit_code=0
-          for f in policies/*.yaml rulesets/*.yaml; do
-            [ -f "$f" ] || continue
+          while IFS= read -r -d '' f; do
             echo "::group::Linting $f"
             if ! clawdstrike policy lint "$f" --strict; then
               exit_code=1
             fi
             echo "::endgroup::"
-          done
+          done < <(find policies rulesets -type f -name '*.yaml' -print0 2>/dev/null)
           exit $exit_code
 
       - name: Lint policies (SARIF)
         if: always()
         run: |
           mkdir -p sarif-results
-          for f in policies/*.yaml rulesets/*.yaml; do
-            [ -f "$f" ] || continue
-            basename=$(basename "$f" .yaml)
-            clawdstrike policy lint "$f" --sarif > "sarif-results/${basename}.sarif" || true
-          done
+          while IFS= read -r -d '' f; do
+            safe_name=${f//\//_}
+            safe_name=${safe_name%.yaml}
+            clawdstrike policy lint "$f" --sarif > "sarif-results/${safe_name}.sarif" || true
+          done < <(find policies rulesets -type f -name '*.yaml' -print0 2>/dev/null)
 
       - name: Upload SARIF results
         if: always()

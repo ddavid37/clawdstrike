@@ -21,4 +21,4 @@ jobs:
         run: cargo install hush-cli --locked
 
       - name: Publish with OIDC
-        run: clawdstrike pkg publish --oidc
+        run: clawdstrike pkg publish --oidc --registry "${CLAWDSTRIKE_REGISTRY_URL:-https://registry.clawdstrike.com}"
