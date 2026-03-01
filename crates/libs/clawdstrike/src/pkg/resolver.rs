@@ -238,17 +238,14 @@ mod tests {
     // -----------------------------------------------------------------------
     // Test helper: simulate an installed package in the store's on-disk layout.
     //
-    // The store normalizes scoped names (`@scope/name` -> `scope--name`) and
+    // The store normalizes names with prefixes:
+    // `@scope/name` -> `s--scope--name`, `plain-name` -> `u--plain-name`,
     // expects a `.pkg-meta.json` metadata file in each version directory.
     // -----------------------------------------------------------------------
 
-    /// Normalize a package name for the filesystem (mirrors store::normalize_name).
+    /// Normalize a package name for the filesystem (mirrors PackageStore).
     fn normalize_name(name: &str) -> String {
-        if let Some(rest) = name.strip_prefix('@') {
-            rest.replace('/', "--")
-        } else {
-            name.to_string()
-        }
+        crate::pkg::normalize_package_name(name)
     }
 
     /// Simulate an installed package by creating the expected directory layout
