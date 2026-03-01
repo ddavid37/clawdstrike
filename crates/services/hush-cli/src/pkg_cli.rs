@@ -3362,7 +3362,20 @@ fn cmd_pkg_yank(
         }
     };
 
-    let resp = match client.delete(&url).bearer_auth(&auth_token).send() {
+    let payload = format!("yank:{name}:{version}");
+    let caller = match build_caller_auth_headers(&cfg, &payload, stderr) {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+
+    let resp = match client
+        .delete(&url)
+        .bearer_auth(&auth_token)
+        .header("X-Clawdstrike-Caller-Key", &caller.key_hex)
+        .header("X-Clawdstrike-Caller-Sig", &caller.sig_hex)
+        .header("X-Clawdstrike-Caller-Ts", &caller.ts)
+        .send()
+    {
         Ok(r) => r,
         Err(e) => {
             let _ = writeln!(stderr, "Error: yank request failed: {e}");

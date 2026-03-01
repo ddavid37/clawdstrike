@@ -609,7 +609,7 @@ mod tests {
         .unwrap_err();
         assert!(err
             .to_string()
-            .contains("organization name must be 1-64 characters"));
+            .contains("organization name must match [a-z0-9]"));
     }
 
     #[tokio::test]
@@ -632,7 +632,7 @@ mod tests {
         .unwrap_err();
         assert!(err
             .to_string()
-            .contains("organization name must contain only lowercase letters, digits, or hyphens"));
+            .contains("organization name must match [a-z0-9]"));
     }
 
     #[tokio::test]
@@ -655,7 +655,7 @@ mod tests {
         .unwrap_err();
         assert!(err
             .to_string()
-            .contains("organization name must contain only lowercase letters, digits, or hyphens"));
+            .contains("organization name must match [a-z0-9]"));
     }
 
     #[tokio::test]
