@@ -96,3 +96,18 @@ export type { MitreTechnique } from './mitre.js';
 // Anomaly
 export { Baseline, scoreAnomalies } from './anomaly.js';
 export type { ScoredEvent, BaselineData } from './anomaly.js';
+
+// Streaming
+export { stream, streamAll } from './stream.js';
+export type { StreamOptions, StreamItem } from './stream.js';
+
+// Export
+export {
+  WebhookAdapter,
+  SplunkHECAdapter,
+  ElasticAdapter,
+  toStix,
+  toCSV,
+} from './export.js';
+export type { ExportAdapter } from './export.js';
+export { ExportError } from './errors.js';

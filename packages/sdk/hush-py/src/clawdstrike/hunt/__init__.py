@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from clawdstrike.hunt.errors import (
     CorrelationError,
+    ExportError,
     HuntAlertError,
     HuntError,
     IocError,
@@ -61,6 +62,8 @@ from clawdstrike.hunt.anomaly import (
     ScoredEvent,
     score_anomalies,
 )
+from clawdstrike.hunt.export import to_csv, to_stix
+from clawdstrike.hunt.stream import StreamAlertItem, StreamEventItem
 from clawdstrike.hunt.timeline import merge_timeline, parse_envelope
 from clawdstrike.hunt.types import (
     Alert,
@@ -168,15 +171,52 @@ __all__ = [
     "BaselineData",
     "Baseline",
     "score_anomalies",
-    # watch (lazy import — requires nats-py)
+    # export (eager — no optional deps for to_stix/to_csv)
+    "ExportError",
+    "to_stix",
+    "to_csv",
+    # stream items (eager)
+    "StreamAlertItem",
+    "StreamEventItem",
+    # watch / stream / export adapters (lazy import — requires optional deps)
     "run_watch",
+    "stream",
+    "stream_all",
+    "WebhookAdapter",
+    "SplunkHECAdapter",
+    "ElasticAdapter",
+    "ExportAdapter",
 ]
 
 
 def __getattr__(name: str):  # type: ignore[no-untyped-def]
-    """Lazy import for run_watch to avoid import error when nats-py is absent."""
+    """Lazy imports for modules requiring optional dependencies."""
     if name == "run_watch":
         from clawdstrike.hunt.watch import run_watch
 
         return run_watch
+    if name == "stream":
+        from clawdstrike.hunt.stream import stream
+
+        return stream
+    if name == "stream_all":
+        from clawdstrike.hunt.stream import stream_all
+
+        return stream_all
+    if name == "WebhookAdapter":
+        from clawdstrike.hunt.export import WebhookAdapter
+
+        return WebhookAdapter
+    if name == "SplunkHECAdapter":
+        from clawdstrike.hunt.export import SplunkHECAdapter
+
+        return SplunkHECAdapter
+    if name == "ElasticAdapter":
+        from clawdstrike.hunt.export import ElasticAdapter
+
+        return ElasticAdapter
+    if name == "ExportAdapter":
+        from clawdstrike.hunt.export import ExportAdapter
+
+        return ExportAdapter
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
