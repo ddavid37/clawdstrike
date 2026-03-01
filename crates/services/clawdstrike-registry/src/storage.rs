@@ -58,10 +58,16 @@ impl BlobStorage {
     fn blob_path(&self, hash: &str) -> PathBuf {
         // Use a two-level directory structure (first 2 chars / rest) to avoid
         // too many files in a single directory.
-        let (prefix, _rest) = if hash.len() >= 2 {
-            hash.split_at(2)
+        // Hashes are canonicalized as `0x` + 64 hex chars; fan out by the
+        // first two digest hex chars (skip the `0x` prefix).
+        let digest = hash
+            .strip_prefix("0x")
+            .or_else(|| hash.strip_prefix("0X"))
+            .unwrap_or(hash);
+        let (prefix, _rest) = if digest.len() >= 2 {
+            digest.split_at(2)
         } else {
-            (hash, "")
+            (digest, "")
         };
         self.root.join(prefix).join(hash)
     }
@@ -236,5 +242,20 @@ mod tests {
         assert!(!storage.exists(&hash));
 
         storage.delete(&hash).unwrap();
+    }
+
+    #[test]
+    fn blob_path_fanout_uses_digest_prefix_not_0x() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("blobs");
+        let storage = BlobStorage::new(root.clone()).unwrap();
+
+        let hash = storage.store(b"fanout-check").unwrap();
+        let digest = hash.trim_start_matches("0x");
+        let expected_prefix = &digest[..2];
+        let expected_path = root.join(expected_prefix).join(&hash);
+
+        assert!(expected_path.exists());
+        assert!(!root.join("0x").join(&hash).exists());
     }
 }
