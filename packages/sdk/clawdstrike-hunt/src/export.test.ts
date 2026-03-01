@@ -122,7 +122,10 @@ describe('SplunkHECAdapter', () => {
 
 describe('ElasticAdapter', () => {
   it('sends bulk NDJSON format', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ errors: false, items: [] }),
+    });
 
     const adapter = new ElasticAdapter(
       'https://elastic.example.com:9200',
@@ -141,7 +144,10 @@ describe('ElasticAdapter', () => {
   });
 
   it('sends ApiKey auth header when provided', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ errors: false, items: [] }),
+    });
 
     const adapter = new ElasticAdapter(
       'https://elastic.example.com:9200',
@@ -159,6 +165,29 @@ describe('ElasticAdapter', () => {
       ok: false,
       status: 403,
       statusText: 'Forbidden',
+    });
+
+    const adapter = new ElasticAdapter(
+      'https://elastic.example.com:9200',
+      'hunt-events',
+    );
+    await expect(adapter.export([makeAlert()])).rejects.toThrow(ExportError);
+  });
+
+  it('throws ExportError when bulk response has item errors', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        errors: true,
+        items: [
+          {
+            index: {
+              status: 400,
+              error: { type: 'mapper_parsing_exception', reason: 'failed to parse field' },
+            },
+          },
+        ],
+      }),
     });
 
     const adapter = new ElasticAdapter(

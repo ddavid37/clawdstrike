@@ -1,3 +1,7 @@
+import { createPublicKey, verify } from 'node:crypto';
+
+import { canonicalize, sha256, toHex } from '@clawdstrike/sdk';
+
 import type { TimelineEvent } from './types.js';
 import {
   EventSourceType,
@@ -5,12 +9,20 @@ import {
   TimelineEventKind,
 } from './types.js';
 
+const ED25519_SPKI_DER_PREFIX = Buffer.from(
+  '302a300506032b6570032100',
+  'hex',
+);
+
 /**
  * Parse a spine envelope JSON object into a TimelineEvent.
  * Dispatches on fact.schema to determine the event source.
  * Returns undefined for unrecognized or invalid envelopes.
  */
-export function parseEnvelope(envelope: unknown): TimelineEvent | undefined {
+export function parseEnvelope(
+  envelope: unknown,
+  verifySignature: boolean = false,
+): TimelineEvent | undefined {
   if (typeof envelope !== 'object' || envelope === null) {
     return undefined;
   }
@@ -37,20 +49,84 @@ export function parseEnvelope(envelope: unknown): TimelineEvent | undefined {
     return undefined;
   }
 
+  const signatureValid = verifySignature
+    ? verifyEnvelopeSignature(env)
+    : undefined;
+
   if (schema === 'clawdstrike.sdr.fact.tetragon_event.v1') {
-    return parseTetragon(f, timestamp, envelope);
+    return parseTetragon(f, timestamp, signatureValid, envelope);
   }
   if (schema === 'clawdstrike.sdr.fact.hubble_flow.v1') {
-    return parseHubble(f, timestamp, envelope);
+    return parseHubble(f, timestamp, signatureValid, envelope);
   }
   if (schema.startsWith('clawdstrike.sdr.fact.receipt')) {
-    return parseReceipt(f, timestamp, envelope);
+    return parseReceipt(f, timestamp, signatureValid, envelope);
   }
   if (schema.startsWith('clawdstrike.sdr.fact.scan')) {
-    return parseScan(f, timestamp, envelope);
+    return parseScan(f, timestamp, signatureValid, envelope);
   }
 
   return undefined;
+}
+
+function verifyEnvelopeSignature(envelope: Record<string, unknown>): boolean {
+  const issuer = envelope.issuer;
+  const signature = envelope.signature;
+  const envelopeHash = envelope.envelope_hash;
+  if (
+    typeof issuer !== 'string' ||
+    typeof signature !== 'string' ||
+    typeof envelopeHash !== 'string'
+  ) {
+    return false;
+  }
+
+  const publicKeyHex = parseIssuerPublicKeyHex(issuer);
+  const signatureHex = normalizeHex(signature, 64);
+  if (publicKeyHex === undefined || signatureHex === undefined) {
+    return false;
+  }
+
+  const unsigned: Record<string, unknown> = { ...envelope };
+  delete unsigned.envelope_hash;
+  delete unsigned.signature;
+
+  try {
+    const canonical = canonicalize(unsigned as Parameters<typeof canonicalize>[0]);
+    const message = new TextEncoder().encode(canonical);
+    const computedHash = `0x${toHex(sha256(message))}`;
+    if (computedHash !== envelopeHash) {
+      return false;
+    }
+
+    const key = createPublicKey({
+      key: Buffer.concat([ED25519_SPKI_DER_PREFIX, Buffer.from(publicKeyHex, 'hex')]),
+      format: 'der',
+      type: 'spki',
+    });
+
+    return verify(
+      null,
+      Buffer.from(message),
+      key,
+      Buffer.from(signatureHex, 'hex'),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function parseIssuerPublicKeyHex(issuer: string): string | undefined {
+  const match = /^aegis:ed25519:([0-9a-fA-F]{64})$/.exec(issuer);
+  return match ? match[1].toLowerCase() : undefined;
+}
+
+function normalizeHex(value: string, expectedBytes: number): string | undefined {
+  const hex = value.startsWith('0x') ? value.slice(2) : value;
+  if (hex.length !== expectedBytes * 2 || !/^[0-9a-fA-F]+$/.test(hex)) {
+    return undefined;
+  }
+  return hex.toLowerCase();
 }
 
 function str(val: unknown): string | undefined {
@@ -66,6 +142,7 @@ function obj(val: unknown): Record<string, unknown> | undefined {
 function parseTetragon(
   fact: Record<string, unknown>,
   timestamp: Date,
+  signatureValid: boolean | undefined,
   raw: unknown,
 ): TimelineEvent {
   const eventType = str(fact.event_type) ?? 'unknown';
@@ -105,6 +182,7 @@ function parseTetragon(
     namespace: ns,
     pod: podName,
     actionType: 'process',
+    signatureValid,
     raw,
   };
 }
@@ -112,6 +190,7 @@ function parseTetragon(
 function parseHubble(
   fact: Record<string, unknown>,
   timestamp: Date,
+  signatureValid: boolean | undefined,
   raw: unknown,
 ): TimelineEvent {
   const verdictStr = str(fact.verdict) ?? 'UNKNOWN';
@@ -159,6 +238,7 @@ function parseHubble(
     namespace: ns,
     pod: podName,
     actionType,
+    signatureValid,
     raw,
   };
 }
@@ -166,6 +246,7 @@ function parseHubble(
 function parseReceipt(
   fact: Record<string, unknown>,
   timestamp: Date,
+  signatureValid: boolean | undefined,
   raw: unknown,
 ): TimelineEvent {
   const decision = str(fact.decision) ?? 'unknown';
@@ -214,6 +295,7 @@ function parseReceipt(
     namespace: ns,
     pod: podName,
     actionType: action,
+    signatureValid,
     raw,
   };
 }
@@ -221,6 +303,7 @@ function parseReceipt(
 function parseScan(
   fact: Record<string, unknown>,
   timestamp: Date,
+  signatureValid: boolean | undefined,
   raw: unknown,
 ): TimelineEvent {
   const scanType = str(fact.scan_type) ?? 'unknown';
@@ -258,6 +341,7 @@ function parseScan(
     severity,
     summary,
     actionType: 'scan',
+    signatureValid,
     raw,
   };
 }

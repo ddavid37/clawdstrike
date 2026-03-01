@@ -44,11 +44,12 @@ export function secureTools<TTools extends Record<string, VercelAiToolLike>>(
 
   const secured = {} as TTools;
   for (const [toolName, tool] of Object.entries(tools)) {
+    const boundExecute = tool.execute.bind(tool);
     (secured as Record<string, VercelAiToolLike>)[toolName] = {
       ...(tool as object),
       execute: wrapExecuteWithInterceptor(
         toolName,
-        tool.execute,
+        boundExecute,
         interceptor,
         defaultContext,
         options?.getContext,

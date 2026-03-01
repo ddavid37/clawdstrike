@@ -14,6 +14,80 @@ export interface ExportAdapter {
   export(items: (Alert | TimelineEvent)[]): Promise<void>;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function summarizeElasticBulkFailure(payload: unknown): string | undefined {
+  const body = asRecord(payload);
+  if (!body || body.errors !== true) {
+    return undefined;
+  }
+
+  const items = Array.isArray(body.items) ? body.items : [];
+  let total = 0;
+  let failed = 0;
+  let firstFailure: string | undefined;
+
+  for (const item of items) {
+    const itemRecord = asRecord(item);
+    if (!itemRecord) {
+      continue;
+    }
+
+    for (const [action, result] of Object.entries(itemRecord)) {
+      const actionResult = asRecord(result);
+      total += 1;
+      if (!actionResult) {
+        continue;
+      }
+
+      const status = typeof actionResult.status === 'number'
+        ? actionResult.status
+        : undefined;
+      const itemError = actionResult.error;
+      const hasError = itemError !== undefined || (status !== undefined && status >= 300);
+
+      if (!hasError) {
+        continue;
+      }
+
+      failed += 1;
+      if (firstFailure === undefined) {
+        const errorText = stringifyElasticError(itemError);
+        const statusText = status !== undefined ? `status=${status}` : 'status=unknown';
+        firstFailure = `${action} ${statusText}${errorText ? `: ${errorText}` : ''}`;
+      }
+    }
+  }
+
+  if (failed > 0) {
+    return `${failed}/${total || failed} bulk items failed${firstFailure ? ` (${firstFailure})` : ''}`;
+  }
+
+  return 'bulk response reported errors=true';
+}
+
+function stringifyElasticError(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  const obj = asRecord(value);
+  if (!obj) {
+    return undefined;
+  }
+
+  const type = typeof obj.type === 'string' ? obj.type : undefined;
+  const reason = typeof obj.reason === 'string' ? obj.reason : undefined;
+  if (type && reason) {
+    return `${type}: ${reason}`;
+  }
+  return type ?? reason;
+}
+
 async function withRetry(
   fn: () => Promise<Response>,
   config: RetryConfig | undefined,
@@ -162,6 +236,18 @@ export class ElasticAdapter implements ExportAdapter {
       throw new ExportError(
         `Elasticsearch export failed: ${response.status} ${response.statusText}`,
       );
+    }
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new ExportError('Elasticsearch export failed: invalid _bulk JSON response');
+    }
+
+    const failureSummary = summarizeElasticBulkFailure(payload);
+    if (failureSummary !== undefined) {
+      throw new ExportError(`Elasticsearch export failed: ${failureSummary}`);
     }
   }
 }

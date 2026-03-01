@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { canonicalize, generateKeypair, sha256, signMessage, toHex } from '@clawdstrike/sdk';
 import { queryLocalFiles, hunt } from './local.js';
 import { createHuntQuery } from './query.js';
 
@@ -31,6 +32,37 @@ function makeEnvelope(
         pod_name: 'test-pod',
       },
     },
+  };
+}
+
+async function makeSignedEnvelope(
+  envelope: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const issuedAt = envelope.issued_at;
+  const fact = envelope.fact;
+  if (typeof issuedAt !== 'string' || typeof fact !== 'object' || fact === null) {
+    throw new Error('invalid envelope fixture');
+  }
+
+  const { privateKey, publicKey } = await generateKeypair();
+  const unsigned: Record<string, unknown> = {
+    schema: 'aegis.spine.envelope.v1',
+    issuer: `aegis:ed25519:${toHex(publicKey)}`,
+    seq: 1,
+    prev_envelope_hash: null,
+    issued_at: issuedAt,
+    capability_token: null,
+    fact,
+  };
+
+  const canonical = canonicalize(unsigned as Parameters<typeof canonicalize>[0]);
+  const message = new TextEncoder().encode(canonical);
+  const signature = await signMessage(message, privateKey);
+
+  return {
+    ...unsigned,
+    envelope_hash: `0x${toHex(sha256(message))}`,
+    signature: `0x${toHex(signature)}`,
   };
 }
 
@@ -242,6 +274,43 @@ describe('queryLocalFiles', () => {
     const events = await queryLocalFiles(query, [tempDir]);
     expect(events).toHaveLength(0);
   });
+
+  it('populates signatureValid when verify=true', async () => {
+    const signedEnvelope = await makeSignedEnvelope(
+      makeEnvelope(
+        'clawdstrike.sdr.fact.receipt.v1',
+        '2025-01-15T10:00:00Z',
+        'allow',
+        'verified',
+      ),
+    );
+    await writeFile(join(tempDir, 'signed.json'), JSON.stringify(signedEnvelope));
+
+    const query = createHuntQuery();
+    const events = await queryLocalFiles(query, [tempDir], true);
+    expect(events).toHaveLength(1);
+    expect(events[0].signatureValid).toBe(true);
+  });
+
+  it('marks tampered signed envelopes as invalid when verify=true', async () => {
+    const signedEnvelope = await makeSignedEnvelope(
+      makeEnvelope(
+        'clawdstrike.sdr.fact.receipt.v1',
+        '2025-01-15T10:00:00Z',
+        'allow',
+        'verified',
+      ),
+    );
+
+    const fact = signedEnvelope.fact as Record<string, unknown>;
+    fact.decision = 'deny';
+    await writeFile(join(tempDir, 'tampered.json'), JSON.stringify(signedEnvelope));
+
+    const query = createHuntQuery();
+    const events = await queryLocalFiles(query, [tempDir], true);
+    expect(events).toHaveLength(1);
+    expect(events[0].signatureValid).toBe(false);
+  });
 });
 
 describe('hunt', () => {
@@ -285,5 +354,21 @@ describe('hunt', () => {
 
     const events = await hunt({ start: '1h', dirs: [tempDir] });
     expect(events).toHaveLength(1);
+  });
+
+  it('forwards verify to local file parsing', async () => {
+    const signedEnvelope = await makeSignedEnvelope(
+      makeEnvelope(
+        'clawdstrike.sdr.fact.receipt.v1',
+        '2025-01-15T10:00:00Z',
+        'allow',
+        'verified',
+      ),
+    );
+    await writeFile(join(tempDir, 'verified.json'), JSON.stringify(signedEnvelope));
+
+    const events = await hunt({ dirs: [tempDir], verify: true });
+    expect(events).toHaveLength(1);
+    expect(events[0].signatureValid).toBe(true);
   });
 });

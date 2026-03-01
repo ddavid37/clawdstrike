@@ -52,6 +52,7 @@ function truncateToNewest(
  * Reads files from the given search directories. `.json` files may contain
  * a single envelope or an array. `.jsonl` files contain one envelope per line.
  * Corrupt files/lines are skipped.
+ * When `verify` is true, each parsed envelope gets `signatureValid` populated.
  *
  * Results are filtered by the query, merged by timestamp, and truncated
  * to the newest `query.limit` events.
@@ -59,7 +60,7 @@ function truncateToNewest(
 export async function queryLocalFiles(
   query: HuntQuery,
   searchDirs?: string[],
-  _verify?: boolean,
+  verify: boolean = false,
 ): Promise<TimelineEvent[]> {
   const dirs = searchDirs ?? await defaultLocalDirs();
   const allEvents: TimelineEvent[] = [];
@@ -101,13 +102,13 @@ export async function queryLocalFiles(
 
       if (ext === '.json') {
         try {
-          events = await readJsonFile(filePath);
+          events = await readJsonFile(filePath, verify);
         } catch {
           continue;
         }
       } else if (ext === '.jsonl') {
         try {
-          events = await readJsonlFile(filePath);
+          events = await readJsonlFile(filePath, verify);
         } catch {
           continue;
         }
@@ -143,6 +144,8 @@ export interface HuntOptions {
   entity?: string;
   limit?: number;
   dirs?: string[];
+  /** Verify envelope signatures and populate `event.signatureValid`. */
+  verify?: boolean;
 }
 
 /**
@@ -177,24 +180,24 @@ export async function hunt(options?: HuntOptions): Promise<TimelineEvent[]> {
     limit: opts.limit ?? 100,
   };
 
-  return queryLocalFiles(query, opts.dirs);
+  return queryLocalFiles(query, opts.dirs, opts.verify ?? false);
 }
 
-async function readJsonFile(path: string): Promise<TimelineEvent[]> {
+async function readJsonFile(path: string, verify: boolean): Promise<TimelineEvent[]> {
   const content = await readFile(path, 'utf-8');
   const value: unknown = JSON.parse(content);
 
   if (Array.isArray(value)) {
     return value
-      .map((v) => parseEnvelope(v))
+      .map((v) => parseEnvelope(v, verify))
       .filter((e): e is TimelineEvent => e !== undefined);
   }
 
-  const event = parseEnvelope(value);
+  const event = parseEnvelope(value, verify);
   return event !== undefined ? [event] : [];
 }
 
-async function readJsonlFile(path: string): Promise<TimelineEvent[]> {
+async function readJsonlFile(path: string, verify: boolean): Promise<TimelineEvent[]> {
   const content = await readFile(path, 'utf-8');
   const events: TimelineEvent[] = [];
 
@@ -205,7 +208,7 @@ async function readJsonlFile(path: string): Promise<TimelineEvent[]> {
     }
     try {
       const value: unknown = JSON.parse(trimmed);
-      const event = parseEnvelope(value);
+      const event = parseEnvelope(value, verify);
       if (event !== undefined) {
         events.push(event);
       }
