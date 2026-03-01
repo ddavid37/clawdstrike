@@ -23,7 +23,7 @@ export function guarded<T extends (...args: unknown[]) => unknown>(
   const mode = options.onAlert ?? 'deny';
   const collectedAlerts: Alert[] = [];
 
-  const wrapper = async function (this: unknown, ...args: unknown[]) {
+  function runGuard(): void {
     const start = new Date();
 
     const event: TimelineEvent = {
@@ -46,10 +46,14 @@ export function guarded<T extends (...args: unknown[]) => unknown>(
       }
       collectedAlerts.push(...alerts);
     }
+  }
+
+  const wrapper = function (this: unknown, ...args: unknown[]) {
+    runGuard();
 
     const result = fn.apply(this, args);
     if (result && typeof result === 'object' && typeof (result as Promise<unknown>).then === 'function') {
-      return await (result as Promise<unknown>);
+      return (result as Promise<unknown>).then(undefined, undefined);
     }
     return result;
   } as unknown as T & { alerts: Alert[] };

@@ -58,7 +58,10 @@ async def stream(config: WatchConfig) -> AsyncIterator[Alert]:
         ) from exc
 
     engine = CorrelationEngine(list(config.rules))
-    nc = await nats_mod.connect(config.nats_url)
+    nc = await nats_mod.connect(
+        config.nats_url,
+        **({"user_credentials": config.nats_creds} if config.nats_creds else {}),
+    )
     sub = await nc.subscribe(_NATS_SUBJECT)
 
     try:
@@ -105,7 +108,10 @@ async def stream_all(config: WatchConfig) -> AsyncIterator[StreamItem]:
         ) from exc
 
     engine = CorrelationEngine(list(config.rules))
-    nc = await nats_mod.connect(config.nats_url)
+    nc = await nats_mod.connect(
+        config.nats_url,
+        **({"user_credentials": config.nats_creds} if config.nats_creds else {}),
+    )
     sub = await nc.subscribe(_NATS_SUBJECT)
 
     try:

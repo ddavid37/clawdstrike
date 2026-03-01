@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
-
 from clawdstrike.hunt.correlate import parse_rule
-from clawdstrike.hunt.testing import TestResult, event
+from clawdstrike.hunt.testing import event
 from clawdstrike.hunt.testing import test_rule as run_test_rule
 from clawdstrike.hunt.types import (
     EventSourceType,

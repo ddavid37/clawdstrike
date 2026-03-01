@@ -127,7 +127,7 @@ export function toStix(
       name: alert.title,
       description: alert.description,
       pattern_type: 'clawdstrike',
-      pattern: `[alert:rule_name = '${alert.ruleName}']`,
+      pattern: `[alert:rule_name = '${escapeStixValue(alert.ruleName)}']`,
       valid_from: alert.triggeredAt.toISOString(),
       labels: [alert.severity],
     });
@@ -255,30 +255,39 @@ function csvEscape(value: string): string {
   return value;
 }
 
+function escapeStixValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 function iocToStixPattern(ioc: IocEntry): string {
+  const v = escapeStixValue(ioc.indicator);
   switch (ioc.iocType) {
     case 'sha256':
-      return `[file:hashes.'SHA-256' = '${ioc.indicator}']`;
+      return `[file:hashes.'SHA-256' = '${v}']`;
     case 'sha1':
-      return `[file:hashes.'SHA-1' = '${ioc.indicator}']`;
+      return `[file:hashes.'SHA-1' = '${v}']`;
     case 'md5':
-      return `[file:hashes.MD5 = '${ioc.indicator}']`;
+      return `[file:hashes.MD5 = '${v}']`;
     case 'domain':
-      return `[domain-name:value = '${ioc.indicator}']`;
+      return `[domain-name:value = '${v}']`;
     case 'ipv4':
-      return `[ipv4-addr:value = '${ioc.indicator}']`;
+      return `[ipv4-addr:value = '${v}']`;
     case 'ipv6':
-      return `[ipv6-addr:value = '${ioc.indicator}']`;
+      return `[ipv6-addr:value = '${v}']`;
     case 'url':
-      return `[url:value = '${ioc.indicator}']`;
+      return `[url:value = '${v}']`;
     default:
-      return `[x-clawdstrike:value = '${ioc.indicator}']`;
+      return `[x-clawdstrike:value = '${v}']`;
   }
 }
 
-let _idCounter = 0;
 function generateId(): string {
-  _idCounter++;
-  const hex = _idCounter.toString(16).padStart(8, '0');
-  return `00000000-0000-0000-0000-${hex.padStart(12, '0')}`;
+  // Use crypto.randomUUID() when available, fall back to random hex.
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }

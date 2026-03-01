@@ -38,7 +38,10 @@ export async function* stream(
   }
 
   const engine = new CorrelationEngine(options.rules);
-  const nc = await natsModule.connect({ servers: options.natsUrl });
+  const nc = await natsModule.connect({
+    servers: options.natsUrl,
+    ...(options.natsCreds ? { credentials: options.natsCreds } : {}),
+  });
   const sub = nc.subscribe(NATS_SUBJECT);
 
   if (options.signal) {
@@ -95,7 +98,10 @@ export async function* streamAll(
   }
 
   const engine = new CorrelationEngine(options.rules);
-  const nc = await natsModule.connect({ servers: options.natsUrl });
+  const nc = await natsModule.connect({
+    servers: options.natsUrl,
+    ...(options.natsCreds ? { credentials: options.natsCreds } : {}),
+  });
   const sub = nc.subscribe(NATS_SUBJECT);
 
   if (options.signal) {

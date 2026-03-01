@@ -56,14 +56,14 @@ describe("guarded", () => {
     expect(result).toBe(5);
   });
 
-  it("raises HuntAlertError in deny mode", async () => {
+  it("raises HuntAlertError in deny mode", () => {
     function doSomething() { return 42; }
     const wrapped = guarded(doSomething, {
       rules: [singleConditionRule()],
       onAlert: 'deny',
     });
-    await expect(wrapped()).rejects.toThrow(HuntAlertError);
-    await expect(wrapped()).rejects.toThrow("Alert triggered");
+    expect(() => wrapped()).toThrow(HuntAlertError);
+    expect(() => wrapped()).toThrow("Alert triggered");
   });
 
   it("collects alerts in log mode", async () => {
@@ -116,9 +116,9 @@ describe("guarded", () => {
     expect(result).toEqual({ key: "value" });
   });
 
-  it("defaults to deny mode", async () => {
+  it("defaults to deny mode", () => {
     function doSomething() { return 42; }
     const wrapped = guarded(doSomething, { rules: [singleConditionRule()] });
-    await expect(wrapped()).rejects.toThrow(HuntAlertError);
+    expect(() => wrapped()).toThrow(HuntAlertError);
   });
 });
