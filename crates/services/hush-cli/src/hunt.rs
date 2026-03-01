@@ -981,6 +981,15 @@ struct HuntQueryData {
 struct HuntQuerySummary {
     total_events: usize,
     sources_queried: Vec<String>,
+    data_source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fallback_reason: Option<String>,
+}
+
+struct FetchEventsResult {
+    events: Vec<TimelineEvent>,
+    data_source: &'static str,
+    fallback_reason: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1076,8 +1085,8 @@ fn render_config(args: &HuntQueryArgs) -> RenderConfig {
 async fn fetch_events(
     args: &HuntQueryArgs,
     query: &HuntQuery,
-    _stderr: &mut dyn Write,
-) -> std::result::Result<Vec<TimelineEvent>, String> {
+    stderr: &mut dyn Write,
+) -> std::result::Result<FetchEventsResult, String> {
     let local_dirs = || {
         if let Some(ref local_dirs) = args.local_dir {
             local_dirs.iter().map(PathBuf::from).collect()
@@ -1103,7 +1112,11 @@ async fn fetch_events(
     };
 
     if args.offline {
-        query_local(&local_dirs())
+        query_local(&local_dirs()).map(|events| FetchEventsResult {
+            events,
+            data_source: "local_offline",
+            fallback_reason: None,
+        })
     } else {
         // Try NATS first, fallback to local
         match hunt_query::replay::replay_all(
@@ -1114,14 +1127,25 @@ async fn fetch_events(
         )
         .await
         {
-            Ok(events) => Ok(events),
+            Ok(events) => Ok(FetchEventsResult {
+                events,
+                data_source: "nats",
+                fallback_reason: None,
+            }),
             Err(e) => {
                 let dirs = local_dirs();
-                query_local(&dirs).map_err(|local_err| {
-                    format!(
-                        "NATS connection failed ({e}); fallback local query failed: {local_err}"
-                    )
-                })
+                let fallback_reason = format!("NATS replay failed: {e}");
+                let warning = format!("{fallback_reason}; falling back to local files");
+                let _ = writeln!(stderr, "warning: {warning}");
+                query_local(&dirs)
+                    .map(|events| FetchEventsResult {
+                        events,
+                        data_source: "local_fallback",
+                        fallback_reason: Some(fallback_reason),
+                    })
+                    .map_err(|local_err| {
+                        format!("NATS connection failed ({e}); fallback local query failed: {local_err}")
+                    })
             }
         }
     }
@@ -1159,8 +1183,8 @@ async fn cmd_hunt_query(
         .iter()
         .map(|s| s.to_string())
         .collect();
-    let events = match fetch_events(&args, &query, stderr).await {
-        Ok(events) => events,
+    let fetched = match fetch_events(&args, &query, stderr).await {
+        Ok(result) => result,
         Err(msg) => {
             return emit_hunt_error(
                 is_json,
@@ -1182,24 +1206,26 @@ async fn cmd_hunt_query(
             error: None,
             data: Some(HuntQueryData {
                 summary: HuntQuerySummary {
-                    total_events: events.len(),
+                    total_events: fetched.events.len(),
                     sources_queried,
+                    data_source: fetched.data_source.to_string(),
+                    fallback_reason: fetched.fallback_reason.clone(),
                 },
-                events,
+                events: fetched.events,
             }),
         };
         if let Ok(json_str) = serde_json::to_string_pretty(&output) {
             let _ = writeln!(stdout, "{json_str}");
         }
     } else {
-        if let Err(e) = hunt_query::render::render_events(&events, &config, stdout) {
+        if let Err(e) = hunt_query::render::render_events(&fetched.events, &config, stdout) {
             let _ = writeln!(stderr, "Render error: {e}");
             return ExitCode::RuntimeError;
         }
         // Skip text footer in JSONL mode to avoid breaking parsers
         if !args.jsonl {
             let _ = writeln!(stdout);
-            let _ = writeln!(stdout, "{} events returned", events.len());
+            let _ = writeln!(stdout, "{} events returned", fetched.events.len());
         }
     }
 
@@ -1239,8 +1265,8 @@ async fn cmd_hunt_timeline(
         .iter()
         .map(|s| s.to_string())
         .collect();
-    let events = match fetch_events(&args, &query, stderr).await {
-        Ok(events) => events,
+    let fetched = match fetch_events(&args, &query, stderr).await {
+        Ok(result) => result,
         Err(msg) => {
             return emit_hunt_error(
                 is_json,
@@ -1253,7 +1279,7 @@ async fn cmd_hunt_timeline(
             );
         }
     };
-    let timeline = hunt_query::timeline::merge_timeline(events);
+    let timeline = hunt_query::timeline::merge_timeline(fetched.events);
 
     if is_json {
         let output = HuntJsonOutput::<HuntQueryData> {
@@ -1265,6 +1291,8 @@ async fn cmd_hunt_timeline(
                 summary: HuntQuerySummary {
                     total_events: timeline.len(),
                     sources_queried,
+                    data_source: fetched.data_source.to_string(),
+                    fallback_reason: fetched.fallback_reason.clone(),
                 },
                 events: timeline,
             }),
@@ -1583,8 +1611,8 @@ async fn cmd_hunt_correlate(
         }
     };
 
-    let events = match fetch_events(&query_args, &query, stderr).await {
-        Ok(events) => events,
+    let fetched = match fetch_events(&query_args, &query, stderr).await {
+        Ok(result) => result,
         Err(msg) => {
             return emit_hunt_error(
                 is_json,
@@ -1597,10 +1625,10 @@ async fn cmd_hunt_correlate(
             );
         }
     };
-    let events_count = events.len();
+    let events_count = fetched.events.len();
 
     // Merge into timeline for chronological ordering
-    let timeline = hunt_query::timeline::merge_timeline(events);
+    let timeline = hunt_query::timeline::merge_timeline(fetched.events);
 
     // Run correlation engine
     let mut engine = match hunt_correlate::engine::CorrelationEngine::new(all_rules) {
@@ -1803,8 +1831,8 @@ async fn cmd_hunt_ioc(
         }
     };
 
-    let events = match fetch_events(&query_args, &query, stderr).await {
-        Ok(events) => events,
+    let fetched = match fetch_events(&query_args, &query, stderr).await {
+        Ok(result) => result,
         Err(msg) => {
             return emit_hunt_error(
                 is_json,
@@ -1817,10 +1845,10 @@ async fn cmd_hunt_ioc(
             );
         }
     };
-    let events_count = events.len();
+    let events_count = fetched.events.len();
 
     // Match events against IOC database
-    let all_matches = hunt_correlate::ioc::match_events(&db, &events);
+    let all_matches = hunt_correlate::ioc::match_events(&db, &fetched.events);
     let matches_count = all_matches.len();
     let exit_code = if matches_count > 0 {
         ExitCode::Warn
@@ -2174,6 +2202,26 @@ mod tests {
         dir
     }
 
+    fn write_local_events_jsonl(dir: &std::path::Path) {
+        let event = serde_json::json!({
+            "issued_at": "2026-02-03T00:02:00Z",
+            "fact": {
+                "schema": "clawdstrike.sdr.fact.receipt.v1",
+                "decision": "deny",
+                "guard": "FallbackGuard",
+                "action_type": "file",
+                "verdict": "DENY",
+                "severity": "high",
+                "summary": "local fallback event"
+            }
+        });
+        std::fs::write(
+            dir.join("events.jsonl"),
+            format!("{}\n", serde_json::to_string(&event).unwrap()),
+        )
+        .unwrap();
+    }
+
     // -----------------------------------------------------------------------
     // Fix 4: JSONL output should not include text footer
     // -----------------------------------------------------------------------
@@ -2247,6 +2295,61 @@ mod tests {
             output.contains("events returned"),
             "Text output should contain footer, got: {output}"
         );
+        let _ = std::fs::remove_dir_all(&local_dir);
+    }
+
+    #[tokio::test]
+    async fn hunt_query_reports_nats_fallback_in_stderr_and_json() {
+        let local_dir = make_temp_dir("hush-query-fallback-local");
+        write_local_events_jsonl(&local_dir);
+        let args = HuntQueryArgs {
+            source: None,
+            verdict: None,
+            start: None,
+            end: None,
+            action_type: None,
+            process: None,
+            namespace: None,
+            pod: None,
+            limit: 10,
+            nl: None,
+            nats_url: "nats://127.0.0.1:1".to_string(),
+            nats_creds: None,
+            offline: false,
+            local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
+            verify: false,
+            json: true,
+            jsonl: false,
+            no_color: true,
+            entity: None,
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = cmd_hunt_query(args, &mut stdout, &mut stderr).await;
+        assert_eq!(code, ExitCode::Ok);
+
+        let err = String::from_utf8_lossy(&stderr);
+        assert!(
+            err.contains("falling back to local files"),
+            "stderr should report fallback path, got: {err}"
+        );
+
+        let output: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(output["data"]["summary"]["data_source"], "local_fallback");
+        assert!(
+            output["data"]["summary"]["fallback_reason"]
+                .as_str()
+                .is_some_and(|s| s.contains("NATS replay failed")),
+            "json summary should include fallback reason: {}",
+            output["data"]["summary"]
+        );
+        assert!(
+            output["data"]["summary"]["total_events"]
+                .as_u64()
+                .unwrap_or(0)
+                >= 1
+        );
+
         let _ = std::fs::remove_dir_all(&local_dir);
     }
 

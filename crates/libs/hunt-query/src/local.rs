@@ -8,6 +8,16 @@ use crate::error::Result;
 use crate::query::HuntQuery;
 use crate::timeline::{self, TimelineEvent};
 
+fn truncate_to_newest(events: &mut Vec<TimelineEvent>, limit: usize) {
+    if limit == 0 {
+        return;
+    }
+    if events.len() > limit {
+        let keep_from = events.len() - limit;
+        events.drain(0..keep_from);
+    }
+}
+
 /// Default directories to search for local envelopes.
 pub fn default_local_dirs() -> Vec<PathBuf> {
     let mut result = Vec::new();
@@ -92,7 +102,7 @@ pub fn query_local_files(
     }
 
     let mut merged = timeline::merge_timeline(all_events);
-    merged.truncate(query.limit);
+    truncate_to_newest(&mut merged, query.limit);
     Ok(merged)
 }
 
@@ -345,5 +355,52 @@ mod tests {
         let dirs = vec![PathBuf::from("/nonexistent/path/that/does/not/exist")];
         let result = query_local_files(&query, &dirs, false).expect("should succeed");
         assert!(result.is_empty(), "non-existent dir should yield no events");
+    }
+
+    #[test]
+    fn query_local_files_limit_keeps_newest_events() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("events.jsonl");
+        let lines = [
+            serde_json::to_string(&make_envelope(
+                "clawdstrike.sdr.fact.receipt.v1",
+                "2025-01-15T10:00:00Z",
+                "allow",
+                "event-1",
+            ))
+            .unwrap(),
+            serde_json::to_string(&make_envelope(
+                "clawdstrike.sdr.fact.receipt.v1",
+                "2025-01-15T10:01:00Z",
+                "allow",
+                "event-2",
+            ))
+            .unwrap(),
+            serde_json::to_string(&make_envelope(
+                "clawdstrike.sdr.fact.receipt.v1",
+                "2025-01-15T10:02:00Z",
+                "allow",
+                "event-3",
+            ))
+            .unwrap(),
+        ];
+        fs::write(&path, lines.join("\n")).expect("failed to write test file");
+
+        let query = HuntQuery {
+            limit: 2,
+            ..HuntQuery::default()
+        };
+        let dirs = vec![dir.path().to_path_buf()];
+        let events = query_local_files(&query, &dirs, false).expect("query local files");
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(
+            events[0].timestamp.to_rfc3339(),
+            "2025-01-15T10:01:00+00:00"
+        );
+        assert_eq!(
+            events[1].timestamp.to_rfc3339(),
+            "2025-01-15T10:02:00+00:00"
+        );
     }
 }
