@@ -36,9 +36,12 @@ impl BlobStorage {
 
     /// Load raw bytes by SHA-256 hex digest.
     pub fn load(&self, hash: &str) -> Result<Vec<u8>, RegistryError> {
-        let blob_path = self.blob_path(hash);
+        let canonical = Self::canonical_hash(hash)?;
+        let blob_path = self.blob_path(&canonical);
         if !blob_path.exists() {
-            return Err(RegistryError::NotFound(format!("blob not found: {hash}")));
+            return Err(RegistryError::NotFound(format!(
+                "blob not found: {canonical}"
+            )));
         }
         Ok(fs::read(&blob_path)?)
     }
@@ -46,7 +49,9 @@ impl BlobStorage {
     /// Check if a blob exists.
     #[allow(dead_code)]
     pub fn exists(&self, hash: &str) -> bool {
-        self.blob_path(hash).exists()
+        Self::canonical_hash(hash)
+            .ok()
+            .is_some_and(|canonical| self.blob_path(&canonical).exists())
     }
 
     /// Get the filesystem path for a blob.
@@ -61,6 +66,19 @@ impl BlobStorage {
         self.root.join(prefix).join(hash)
     }
 
+    fn canonical_hash(hash: &str) -> Result<String, RegistryError> {
+        let raw = hash
+            .strip_prefix("0x")
+            .or_else(|| hash.strip_prefix("0X"))
+            .unwrap_or(hash);
+        if raw.len() != 64 || !raw.as_bytes().iter().all(u8::is_ascii_hexdigit) {
+            return Err(RegistryError::BadRequest(
+                "invalid blob hash format; expected 0x-prefixed SHA-256 hex".into(),
+            ));
+        }
+        Ok(format!("0x{}", raw.to_ascii_lowercase()))
+    }
+
     /// Ensure the parent directory of a blob exists.
     fn ensure_parent(&self, hash: &str) -> Result<(), RegistryError> {
         let path = self.blob_path(hash);
@@ -72,8 +90,16 @@ impl BlobStorage {
 
     /// Store with a pre-computed hash (for verified content).
     pub fn store_with_hash(&self, data: &[u8], hash: &str) -> Result<(), RegistryError> {
-        self.ensure_parent(hash)?;
-        let blob_path = self.blob_path(hash);
+        let canonical = Self::canonical_hash(hash)?;
+        let computed = hush_core::sha256_hex(data);
+        if computed != canonical {
+            return Err(RegistryError::Integrity(
+                "provided hash does not match payload digest".into(),
+            ));
+        }
+
+        self.ensure_parent(&canonical)?;
+        let blob_path = self.blob_path(&canonical);
 
         if !blob_path.exists() {
             let tmp_path = self.root.join(format!(".tmp-{}", uuid::Uuid::new_v4()));
@@ -125,7 +151,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let storage = BlobStorage::new(tmp.path().join("blobs")).unwrap();
 
-        let err = storage.load("nonexistent").unwrap_err();
+        let err = storage.load(&"00".repeat(32)).unwrap_err();
         assert!(err.to_string().contains("not found"));
     }
 
@@ -138,5 +164,31 @@ mod tests {
         let h1 = storage.store(data).unwrap();
         let h2 = storage.store(data).unwrap();
         assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn rejects_invalid_hash_format_for_store_and_load() {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage = BlobStorage::new(tmp.path().join("blobs")).unwrap();
+
+        let err = storage
+            .store_with_hash(b"abc", "../../../etc/passwd")
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid blob hash format"));
+
+        let err = storage.load("../../../etc/passwd").unwrap_err();
+        assert!(err.to_string().contains("invalid blob hash format"));
+    }
+
+    #[test]
+    fn store_with_hash_rejects_digest_mismatch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage = BlobStorage::new(tmp.path().join("blobs")).unwrap();
+
+        let data = b"trusted payload";
+        let wrong_hash = hush_core::sha256_hex(b"different payload");
+        let err = storage.store_with_hash(data, &wrong_hash).unwrap_err();
+        assert!(err.to_string().contains("does not match payload digest"));
+        assert!(!storage.exists(&wrong_hash));
     }
 }
