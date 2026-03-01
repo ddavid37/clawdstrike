@@ -185,6 +185,10 @@ export function validateRule(rule: CorrelationRule): void {
     );
   }
 
+  if (rule.window <= 0) {
+    throw new CorrelationError("window must be a positive duration");
+  }
+
   if (rule.conditions.length === 0) {
     throw new CorrelationError("rule must have at least one condition");
   }
@@ -200,6 +204,12 @@ export function validateRule(rule: CorrelationRule): void {
           `condition ${i} references unknown bind '${cond.after}' in 'after'`
         );
       }
+    }
+
+    if (cond.within !== undefined && cond.within <= 0) {
+      throw new CorrelationError(
+        `condition ${i} 'within' must be a positive duration`
+      );
     }
 
     if (cond.within !== undefined && cond.after === undefined) {

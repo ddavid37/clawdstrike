@@ -62,7 +62,7 @@ from clawdstrike.hunt.anomaly import (
     ScoredEvent,
     score_anomalies,
 )
-from clawdstrike.hunt.export import to_csv, to_stix
+from clawdstrike.hunt.export import to_csv, to_jsonl, to_stix
 from clawdstrike.hunt.stream import StreamAlertItem, StreamEventItem
 from clawdstrike.hunt.timeline import merge_timeline, parse_envelope
 from clawdstrike.hunt.types import (
@@ -171,10 +171,11 @@ __all__ = [
     "BaselineData",
     "Baseline",
     "score_anomalies",
-    # export (eager — no optional deps for to_stix/to_csv)
+    # export (eager — no optional deps for to_stix/to_csv/to_jsonl)
     "ExportError",
     "to_stix",
     "to_csv",
+    "to_jsonl",
     # stream items (eager)
     "StreamAlertItem",
     "StreamEventItem",

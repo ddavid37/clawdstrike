@@ -1,38 +1,24 @@
-import type { SecurityContext, ToolInterceptor } from "@clawdstrike/adapter-core";
+import type { AdapterConfig, PolicyEngineLike, SecurityContext, ToolInterceptor } from "@clawdstrike/adapter-core";
 import {
   BaseToolInterceptor,
+  ClawdstrikeBlockedError,
   createSecurityContext,
   isClawdstrikeLike,
   isToolInterceptor,
   type SecuritySource,
 } from "@clawdstrike/adapter-core";
 
-import { ClawdstrikeBlockedError } from "./errors.js";
-
-export type VercelAiToolLike<TInput = unknown, TOutput = unknown> = {
-  execute: (input: TInput, ...rest: unknown[]) => Promise<TOutput> | TOutput;
-};
-
-export type VercelAiToolSet = Record<string, VercelAiToolLike>;
-
 export interface SecureToolsOptions {
   context?: SecurityContext;
   getContext?: (toolName: string, input: unknown) => SecurityContext;
 }
 
-/**
- * Wrap Vercel AI tools with security checks.
- *
- * @example Using with Clawdstrike instance (recommended)
- * ```typescript
- * import { Clawdstrike } from '@clawdstrike/sdk';
- * import { secureTools } from '@clawdstrike/vercel-ai';
- *
- * const cs = await Clawdstrike.fromPolicy('./policy.yaml');
- * const tools = secureTools(myTools, cs);
- * ```
- */
-export function secureTools<TTools extends Record<string, VercelAiToolLike>>(
+type OpenCodeToolLike<TInput = unknown, TOutput = unknown> = {
+  execute?: (input: TInput, ...rest: unknown[]) => Promise<TOutput> | TOutput;
+  call?: (input: TInput, ...rest: unknown[]) => Promise<TOutput> | TOutput;
+};
+
+export function secureTools<TTools extends Record<string, OpenCodeToolLike>>(
   tools: TTools,
   source: SecuritySource,
   options?: SecureToolsOptions,
@@ -44,27 +30,27 @@ export function secureTools<TTools extends Record<string, VercelAiToolLike>>(
   } else if (isClawdstrikeLike(source)) {
     interceptor = source.createInterceptor!();
   } else {
-    interceptor = new BaseToolInterceptor(source, {});
+    interceptor = new BaseToolInterceptor(source as PolicyEngineLike, {});
   }
 
   const defaultContext =
     options?.context ??
     createSecurityContext({
-      metadata: { framework: "vercel-ai" },
+      metadata: { framework: "opencode" },
     });
 
   const secured = {} as TTools;
   for (const [toolName, tool] of Object.entries(tools)) {
-    (secured as Record<string, VercelAiToolLike>)[toolName] = {
+    const originalExecute = tool.execute ?? tool.call;
+    if (typeof originalExecute !== "function") {
+      (secured as Record<string, OpenCodeToolLike>)[toolName] = tool;
+      continue;
+    }
+
+    (secured as Record<string, OpenCodeToolLike>)[toolName] = {
       ...(tool as object),
-      execute: wrapExecute(
-        toolName,
-        tool.execute,
-        interceptor,
-        defaultContext,
-        options?.getContext,
-      ),
-    } as VercelAiToolLike;
+      execute: wrapExecute(toolName, originalExecute, interceptor, defaultContext, options?.getContext),
+    } as OpenCodeToolLike;
   }
 
   return secured;
@@ -90,8 +76,7 @@ function wrapExecute<TInput, TOutput>(
     }
 
     if (!interceptResult.proceed) {
-      const { decision } = interceptResult;
-      throw new ClawdstrikeBlockedError(toolName, decision);
+      throw new ClawdstrikeBlockedError(toolName, interceptResult.decision);
     }
 
     const nextInput = (interceptResult.modifiedParameters as unknown as TInput) ?? input;

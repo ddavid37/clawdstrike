@@ -9,8 +9,8 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
  * Uses WASM when available, otherwise falls back to a pure-TS implementation.
  */
 export function canonicalize(obj: JsonValue): string {
-  // Pre-validate: RFC 8785 rejects non-finite numbers.
-  JSON.stringify(obj, (_, value) => {
+  // Validate and serialize in a single pass.
+  const serialized = JSON.stringify(obj, (_, value) => {
     if (typeof value === "number" && !Number.isFinite(value)) {
       throw new Error(`RFC 8785 does not support non-finite numbers: ${value}`);
     }
@@ -18,7 +18,7 @@ export function canonicalize(obj: JsonValue): string {
   });
   const wasm = getWasmModule();
   if (wasm?.canonicalize_json) {
-    return wasm.canonicalize_json(JSON.stringify(obj));
+    return wasm.canonicalize_json(serialized);
   }
   return jcsSerialize(obj);
 }

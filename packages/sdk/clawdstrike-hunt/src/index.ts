@@ -108,6 +108,7 @@ export {
   ElasticAdapter,
   toStix,
   toCSV,
+  toJSONL,
 } from './export.js';
-export type { ExportAdapter } from './export.js';
+export type { ExportAdapter, RetryConfig } from './export.js';
 export { ExportError } from './errors.js';

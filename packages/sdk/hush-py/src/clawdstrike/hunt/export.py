@@ -2,12 +2,63 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
-from typing import Protocol, Union, runtime_checkable
+from dataclasses import dataclass
+from typing import Any, Callable, Coroutine, Protocol, Union, runtime_checkable
 
 from clawdstrike.hunt.errors import ExportError
 from clawdstrike.hunt.types import Alert, IocEntry, IocMatch, TimelineEvent
+
+
+@dataclass
+class RetryConfig:
+    """Configuration for retry behaviour on export adapters."""
+
+    max_retries: int = 0
+    base_delay: float = 1.0
+
+
+async def _with_retry(
+    fn: Callable[..., Coroutine[Any, Any, Any]],
+    retry: RetryConfig,
+) -> Any:
+    """Execute *fn* with exponential back-off on 5xx / connection errors.
+
+    4xx errors are **not** retried (they indicate a client-side problem).
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1 + retry.max_retries):
+        try:
+            return await fn()
+        except ExportError as exc:
+            msg = str(exc)
+            # Only retry on 5xx status codes
+            status = _extract_status(msg)
+            if status is not None and status < 500:
+                raise
+            last_exc = exc
+        except Exception as exc:
+            # Connection / transport errors are retryable
+            last_exc = exc
+        if attempt < retry.max_retries:
+            await asyncio.sleep(retry.base_delay * (2 ** attempt))
+    if last_exc is not None:
+        raise last_exc
+    raise ExportError("retry exhausted with no result")  # pragma: no cover
+
+
+def _extract_status(msg: str) -> int | None:
+    """Best-effort extraction of HTTP status code from an ExportError message."""
+    # Messages look like "Webhook export failed: 503"
+    parts = msg.rsplit(":", 1)
+    if len(parts) == 2:
+        try:
+            return int(parts[1].strip())
+        except ValueError:
+            pass
+    return None
 
 
 @runtime_checkable
@@ -21,9 +72,15 @@ class ExportAdapter(Protocol):
 class WebhookAdapter:
     """Export items via HTTP POST to a webhook URL."""
 
-    def __init__(self, url: str, headers: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        url: str,
+        headers: dict[str, str] | None = None,
+        retry: RetryConfig | None = None,
+    ) -> None:
         self.url = url
         self.headers = headers or {}
+        self.retry = retry or RetryConfig()
 
     async def export(self, items: list[Union[Alert, TimelineEvent]]) -> None:
         try:
@@ -32,24 +89,35 @@ class WebhookAdapter:
             raise ImportError(
                 "httpx is required for WebhookAdapter: pip install httpx"
             )
-        body = json.dumps([_item_to_json(item) for item in items])
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                self.url,
-                content=body,
-                headers={"Content-Type": "application/json", **self.headers},
-            )
-            if resp.status_code >= 400:
-                raise ExportError(f"Webhook export failed: {resp.status_code}")
+
+        async def _do() -> None:
+            body = json.dumps([_item_to_json(item) for item in items])
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    self.url,
+                    content=body,
+                    headers={"Content-Type": "application/json", **self.headers},
+                )
+                if resp.status_code >= 400:
+                    raise ExportError(f"Webhook export failed: {resp.status_code}")
+
+        await _with_retry(_do, self.retry)
 
 
 class SplunkHECAdapter:
     """Export items to Splunk via the HTTP Event Collector."""
 
-    def __init__(self, url: str, token: str, index: str | None = None) -> None:
+    def __init__(
+        self,
+        url: str,
+        token: str,
+        index: str | None = None,
+        retry: RetryConfig | None = None,
+    ) -> None:
         self.url = url
         self.token = token
         self.index = index
+        self.retry = retry or RetryConfig()
 
     async def export(self, items: list[Union[Alert, TimelineEvent]]) -> None:
         try:
@@ -58,34 +126,45 @@ class SplunkHECAdapter:
             raise ImportError(
                 "httpx is required for SplunkHECAdapter: pip install httpx"
             )
-        events: list[str] = []
-        for item in items:
-            data = _item_to_json(item)
-            event: dict = {"event": data}
-            if self.index:
-                event["index"] = self.index
-            events.append(json.dumps(event))
-        body = "\n".join(events)
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                self.url,
-                content=body,
-                headers={
-                    "Authorization": f"Splunk {self.token}",
-                    "Content-Type": "application/json",
-                },
-            )
-            if resp.status_code >= 400:
-                raise ExportError(f"Splunk HEC export failed: {resp.status_code}")
+
+        async def _do() -> None:
+            events: list[str] = []
+            for item in items:
+                data = _item_to_json(item)
+                event: dict = {"event": data}
+                if self.index:
+                    event["index"] = self.index
+                events.append(json.dumps(event))
+            body = "\n".join(events)
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    self.url,
+                    content=body,
+                    headers={
+                        "Authorization": f"Splunk {self.token}",
+                        "Content-Type": "application/json",
+                    },
+                )
+                if resp.status_code >= 400:
+                    raise ExportError(f"Splunk HEC export failed: {resp.status_code}")
+
+        await _with_retry(_do, self.retry)
 
 
 class ElasticAdapter:
     """Export items to Elasticsearch via the _bulk API."""
 
-    def __init__(self, url: str, index: str, api_key: str | None = None) -> None:
+    def __init__(
+        self,
+        url: str,
+        index: str,
+        api_key: str | None = None,
+        retry: RetryConfig | None = None,
+    ) -> None:
         self.url = url
         self.index = index
         self.api_key = api_key
+        self.retry = retry or RetryConfig()
 
     async def export(self, items: list[Union[Alert, TimelineEvent]]) -> None:
         try:
@@ -94,22 +173,26 @@ class ElasticAdapter:
             raise ImportError(
                 "httpx is required for ElasticAdapter: pip install httpx"
             )
-        lines: list[str] = []
-        for item in items:
-            lines.append(json.dumps({"index": {"_index": self.index}}))
-            lines.append(json.dumps(_item_to_json(item)))
-        body = "\n".join(lines) + "\n"
-        headers: dict[str, str] = {"Content-Type": "application/x-ndjson"}
-        if self.api_key:
-            headers["Authorization"] = f"ApiKey {self.api_key}"
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{self.url}/_bulk", content=body, headers=headers
-            )
-            if resp.status_code >= 400:
-                raise ExportError(
-                    f"Elasticsearch export failed: {resp.status_code}"
+
+        async def _do() -> None:
+            lines: list[str] = []
+            for item in items:
+                lines.append(json.dumps({"index": {"_index": self.index}}))
+                lines.append(json.dumps(_item_to_json(item)))
+            body = "\n".join(lines) + "\n"
+            headers: dict[str, str] = {"Content-Type": "application/x-ndjson"}
+            if self.api_key:
+                headers["Authorization"] = f"ApiKey {self.api_key}"
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self.url}/_bulk", content=body, headers=headers
                 )
+                if resp.status_code >= 400:
+                    raise ExportError(
+                        f"Elasticsearch export failed: {resp.status_code}"
+                    )
+
+        await _with_retry(_do, self.retry)
 
 
 def to_stix(
@@ -159,58 +242,74 @@ def to_stix(
 
 
 def to_csv(items: list[Union[Alert, TimelineEvent]]) -> str:
-    """Convert items to CSV string. Auto-detects Alert vs TimelineEvent."""
+    """Convert items to CSV string. Handles mixed Alert/TimelineEvent lists."""
     if not items:
         return ""
-    first = items[0]
-    if isinstance(first, Alert):
-        headers = [
-            "rule_name",
-            "severity",
-            "title",
-            "triggered_at",
-            "description",
-            "evidence_count",
-        ]
-        rows = [
-            ",".join(
-                [
-                    _csv_escape(a.rule_name),  # type: ignore[union-attr]
-                    _csv_escape(a.severity.value),  # type: ignore[union-attr]
-                    _csv_escape(a.title),  # type: ignore[union-attr]
-                    _csv_escape(a.triggered_at.isoformat()),  # type: ignore[union-attr]
-                    _csv_escape(a.description),  # type: ignore[union-attr]
-                    str(len(a.evidence)),  # type: ignore[union-attr]
-                ]
-            )
-            for a in items
-        ]
-        return "\n".join([",".join(headers)] + rows)
-    else:
-        headers = [
-            "timestamp",
-            "source",
-            "kind",
-            "verdict",
-            "summary",
-            "process",
-            "action_type",
-        ]
-        rows = [
-            ",".join(
-                [
-                    _csv_escape(e.timestamp.isoformat()),  # type: ignore[union-attr]
-                    _csv_escape(e.source.value),  # type: ignore[union-attr]
-                    _csv_escape(e.kind.value),  # type: ignore[union-attr]
-                    _csv_escape(e.verdict.value),  # type: ignore[union-attr]
-                    _csv_escape(e.summary),  # type: ignore[union-attr]
-                    _csv_escape(e.process or ""),  # type: ignore[union-attr]
-                    _csv_escape(e.action_type or ""),  # type: ignore[union-attr]
-                ]
-            )
-            for e in items
-        ]
-        return "\n".join([",".join(headers)] + rows)
+    alerts = [i for i in items if isinstance(i, Alert)]
+    events = [i for i in items if isinstance(i, TimelineEvent)]
+    sections: list[str] = []
+    if alerts:
+        sections.append(_alerts_csv(alerts))
+    if events:
+        sections.append(_events_csv(events))
+    return "\n".join(sections)
+
+
+def _alerts_csv(alerts: list[Alert]) -> str:
+    headers = [
+        "rule_name",
+        "severity",
+        "title",
+        "triggered_at",
+        "description",
+        "evidence_count",
+    ]
+    rows = [
+        ",".join(
+            [
+                _csv_escape(a.rule_name),
+                _csv_escape(a.severity.value),
+                _csv_escape(a.title),
+                _csv_escape(a.triggered_at.isoformat()),
+                _csv_escape(a.description),
+                str(len(a.evidence)),
+            ]
+        )
+        for a in alerts
+    ]
+    return "\n".join([",".join(headers)] + rows)
+
+
+def _events_csv(events: list[TimelineEvent]) -> str:
+    headers = [
+        "timestamp",
+        "source",
+        "kind",
+        "verdict",
+        "summary",
+        "process",
+        "action_type",
+    ]
+    rows = [
+        ",".join(
+            [
+                _csv_escape(e.timestamp.isoformat()),
+                _csv_escape(e.source.value),
+                _csv_escape(e.kind.value),
+                _csv_escape(e.verdict.value),
+                _csv_escape(e.summary),
+                _csv_escape(e.process or ""),
+                _csv_escape(e.action_type or ""),
+            ]
+        )
+        for e in events
+    ]
+    return "\n".join([",".join(headers)] + rows)
+
+
+def to_jsonl(items: list[Union[Alert, TimelineEvent]]) -> str:
+    """Convert items to newline-delimited JSON (JSONL) string."""
+    return "\n".join(json.dumps(_item_to_json(item)) for item in items)
 
 
 def _item_to_json(item: Union[Alert, TimelineEvent]) -> dict:
@@ -257,16 +356,18 @@ def _ioc_to_stix_pattern(ioc: IocEntry) -> str:
 
 
 def _csv_escape(value: str) -> str:
-    if "," in value or '"' in value or "\n" in value:
+    if "," in value or '"' in value or "\n" in value or "\r" in value:
         return '"' + value.replace('"', '""') + '"'
     return value
 
 
 __all__ = [
     "ExportAdapter",
+    "RetryConfig",
     "WebhookAdapter",
     "SplunkHECAdapter",
     "ElasticAdapter",
     "to_stix",
     "to_csv",
+    "to_jsonl",
 ]

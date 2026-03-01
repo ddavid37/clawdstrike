@@ -5,6 +5,7 @@ import {
   ElasticAdapter,
   toStix,
   toCSV,
+  toJSONL,
 } from './export.js';
 import { ExportError } from './errors.js';
 import type { Alert, TimelineEvent, IocMatch, IocEntry } from './types.js';
@@ -234,5 +235,89 @@ describe('toCSV', () => {
 
   it('returns empty string for empty input', () => {
     expect(toCSV([])).toBe('');
+  });
+
+  it('escapes values containing \\r', () => {
+    const csv = toCSV([makeEvent({ summary: 'line1\rline2' })]);
+    expect(csv).toContain('"line1\rline2"');
+  });
+});
+
+describe('toJSONL', () => {
+  it('produces one JSON object per line', () => {
+    const items = [makeAlert(), makeEvent()];
+    const jsonl = toJSONL(items);
+    const lines = jsonl.split('\n');
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[0]).type).toBe('alert');
+    expect(JSON.parse(lines[1]).type).toBe('event');
+  });
+
+  it('returns empty string for empty input', () => {
+    expect(toJSONL([])).toBe('');
+  });
+});
+
+describe('retry logic', () => {
+  it('retries on 500 then succeeds', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 500, statusText: 'Internal Server Error' })
+      .mockResolvedValueOnce({ ok: true });
+
+    const adapter = new WebhookAdapter(
+      'https://example.com/hook',
+      undefined,
+      { maxRetries: 2, baseDelayMs: 1 },
+    );
+    await adapter.export([makeEvent()]);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry on 4xx', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+    });
+
+    const adapter = new WebhookAdapter(
+      'https://example.com/hook',
+      undefined,
+      { maxRetries: 2, baseDelayMs: 1 },
+    );
+    await expect(adapter.export([makeEvent()])).rejects.toThrow(ExportError);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries on network error', async () => {
+    mockFetch
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce({ ok: true });
+
+    const adapter = new SplunkHECAdapter(
+      'https://splunk.example.com:8088/services/collector',
+      'my-token',
+      undefined,
+      { maxRetries: 1, baseDelayMs: 1 },
+    );
+    await adapter.export([makeEvent()]);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('throws after exhausting retries', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 503,
+      statusText: 'Service Unavailable',
+    });
+
+    const adapter = new ElasticAdapter(
+      'https://elastic.example.com:9200',
+      'hunt-events',
+      undefined,
+      { maxRetries: 2, baseDelayMs: 1 },
+    );
+    await expect(adapter.export([makeEvent()])).rejects.toThrow(ExportError);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 });

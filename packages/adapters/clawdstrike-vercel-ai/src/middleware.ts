@@ -278,6 +278,7 @@ function createWrappedModel(
         contexts.add(context);
 
         if (promptSecurity) {
+          emitWasmDegradedEvents(promptSecurity, context);
           const next = await applyPromptSecurityToParams(promptSecurity, params, context);
           Object.assign(params, next);
         }
@@ -322,6 +323,7 @@ function createWrappedModel(
         contexts.add(context);
 
         if (promptSecurity) {
+          emitWasmDegradedEvents(promptSecurity, context);
           const next = await applyPromptSecurityToParams(promptSecurity, params, context);
           Object.assign(params, next);
         }
@@ -429,6 +431,7 @@ type PromptSecurityRuntime = {
   jailbreak?: JailbreakDetector;
   outputSanitizer?: OutputSanitizer;
   getWatermarker?: () => Promise<PromptWatermarker>;
+  degraded: string[];
 };
 
 function createPromptSecurityRuntime(
@@ -457,6 +460,8 @@ function createPromptSecurityRuntime(
   const jailbreakWarnThreshold = cfg.jailbreakDetection?.config?.warnThreshold ?? 30;
   const jailbreakBlockThreshold = cfg.jailbreakDetection?.config?.blockThreshold ?? 70;
 
+  const degraded: string[] = [];
+
   let hierarchy: InstructionHierarchyEnforcer | undefined;
   if (instructionHierarchyEnabled) {
     try {
@@ -464,9 +469,14 @@ function createPromptSecurityRuntime(
         reminders: { enabled: false },
         ...(cfg.instructionHierarchy?.config ?? {}),
       });
-    } catch {
-      // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
-      console.warn("[clawdstrike/vercel-ai] InstructionHierarchyEnforcer skipped — WASM unavailable");
+    } catch (err) {
+      if (err instanceof Error && /wasm/i.test(err.message)) {
+        // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
+        console.warn("[clawdstrike/vercel-ai] InstructionHierarchyEnforcer skipped — WASM unavailable");
+        degraded.push("InstructionHierarchyEnforcer");
+      } else {
+        throw err;
+      }
     }
   }
 
@@ -474,9 +484,14 @@ function createPromptSecurityRuntime(
   if (jailbreakEnabled) {
     try {
       jailbreak = new JailbreakDetector(cfg.jailbreakDetection?.config ?? {});
-    } catch {
-      // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
-      console.warn("[clawdstrike/vercel-ai] JailbreakDetector skipped — WASM unavailable");
+    } catch (err) {
+      if (err instanceof Error && /wasm/i.test(err.message)) {
+        // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
+        console.warn("[clawdstrike/vercel-ai] JailbreakDetector skipped — WASM unavailable");
+        degraded.push("JailbreakDetector");
+      } else {
+        throw err;
+      }
     }
   }
 
@@ -484,9 +499,14 @@ function createPromptSecurityRuntime(
   if (outputSanitizationEnabled) {
     try {
       outputSanitizer = new OutputSanitizer(cfg.outputSanitization?.config ?? {});
-    } catch {
-      // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
-      console.warn("[clawdstrike/vercel-ai] OutputSanitizer skipped — WASM unavailable");
+    } catch (err) {
+      if (err instanceof Error && /wasm/i.test(err.message)) {
+        // biome-ignore lint/suspicious/noConsole: WASM unavailable diagnostic
+        console.warn("[clawdstrike/vercel-ai] OutputSanitizer skipped — WASM unavailable");
+        degraded.push("OutputSanitizer");
+      } else {
+        throw err;
+      }
     }
   }
 
@@ -516,7 +536,24 @@ function createPromptSecurityRuntime(
     jailbreak,
     outputSanitizer,
     getWatermarker,
+    degraded,
   };
+}
+
+function emitWasmDegradedEvents(
+  runtime: PromptSecurityRuntime,
+  context: SecurityContext,
+): void {
+  for (const detector of runtime.degraded) {
+    context.addAuditEvent({
+      id: createEventId("wdeg"),
+      type: "wasm_degraded",
+      timestamp: new Date(),
+      contextId: context.id,
+      sessionId: context.sessionId,
+      details: { detector, reason: "WASM backend unavailable" },
+    });
+  }
 }
 
 async function applyPromptSecurityToParams(

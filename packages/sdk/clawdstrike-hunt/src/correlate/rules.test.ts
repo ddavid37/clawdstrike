@@ -232,6 +232,47 @@ output:
 `;
     expect(() => parseRule(yaml)).toThrow("reuses bind name 'evt'");
   });
+
+  it("rejects window <= 0", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "Zero window"
+severity: low
+description: "test"
+window: 0s
+conditions:
+  - source: receipt
+    bind: evt
+output:
+  title: "test"
+  evidence:
+    - evt
+`;
+    expect(() => parseRule(yaml)).toThrow("window must be a positive duration");
+  });
+
+  it("rejects negative within", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "Negative within"
+severity: low
+description: "test"
+window: 30s
+conditions:
+  - source: receipt
+    bind: first
+  - source: hubble
+    after: first
+    within: 0s
+    bind: second
+output:
+  title: "test"
+  evidence:
+    - first
+    - second
+`;
+    expect(() => parseRule(yaml)).toThrow("'within' must be a positive duration");
+  });
 });
 
 function makeEvent(

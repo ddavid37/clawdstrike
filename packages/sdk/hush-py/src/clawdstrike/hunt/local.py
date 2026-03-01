@@ -40,7 +40,6 @@ def default_local_dirs() -> list[str]:
 def query_local_files(
     query: HuntQuery,
     search_dirs: list[str] | None = None,
-    verify: bool = False,
 ) -> list[TimelineEvent]:
     """Query envelopes from local JSON/JSONL files.
 

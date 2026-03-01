@@ -5,9 +5,15 @@ import type {
   SecurityContext,
   ToolInterceptor,
 } from "@clawdstrike/adapter-core";
-import { createSecurityContext } from "@clawdstrike/adapter-core";
+import {
+  ClawdstrikeBlockedError,
+  createSecurityContext,
+  isClawdstrikeLike,
+  isToolInterceptor,
+  type ClawdstrikeLike,
+  type SecuritySource,
+} from "@clawdstrike/adapter-core";
 
-import { ClawdstrikeViolationError } from "./errors.js";
 import { createLangChainInterceptor } from "./interceptor.js";
 
 type LangChainInvokeLike<TInput = unknown, TOutput = unknown> = {
@@ -28,11 +34,14 @@ export interface WrapToolOptions {
   getContext?: (toolName: string, input: unknown) => SecurityContext;
 }
 
-/**
- * Clawdstrike-like interface for simple API.
- */
-export interface ClawdstrikeLike {
-  createInterceptor?: () => ToolInterceptor;
+function resolveInterceptor(source: SecuritySource): ToolInterceptor {
+  if (isToolInterceptor(source)) {
+    return source;
+  }
+  if (isClawdstrikeLike(source)) {
+    return source.createInterceptor!();
+  }
+  return createLangChainInterceptor(source as PolicyEngineLike);
 }
 
 /**
@@ -44,15 +53,15 @@ export interface ClawdstrikeLike {
  * import { secureTool } from '@clawdstrike/langchain';
  *
  * const cs = await Clawdstrike.fromPolicy('./policy.yaml');
- * const secureTool = secureTool(myTool, cs);
+ * const secured = secureTool(myTool, cs);
  * ```
  */
 export function secureTool<TTool extends LangChainToolLike>(
   tool: TTool,
-  csOrEngine: ClawdstrikeLike | PolicyEngineLike,
+  source: SecuritySource,
   options?: WrapToolOptions,
 ): TTool {
-  const interceptor = resolveInterceptor(csOrEngine);
+  const interceptor = resolveInterceptor(source);
   return wrapTool(tool, interceptor, options);
 }
 
@@ -67,33 +76,14 @@ export function secureTool<TTool extends LangChainToolLike>(
  */
 export function secureTools<TTool extends LangChainToolLike>(
   tools: readonly TTool[],
-  csOrEngine: ClawdstrikeLike | PolicyEngineLike,
+  source: SecuritySource,
   options?: WrapToolOptions,
 ): TTool[] {
-  const interceptor = resolveInterceptor(csOrEngine);
+  const interceptor = resolveInterceptor(source);
   return wrapTools(tools, interceptor, options);
 }
 
-function resolveInterceptor(csOrEngine: ClawdstrikeLike | PolicyEngineLike): ToolInterceptor {
-  if (isClawdstrikeLike(csOrEngine)) {
-    return csOrEngine.createInterceptor!();
-  }
-  // PolicyEngineLike
-  return createLangChainInterceptor(csOrEngine);
-}
-
-function isClawdstrikeLike(value: unknown): value is ClawdstrikeLike {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as ClawdstrikeLike).createInterceptor === "function"
-  );
-}
-
-/**
- * @deprecated Use secureTool(tool, clawdstrike) instead.
- */
-export function wrapTool<TTool extends LangChainToolLike>(
+function wrapTool<TTool extends LangChainToolLike>(
   tool: TTool,
   interceptor: ToolInterceptor,
   options?: WrapToolOptions,
@@ -106,10 +96,7 @@ export function wrapTool<TTool extends LangChainToolLike>(
   return wrapToolWithContext(tool, interceptor, context, options?.getContext);
 }
 
-/**
- * @deprecated Use secureTools(tools, clawdstrike) instead.
- */
-export function wrapTools<TTool extends LangChainToolLike>(
+function wrapTools<TTool extends LangChainToolLike>(
   tools: readonly TTool[],
   interceptor: ToolInterceptor,
   options?: WrapToolOptions,
@@ -122,7 +109,7 @@ export function wrapTools<TTool extends LangChainToolLike>(
   return tools.map((tool) => wrapToolWithContext(tool, interceptor, context, options?.getContext));
 }
 
-export function wrapToolWithConfig<TTool extends LangChainToolLike>(
+function wrapToolWithConfig<TTool extends LangChainToolLike>(
   tool: TTool,
   engine: PolicyEngineLike,
   config: AdapterConfig = {},
@@ -142,7 +129,7 @@ export function wrapToolWithConfig<TTool extends LangChainToolLike>(
   });
 }
 
-export function wrapToolsWithConfig<TTool extends LangChainToolLike>(
+function wrapToolsWithConfig<TTool extends LangChainToolLike>(
   tools: readonly TTool[],
   engine: PolicyEngineLike,
   config: AdapterConfig = {},
@@ -271,7 +258,7 @@ async function runIntercepted<TOutput>(
 
   if (!interceptResult.proceed) {
     const { decision } = interceptResult;
-    throw new ClawdstrikeViolationError(toolName, decision);
+    throw new ClawdstrikeBlockedError(toolName, decision);
   }
 
   const nextInput = interceptResult.modifiedParameters ?? input;

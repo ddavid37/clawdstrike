@@ -273,6 +273,47 @@ output:
         with pytest.raises(CorrelationError, match="exceeds global window"):
             parse_rule(yaml_str)
 
+    def test_reject_zero_window(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "Zero window"
+severity: low
+description: "test"
+window: 0s
+conditions:
+  - source: receipt
+    bind: evt
+output:
+  title: "test"
+  evidence:
+    - evt
+"""
+        with pytest.raises(CorrelationError, match="window must be a positive duration"):
+            parse_rule(yaml_str)
+
+    def test_reject_zero_within(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "Zero within"
+severity: low
+description: "test"
+window: 30s
+conditions:
+  - source: receipt
+    bind: first
+  - source: receipt
+    after: first
+    within: 0s
+    bind: second
+output:
+  title: "test"
+  evidence:
+    - first
+    - second
+"""
+        with pytest.raises(CorrelationError, match="'within' must be a positive duration"):
+            parse_rule(yaml_str)
+
 
 # ---------------------------------------------------------------------------
 # Load from files

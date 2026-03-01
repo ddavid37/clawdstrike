@@ -95,6 +95,8 @@ def parse_rule(yaml_str: str) -> CorrelationRule:
     window = parse_human_duration(window_str)
     if window is None:
         raise CorrelationError(f"invalid duration: {window_str}")
+    if window <= timedelta(0):
+        raise CorrelationError("window must be a positive duration")
 
     has_sequence = "sequence" in raw and raw["sequence"] is not None
     has_conditions = "conditions" in raw and raw["conditions"] is not None
@@ -120,6 +122,8 @@ def parse_rule(yaml_str: str) -> CorrelationRule:
             within = parse_human_duration(str(rc["within"]))
             if within is None:
                 raise CorrelationError(f"invalid duration: {rc['within']}")
+            if within <= timedelta(0):
+                raise CorrelationError("'within' must be a positive duration")
 
         conditions.append(
             RuleCondition(
@@ -235,7 +239,6 @@ class _WindowState:
     started_at: datetime
     bound_events: dict[str, list[TimelineEvent]]
     preexisting_count: int = 0
-    dependent_advanced: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -430,7 +433,6 @@ class CorrelationEngine:
                     started_at=event.timestamp,
                     bound_events={cond.bind: [event]},
                     preexisting_count=pre_existing_count,
-                    dependent_advanced=0,
                 )
                 self._windows.setdefault(ri, []).append(ws)
             else:

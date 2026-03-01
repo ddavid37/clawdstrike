@@ -5,26 +5,72 @@
 import { ExportError } from './errors.js';
 import type { Alert, TimelineEvent, IocMatch, IocEntry } from './types.js';
 
+export interface RetryConfig {
+  maxRetries?: number;
+  baseDelayMs?: number;
+}
+
 export interface ExportAdapter {
   export(items: (Alert | TimelineEvent)[]): Promise<void>;
+}
+
+async function withRetry(
+  fn: () => Promise<Response>,
+  config: RetryConfig | undefined,
+): Promise<Response> {
+  const maxRetries = config?.maxRetries ?? 0;
+  const baseDelayMs = config?.baseDelayMs ?? 1000;
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fn();
+      if (response.ok || response.status < 500) {
+        return response;
+      }
+      // 5xx — retryable
+      lastError = new ExportError(
+        `Server error: ${response.status} ${response.statusText}`,
+      );
+    } catch (err) {
+      // Network error — retryable
+      lastError = err;
+    }
+
+    if (attempt < maxRetries) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, baseDelayMs * 2 ** attempt),
+      );
+    }
+  }
+  if (lastError instanceof ExportError) throw lastError;
+  throw new ExportError(
+    `Export failed after ${maxRetries + 1} attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  );
 }
 
 export class WebhookAdapter implements ExportAdapter {
   private url: string;
   private headers: Record<string, string>;
+  private retry?: RetryConfig;
 
-  constructor(url: string, headers?: Record<string, string>) {
+  constructor(url: string, headers?: Record<string, string>, retry?: RetryConfig) {
     this.url = url;
     this.headers = headers ?? {};
+    this.retry = retry;
   }
 
   async export(items: (Alert | TimelineEvent)[]): Promise<void> {
     const body = JSON.stringify(items.map(itemToJSON));
-    const response = await fetch(this.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...this.headers },
-      body,
-    });
+    const response = await withRetry(
+      () =>
+        fetch(this.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...this.headers },
+          body,
+        }),
+      this.retry,
+    );
     if (!response.ok) {
       throw new ExportError(
         `Webhook export failed: ${response.status} ${response.statusText}`,
@@ -37,11 +83,13 @@ export class SplunkHECAdapter implements ExportAdapter {
   private url: string;
   private token: string;
   private index?: string;
+  private retry?: RetryConfig;
 
-  constructor(url: string, token: string, index?: string) {
+  constructor(url: string, token: string, index?: string, retry?: RetryConfig) {
     this.url = url;
     this.token = token;
     this.index = index;
+    this.retry = retry;
   }
 
   async export(items: (Alert | TimelineEvent)[]): Promise<void> {
@@ -53,14 +101,18 @@ export class SplunkHECAdapter implements ExportAdapter {
     });
     const body = events.join('\n');
 
-    const response = await fetch(this.url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Splunk ${this.token}`,
-        'Content-Type': 'application/json',
-      },
-      body,
-    });
+    const response = await withRetry(
+      () =>
+        fetch(this.url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Splunk ${this.token}`,
+            'Content-Type': 'application/json',
+          },
+          body,
+        }),
+      this.retry,
+    );
     if (!response.ok) {
       throw new ExportError(
         `Splunk HEC export failed: ${response.status} ${response.statusText}`,
@@ -73,11 +125,13 @@ export class ElasticAdapter implements ExportAdapter {
   private url: string;
   private index: string;
   private apiKey?: string;
+  private retry?: RetryConfig;
 
-  constructor(url: string, index: string, apiKey?: string) {
+  constructor(url: string, index: string, apiKey?: string, retry?: RetryConfig) {
     this.url = url;
     this.index = index;
     this.apiKey = apiKey;
+    this.retry = retry;
   }
 
   async export(items: (Alert | TimelineEvent)[]): Promise<void> {
@@ -95,11 +149,15 @@ export class ElasticAdapter implements ExportAdapter {
       headers['Authorization'] = `ApiKey ${this.apiKey}`;
     }
 
-    const response = await fetch(`${this.url}/_bulk`, {
-      method: 'POST',
-      headers,
-      body,
-    });
+    const response = await withRetry(
+      () =>
+        fetch(`${this.url}/_bulk`, {
+          method: 'POST',
+          headers,
+          body,
+        }),
+      this.retry,
+    );
     if (!response.ok) {
       throw new ExportError(
         `Elasticsearch export failed: ${response.status} ${response.statusText}`,
@@ -223,6 +281,13 @@ export function toCSV(items: (Alert | TimelineEvent)[]): string {
   return sections.join('\n');
 }
 
+/**
+ * Convert items to JSON Lines (JSONL) format — one JSON object per line.
+ */
+export function toJSONL(items: (Alert | TimelineEvent)[]): string {
+  return items.map((item) => JSON.stringify(itemToJSON(item))).join('\n');
+}
+
 function isAlert(item: unknown): item is Alert {
   return (
     typeof item === 'object' &&
@@ -257,7 +322,7 @@ function itemToJSON(item: Alert | TimelineEvent): Record<string, unknown> {
 }
 
 function csvEscape(value: string): string {
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+  if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
     return '"' + value.replace(/"/g, '""') + '"';
   }
   return value;

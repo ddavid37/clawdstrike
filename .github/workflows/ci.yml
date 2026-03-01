@@ -407,7 +407,7 @@ jobs:
             | grep -v '^packages/sdk/hush-py/hush-native/' \
             | grep -Ev '(^|/)tests/|_test\.rs$|_tests\.rs$|integration_tests\.rs$' \
             | grep -Ev '^crates/libs/hunt-(correlate|query|scan)/src/(lib|error)\.rs$' \
-            | grep -Ev '^crates/libs/hush-core/src/lib\.rs$' \
+            | grep -Ev '^crates/libs/(hush-core|clawdstrike)/src/lib\.rs$' \
             | grep -Ev '^crates/services/hush-cli/src/tests\.rs$' \
             > changed_rust_files.coverage.txt || true
 
