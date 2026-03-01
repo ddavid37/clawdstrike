@@ -20,7 +20,7 @@ impl BlobStorage {
     /// Store raw bytes and return the SHA-256 hex digest used as the key.
     #[allow(dead_code)]
     pub fn store(&self, data: &[u8]) -> Result<String, RegistryError> {
-        let hash = hush_core::sha256_hex(data);
+        let hash = Self::canonical_hash(&hush_core::sha256_hex(data))?;
         self.ensure_parent(&hash)?;
         let blob_path = self.blob_path(&hash);
 
@@ -91,7 +91,7 @@ impl BlobStorage {
     /// Store with a pre-computed hash (for verified content).
     pub fn store_with_hash(&self, data: &[u8], hash: &str) -> Result<(), RegistryError> {
         let canonical = Self::canonical_hash(hash)?;
-        let computed = hush_core::sha256_hex(data);
+        let computed = Self::canonical_hash(&hush_core::sha256_hex(data))?;
         if computed != canonical {
             return Err(RegistryError::Integrity(
                 "provided hash does not match payload digest".into(),
@@ -164,6 +164,21 @@ mod tests {
         let h1 = storage.store(data).unwrap();
         let h2 = storage.store(data).unwrap();
         assert_eq!(h1, h2);
+        assert!(h1.starts_with("0x"));
+    }
+
+    #[test]
+    fn store_with_hash_accepts_uppercase_and_unprefixed_digest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage = BlobStorage::new(tmp.path().join("blobs")).unwrap();
+
+        let data = b"canonical digest";
+        let upper_unprefixed = hush_core::sha256_hex(data)
+            .trim_start_matches("0x")
+            .to_ascii_uppercase();
+        storage.store_with_hash(data, &upper_unprefixed).unwrap();
+        let loaded = storage.load(&upper_unprefixed).unwrap();
+        assert_eq!(loaded, data);
     }
 
     #[test]

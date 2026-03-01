@@ -195,11 +195,6 @@ pub async fn publish(
         ));
     }
 
-    // 5. Counter-sign with registry keypair.
-    let registry_sig = state.registry_keypair.sign(hash.as_bytes());
-    let registry_sig_hex = registry_sig.to_hex();
-    let registry_key_hex = state.registry_keypair.public_key().to_hex();
-
     // 6. Store blob.
     state.blobs.store_with_hash(&archive_bytes, &checksum)?;
 
@@ -235,8 +230,8 @@ pub async fn publish(
         tree.tree_size()
     };
 
-    // 8a. Create publish attestation with reserved leaf_index.
-    let (attestation_hash, key_id) = {
+    // 8a. Counter-sign and create publish attestation with the same active key.
+    let (registry_sig_hex, registry_key_hex, key_id, attestation_hash) = {
         let key_mgr = state
             .key_manager
             .lock()
@@ -245,6 +240,8 @@ pub async fn publish(
         let current = key_mgr.current_key();
         let current_keypair = key_mgr.current_keypair();
         let kid = current.key_id.clone();
+        let registry_pub = current.public_key.clone();
+        let registry_sig = current_keypair.sign(hash.as_bytes()).to_hex();
 
         let att = attestation::create_publish_attestation(&attestation::AttestationInput {
             package_name: &name,
@@ -252,14 +249,14 @@ pub async fn publish(
             publisher_key: &req.publisher_key,
             publisher_signature: &req.publisher_sig,
             content_hash: &checksum,
-            registry_signature: &registry_sig_hex,
+            registry_signature: &registry_sig,
             leaf_index: Some(leaf_index),
             timestamp: &now,
         });
 
         let signed = attestation::sign_attestation(&att, current_keypair, &kid)?;
         let att_hash = signed.attestation.hash()?;
-        (att_hash, kid)
+        (registry_sig, registry_pub, kid, att_hash)
     };
 
     // 9. Upsert package + insert version (under lock). If this fails, no tree

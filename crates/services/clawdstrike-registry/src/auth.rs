@@ -49,6 +49,24 @@ fn is_oidc_publish_request(req: &Request<Body>) -> bool {
     is_oidc_auth(req) && req.method() == Method::POST && req.uri().path() == "/api/v1/packages"
 }
 
+fn extract_oidc_provider(req: &Request<Body>) -> String {
+    req.headers()
+        .get("X-Clawdstrike-Oidc-Provider")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "github".to_string())
+}
+
+fn oidc_prevalidation_status(err: &RegistryError) -> StatusCode {
+    match err {
+        RegistryError::Unauthorized(_) | RegistryError::BadRequest(_) => StatusCode::UNAUTHORIZED,
+        RegistryError::Internal(_) => StatusCode::SERVICE_UNAVAILABLE,
+        _ => StatusCode::UNAUTHORIZED,
+    }
+}
+
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -131,8 +149,17 @@ pub async fn require_publish_auth(
     // This bypass is limited to package publish; all other authenticated routes
     // must still use the configured API key.
     if is_oidc_publish_request(&req) {
-        // Still require a bearer token to be present.
-        let _token = extract_bearer_token(&req).ok_or(StatusCode::UNAUTHORIZED)?;
+        let token = extract_bearer_token(&req).ok_or(StatusCode::UNAUTHORIZED)?;
+        let provider = extract_oidc_provider(&req);
+
+        // Pre-validate OIDC tokens before the request reaches the publish
+        // handler. The handler still performs trusted-publisher matching.
+        crate::oidc::validate_oidc_token(&token, &provider, &state.jwks_cache)
+            .await
+            .map_err(|e| {
+                tracing::warn!(provider = %provider, error = %e, "OIDC pre-validation failed");
+                oidc_prevalidation_status(&e)
+            })?;
         return Ok(next.run(req).await);
     }
 
@@ -258,8 +285,14 @@ mod tests {
     }
 
     #[test]
-    fn extract_accepts_extra_internal_spacing() {
+    fn extract_accepts_extra_spacing_between_scheme_and_token() {
         let req = make_request(Some("Bearer     my-key"));
+        assert_eq!(extract_bearer_token(&req).as_deref(), Some("my-key"));
+    }
+
+    #[test]
+    fn extract_accepts_trailing_spacing_after_token() {
+        let req = make_request(Some("Bearer my-key    "));
         assert_eq!(extract_bearer_token(&req).as_deref(), Some("my-key"));
     }
 

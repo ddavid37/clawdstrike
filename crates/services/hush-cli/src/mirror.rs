@@ -131,9 +131,11 @@ struct MirrorProof {
 #[derive(Debug, serde::Deserialize)]
 struct MirrorSearchResponse {
     packages: Vec<MirrorSearchEntry>,
+    #[serde(default)]
+    total: Option<usize>,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 struct MirrorSearchEntry {
     name: String,
     latest_version: Option<String>,
@@ -157,6 +159,7 @@ fn urlencoding_simple(s: &str) -> String {
 }
 
 const HEX_UPPER: [u8; 16] = *b"0123456789ABCDEF";
+const SEARCH_PAGE_LIMIT: u32 = 100;
 
 fn verify_attestation(
     attestation: &MirrorAttestation,
@@ -747,11 +750,6 @@ fn cmd_mirror_bulk_sync(
 
     // Search upstream registry for packages.
     let query = scope.unwrap_or("");
-    let search_url = format!(
-        "{}/api/v1/search?q={}&limit=1000&offset=0",
-        from.trim_end_matches('/'),
-        urlencoding_simple(query)
-    );
 
     let _ = writeln!(
         stdout,
@@ -759,28 +757,10 @@ fn cmd_mirror_bulk_sync(
         from, query
     );
 
-    let resp = match client.get(&search_url).send() {
-        Ok(r) => r,
+    let packages = match fetch_all_search_packages(&client, from, query) {
+        Ok(packages) => packages,
         Err(e) => {
-            let _ = writeln!(stderr, "Error: search failed: {e}");
-            return ExitCode::RuntimeError;
-        }
-    };
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().unwrap_or_default();
-        let _ = writeln!(
-            stderr,
-            "Error: upstream registry returned HTTP {status}: {body}"
-        );
-        return ExitCode::RuntimeError;
-    }
-
-    let search: MirrorSearchResponse = match resp.json() {
-        Ok(p) => p,
-        Err(e) => {
-            let _ = writeln!(stderr, "Error: invalid search response: {e}");
+            let _ = writeln!(stderr, "Error: {e}");
             return ExitCode::RuntimeError;
         }
     };
@@ -788,12 +768,12 @@ fn cmd_mirror_bulk_sync(
     let _ = writeln!(
         stdout,
         "Found {} packages, verifying trust level >= {} ...",
-        search.packages.len(),
+        packages.len(),
         min_trust
     );
 
     let mut filtered: Vec<BulkPackageEntry> = Vec::new();
-    for pkg in &search.packages {
+    for pkg in &packages {
         let Some(version) = pkg.latest_version.as_deref() else {
             continue;
         };
@@ -920,6 +900,82 @@ fn cmd_mirror_bulk_sync(
     } else {
         ExitCode::Ok
     }
+}
+
+fn fetch_search_page(
+    client: &reqwest::blocking::Client,
+    from: &str,
+    query: &str,
+    limit: u32,
+    offset: u32,
+) -> Result<MirrorSearchResponse, String> {
+    let search_url = format!(
+        "{}/api/v1/search?q={}&limit={}&offset={}",
+        from.trim_end_matches('/'),
+        urlencoding_simple(query),
+        limit,
+        offset
+    );
+
+    let resp = client
+        .get(&search_url)
+        .send()
+        .map_err(|e| format!("search failed: {e}"))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        return Err(format!("upstream registry returned HTTP {status}: {body}"));
+    }
+
+    resp.json::<MirrorSearchResponse>()
+        .map_err(|e| format!("invalid search response: {e}"))
+}
+
+fn collect_search_packages<F>(
+    page_limit: u32,
+    mut fetch_page: F,
+) -> Result<Vec<MirrorSearchEntry>, String>
+where
+    F: FnMut(u32, u32) -> Result<MirrorSearchResponse, String>,
+{
+    let mut packages = Vec::new();
+    let mut offset = 0u32;
+    let mut expected_total: Option<usize> = None;
+
+    loop {
+        let page = fetch_page(page_limit, offset)?;
+        if expected_total.is_none() {
+            expected_total = page.total;
+        }
+
+        let page_len = page.packages.len();
+        if page_len == 0 {
+            break;
+        }
+        packages.extend(page.packages);
+        offset = offset.saturating_add(page_len as u32);
+
+        if let Some(total) = expected_total {
+            if packages.len() >= total {
+                break;
+            }
+        }
+        if page_len < page_limit as usize {
+            break;
+        }
+    }
+
+    Ok(packages)
+}
+
+fn fetch_all_search_packages(
+    client: &reqwest::blocking::Client,
+    from: &str,
+    query: &str,
+) -> Result<Vec<MirrorSearchEntry>, String> {
+    collect_search_packages(SEARCH_PAGE_LIMIT, |limit, offset| {
+        fetch_search_page(client, from, query, limit, offset)
+    })
 }
 
 struct BulkPackageEntry {
@@ -1080,6 +1136,75 @@ mod tests {
         assert_eq!(code, ExitCode::ConfigError);
         let err = String::from_utf8_lossy(&stderr);
         assert!(err.contains("invalid trust level 'verfied'"));
+    }
+
+    fn entry(name: &str, version: Option<&str>) -> MirrorSearchEntry {
+        MirrorSearchEntry {
+            name: name.to_string(),
+            latest_version: version.map(ToOwned::to_owned),
+        }
+    }
+
+    #[test]
+    fn collect_search_packages_paginates_until_total() {
+        let mut seen_offsets = Vec::new();
+        let all = collect_search_packages(2, |_, offset| {
+            seen_offsets.push(offset);
+            Ok(match offset {
+                0 => MirrorSearchResponse {
+                    packages: vec![entry("a", Some("1.0.0")), entry("b", Some("1.0.0"))],
+                    total: Some(5),
+                },
+                2 => MirrorSearchResponse {
+                    packages: vec![entry("c", Some("1.0.0")), entry("d", Some("1.0.0"))],
+                    total: Some(5),
+                },
+                4 => MirrorSearchResponse {
+                    packages: vec![entry("e", Some("1.0.0"))],
+                    total: Some(5),
+                },
+                _ => MirrorSearchResponse {
+                    packages: Vec::new(),
+                    total: Some(5),
+                },
+            })
+        })
+        .unwrap();
+
+        assert_eq!(seen_offsets, vec![0, 2, 4]);
+        assert_eq!(all.len(), 5);
+        assert_eq!(all[4].name, "e");
+    }
+
+    #[test]
+    fn collect_search_packages_stops_on_short_page_without_total() {
+        let mut calls = 0;
+        let all = collect_search_packages(3, |_, offset| {
+            calls += 1;
+            Ok(match offset {
+                0 => MirrorSearchResponse {
+                    packages: vec![
+                        entry("a", Some("1.0.0")),
+                        entry("b", Some("1.0.0")),
+                        entry("c", Some("1.0.0")),
+                    ],
+                    total: None,
+                },
+                3 => MirrorSearchResponse {
+                    packages: vec![entry("d", Some("1.0.0"))],
+                    total: None,
+                },
+                _ => MirrorSearchResponse {
+                    packages: Vec::new(),
+                    total: None,
+                },
+            })
+        })
+        .unwrap();
+
+        assert_eq!(calls, 2);
+        assert_eq!(all.len(), 4);
+        assert_eq!(all[3].name, "d");
     }
 
     #[test]
