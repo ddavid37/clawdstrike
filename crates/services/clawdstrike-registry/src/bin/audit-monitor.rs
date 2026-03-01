@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use clawdstrike::pkg::merkle::{verify_consistency_proof_full, ConsistencyProof};
+use hush_core::{PublicKey, Signature};
 use serde::{Deserialize, Serialize};
 
 /// Clawdstrike transparency log audit monitor.
@@ -26,6 +27,10 @@ struct Cli {
     /// Optional webhook URL to POST alerts to.
     #[arg(long)]
     webhook_url: Option<String>,
+
+    /// Expected registry public key hex for signed checkpoint verification.
+    #[arg(long, env = "CLAWDSTRIKE_REGISTRY_PUBLIC_KEY")]
+    registry_public_key: String,
 
     /// Path to the state file for persisting the last-seen checkpoint.
     #[arg(long)]
@@ -56,6 +61,32 @@ struct MonitorState {
     tree_size: u64,
     root: String,
     last_checked: String,
+}
+
+fn checkpoint_signature_message(root: &str, tree_size: u64, timestamp: &str) -> String {
+    format!("clawdstrike-checkpoint:v1:{root}:{tree_size}:{timestamp}")
+}
+
+fn verify_checkpoint_signature(
+    checkpoint: &CheckpointResponse,
+    expected_registry_key: &str,
+) -> anyhow::Result<()> {
+    if checkpoint.registry_key != expected_registry_key {
+        anyhow::bail!("checkpoint registry key mismatch with configured trust anchor");
+    }
+    hush_core::Hash::from_hex(&checkpoint.root)?;
+    chrono::DateTime::parse_from_rfc3339(&checkpoint.timestamp)?;
+    let key = PublicKey::from_hex(expected_registry_key)?;
+    let sig = Signature::from_hex(&checkpoint.registry_sig)?;
+    let msg = checkpoint_signature_message(
+        &checkpoint.root,
+        checkpoint.tree_size,
+        &checkpoint.timestamp,
+    );
+    if !key.verify(msg.as_bytes(), &sig) {
+        anyhow::bail!("checkpoint signature verification failed");
+    }
+    Ok(())
 }
 
 fn default_state_file() -> PathBuf {
@@ -100,6 +131,7 @@ async fn send_webhook_alert(webhook_url: &str, message: &str) {
 async fn poll_cycle(
     client: &reqwest::Client,
     registry_url: &str,
+    expected_registry_key: &str,
     state_file: &PathBuf,
     webhook_url: Option<&str>,
 ) -> anyhow::Result<()> {
@@ -115,6 +147,19 @@ async fn poll_cycle(
         .error_for_status()?
         .json()
         .await?;
+
+    if let Err(e) = verify_checkpoint_signature(&checkpoint, expected_registry_key) {
+        let msg = format!(
+            "ALERT: Invalid checkpoint signature/key for tree_size={} root={}...: {e}",
+            checkpoint.tree_size,
+            &checkpoint.root[..std::cmp::min(16, checkpoint.root.len())]
+        );
+        eprintln!("[audit-monitor] {msg}");
+        if let Some(url) = webhook_url {
+            send_webhook_alert(url, &msg).await;
+        }
+        return Ok(());
+    }
 
     eprintln!(
         "[audit-monitor] Checkpoint: tree_size={}, root={}...",
@@ -223,6 +268,7 @@ async fn main() -> anyhow::Result<()> {
         if let Err(e) = poll_cycle(
             &client,
             &cli.registry_url,
+            &cli.registry_public_key,
             &state_file,
             cli.webhook_url.as_deref(),
         )
@@ -272,5 +318,43 @@ mod tests {
         assert_eq!(loaded.root, "abcd");
         assert_eq!(loaded.last_checked, "2026-02-28T00:00:00Z");
         Ok(())
+    }
+
+    #[test]
+    fn verify_checkpoint_signature_accepts_valid_checkpoint() {
+        let kp = hush_core::Keypair::from_seed(&[11u8; 32]);
+        let root_hash = hush_core::sha256(b"checkpoint-root").to_hex();
+        let timestamp = "2026-03-01T00:00:00Z".to_string();
+        let message = checkpoint_signature_message(&root_hash, 7, &timestamp);
+        let sig = kp.sign(message.as_bytes()).to_hex();
+        let key = kp.public_key().to_hex();
+        let checkpoint = CheckpointResponse {
+            root: root_hash,
+            tree_size: 7,
+            timestamp,
+            registry_sig: sig,
+            registry_key: key.clone(),
+        };
+        assert!(verify_checkpoint_signature(&checkpoint, &key).is_ok());
+    }
+
+    #[test]
+    fn verify_checkpoint_signature_rejects_mismatched_trust_anchor() {
+        let kp = hush_core::Keypair::from_seed(&[12u8; 32]);
+        let other = hush_core::Keypair::from_seed(&[13u8; 32]);
+        let root_hash = hush_core::sha256(b"checkpoint-root").to_hex();
+        let timestamp = "2026-03-01T00:00:00Z".to_string();
+        let message = checkpoint_signature_message(&root_hash, 9, &timestamp);
+        let sig = kp.sign(message.as_bytes()).to_hex();
+        let checkpoint = CheckpointResponse {
+            root: root_hash,
+            tree_size: 9,
+            timestamp,
+            registry_sig: sig,
+            registry_key: kp.public_key().to_hex(),
+        };
+        let err =
+            verify_checkpoint_signature(&checkpoint, &other.public_key().to_hex()).unwrap_err();
+        assert!(err.to_string().contains("mismatch"));
     }
 }

@@ -348,32 +348,46 @@ fn resolve_latest_version(
     from: &str,
     name: &str,
 ) -> Result<String, String> {
-    let stats_url = format!(
-        "{}/api/v1/packages/{}/stats",
+    let info_url = format!(
+        "{}/api/v1/packages/{}",
         from.trim_end_matches('/'),
         urlencoding_simple(name)
     );
-    let stats_resp = client
-        .get(&stats_url)
+    let info_resp = client
+        .get(&info_url)
         .send()
-        .map_err(|e| format!("failed to fetch package stats: {e}"))?;
-    if !stats_resp.status().is_success() {
+        .map_err(|e| format!("failed to fetch package info: {e}"))?;
+    if !info_resp.status().is_success() {
         return Err(format!(
             "failed to resolve latest version (HTTP {})",
-            stats_resp.status()
+            info_resp.status()
         ));
     }
-    let stats: serde_json::Value = stats_resp
+    let info: serde_json::Value = info_resp
         .json()
-        .map_err(|e| format!("invalid stats response: {e}"))?;
-    stats
-        .get("versions")
+        .map_err(|e| format!("invalid package info response: {e}"))?;
+    select_latest_non_yanked_version(&info)
+        .ok_or_else(|| "latest non-yanked version missing from package info response".to_string())
+}
+
+fn select_latest_non_yanked_version(info: &serde_json::Value) -> Option<String> {
+    info.get("versions")
         .and_then(|v| v.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|entry| entry.get("version"))
-        .and_then(|v| v.as_str())
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| "latest version missing from stats response".to_string())
+        .and_then(|arr| {
+            arr.iter().rev().find_map(|entry| {
+                let yanked = entry
+                    .get("yanked")
+                    .and_then(|y| y.as_bool())
+                    .unwrap_or(false);
+                if yanked {
+                    return None;
+                }
+                entry
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .map(ToOwned::to_owned)
+            })
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -1302,6 +1316,32 @@ mod tests {
         assert!(hash_file.exists());
         let hash_content = std::fs::read_to_string(&hash_file).unwrap();
         assert!(hash_content.contains(&hash.to_hex()));
+    }
+
+    #[test]
+    fn resolve_latest_version_skips_yanked_releases() {
+        let body = serde_json::json!({
+            "versions": [
+                { "version": "1.0.0", "yanked": false },
+                { "version": "1.1.0", "yanked": true },
+                { "version": "1.2.0", "yanked": false }
+            ]
+        });
+        assert_eq!(
+            select_latest_non_yanked_version(&body).as_deref(),
+            Some("1.2.0")
+        );
+    }
+
+    #[test]
+    fn resolve_latest_version_returns_none_when_all_are_yanked() {
+        let body = serde_json::json!({
+            "versions": [
+                { "version": "1.0.0", "yanked": true },
+                { "version": "1.1.0", "yanked": true }
+            ]
+        });
+        assert!(select_latest_non_yanked_version(&body).is_none());
     }
 
     #[test]
