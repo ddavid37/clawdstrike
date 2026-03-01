@@ -26,13 +26,13 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-wasip2
+          targets: wasm32-unknown-unknown
 
       - name: Install Clawdstrike CLI
         run: cargo install hush-cli --locked
 
       - name: Build (WASM)
-        run: cargo build --target wasm32-wasip2 --release
+        run: cargo build --target wasm32-unknown-unknown --release
         if: hashFiles('Cargo.toml') != ''
 
       - name: Pack

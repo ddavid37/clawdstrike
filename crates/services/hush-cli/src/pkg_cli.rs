@@ -740,8 +740,8 @@ impl Guard for {struct_name} {{
 
     fn handles(&self, action_type: &str) -> bool {{
         // Return true for the action types this guard should evaluate.
-        // Examples: "file_access", "tool_call", "shell_command", "network"
-        matches!(action_type, "file_access" | "tool_call")
+        // Examples: "file_access", "mcp_tool", "shell_command", "network"
+        matches!(action_type, "file_access" | "mcp_tool")
     }}
 
     fn check(&self, input: GuardInput) -> GuardOutput {{
@@ -790,7 +790,7 @@ description = "A custom Clawdstrike guard plugin"
 [[guards]]
 name = "{name}"
 entrypoint = "{entrypoint}"
-handles = ["file_access", "tool_call"]
+handles = ["file_access", "mcp_tool"]
 
 [capabilities]
 
@@ -820,9 +820,9 @@ fixtures:
 
   - name: "evaluates tool call"
     action:
-      type: "tool_call"
+      type: "mcp_tool"
       tool: "read_file"
-      parameters:
+      args:
         path: "/tmp/test.txt"
     expect:
       allowed: true
