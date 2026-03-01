@@ -364,12 +364,16 @@ mod tests {
     fn normalize_scoped_name() {
         assert_eq!(
             normalize_package_name("@acme/firewall"),
-            "s--acme--firewall"
+            "s--acme%2Ffirewall"
         );
         assert_eq!(normalize_package_name("simple-name"), "u--simple-name");
         assert_ne!(
             normalize_package_name("@acme/foo"),
             normalize_package_name("acme--foo")
+        );
+        assert_ne!(
+            normalize_package_name("@a--b/c"),
+            normalize_package_name("@a/b--c")
         );
     }
 

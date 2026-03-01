@@ -21,11 +21,13 @@ pub mod version;
 ///
 /// Uses collision-free prefixes for scoped vs unscoped names.
 ///
-/// - `@scope/name` -> `s--scope--name`
+/// - `@scope/name` -> `s--scope%2Fname`
 /// - `plain-name`  -> `u--plain-name`
 pub(crate) fn normalize_package_name(name: &str) -> String {
     if let Some(rest) = name.strip_prefix('@') {
-        format!("s--{}", rest.replace('/', "--"))
+        // Encode the scoped path separator so distinct scoped names cannot
+        // collide on the same filesystem key.
+        format!("s--{}", encode_url_path_segment(rest))
     } else {
         format!("u--{name}")
     }

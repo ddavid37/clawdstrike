@@ -239,7 +239,7 @@ mod tests {
     // Test helper: simulate an installed package in the store's on-disk layout.
     //
     // The store normalizes names with prefixes:
-    // `@scope/name` -> `s--scope--name`, `plain-name` -> `u--plain-name`,
+    // `@scope/name` -> `s--scope%2Fname`, `plain-name` -> `u--plain-name`,
     // expects a `.pkg-meta.json` metadata file in each version directory.
     // -----------------------------------------------------------------------
 

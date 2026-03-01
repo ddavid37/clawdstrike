@@ -44,11 +44,10 @@ pub struct PackageStore {
 /// so [`PackageStore::list`] prefers that authoritative value and only
 /// calls this function for old metadata that lacks the `name` field.
 ///
-/// Because the `scope--name` encoding is inherently ambiguous (an
-/// unscoped package called `my--pkg` is indistinguishable from a
-/// scoped `@my/pkg` after normalization), this function simply returns
-/// the directory name unchanged.  Callers that need the display name
-/// should use `StoreMetadata::name` instead.
+/// Normalized directory keys are not guaranteed to be a lossless display
+/// representation for historical installs that may lack `StoreMetadata::name`,
+/// so this function simply returns the directory name unchanged. Callers that
+/// need the original package name should use `StoreMetadata::name` instead.
 fn denormalize_name(dir_name: &str) -> String {
     dir_name.to_string()
 }
@@ -409,7 +408,7 @@ sandbox = "native"
         assert!(installed
             .path
             .to_string_lossy()
-            .contains("s--acme--firewall"));
+            .contains("s--acme%2Ffirewall"));
 
         let got = store.get("@acme/firewall", "0.1.0").unwrap().unwrap();
         assert_eq!(got.name, "@acme/firewall");
@@ -433,6 +432,22 @@ sandbox = "native"
         assert_eq!(scoped_got.name, "@acme/foo");
         assert_eq!(unscoped_got.name, "acme--foo");
         assert_ne!(scoped_got.content_hash, unscoped_got.content_hash);
+    }
+
+    #[test]
+    fn scoped_names_with_dashes_do_not_collide() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = PackageStore::with_root(tmp.path().join("store")).unwrap();
+
+        let a = create_test_package(tmp.path(), "@a--b/c", "1.0.0", "guard", "scope-coll-a");
+        let b = create_test_package(tmp.path(), "@a/b--c", "1.0.0", "guard", "scope-coll-b");
+
+        let installed_a = store.install_from_file(&a).unwrap();
+        let installed_b = store.install_from_file(&b).unwrap();
+
+        assert_ne!(installed_a.path, installed_b.path);
+        assert!(installed_a.path.to_string_lossy().contains("s--a--b%2Fc"));
+        assert!(installed_b.path.to_string_lossy().contains("s--a%2Fb--c"));
     }
 
     #[test]
