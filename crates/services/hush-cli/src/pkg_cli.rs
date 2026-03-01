@@ -17,7 +17,6 @@ use crate::registry_config::{is_file_source, load_or_generate_publisher_keypair,
 use crate::ExitCode;
 
 const PLUGIN_MANIFEST_FILENAME: &str = "clawdstrike.plugin.toml";
-const LEGACY_PLUGIN_MANIFEST_FILENAME: &str = "plugin-manifest.toml";
 
 // ---------------------------------------------------------------------------
 // Clap types
@@ -513,10 +512,9 @@ fn scaffold_guard_templates(dir: &Path, name: &str) -> std::io::Result<()> {
         generate_guard_cargo_toml(&cargo_package_name),
     )?;
 
-    // Canonical runtime plugin manifest + legacy filename for compatibility.
+    // Canonical runtime plugin manifest.
     let plugin_manifest = generate_guard_plugin_manifest(name, &wasm_entrypoint);
     std::fs::write(dir.join(PLUGIN_MANIFEST_FILENAME), &plugin_manifest)?;
-    std::fs::write(dir.join(LEGACY_PLUGIN_MANIFEST_FILENAME), &plugin_manifest)?;
 
     // tests/basic.yaml
     std::fs::write(
@@ -3563,15 +3561,13 @@ fn load_plugin_manifest_from_package(
 ) -> Option<(std::path::PathBuf, clawdstrike::plugins::PluginManifest)> {
     use clawdstrike::plugins::parse_plugin_manifest_toml;
 
-    for filename in [PLUGIN_MANIFEST_FILENAME, LEGACY_PLUGIN_MANIFEST_FILENAME] {
-        let manifest_path = pkg_dir.join(filename);
-        let content = match std::fs::read_to_string(&manifest_path) {
-            Ok(content) => content,
-            Err(_) => continue,
-        };
-        if let Ok(manifest) = parse_plugin_manifest_toml(&content) {
-            return Some((manifest_path, manifest));
-        }
+    let manifest_path = pkg_dir.join(PLUGIN_MANIFEST_FILENAME);
+    let content = match std::fs::read_to_string(&manifest_path) {
+        Ok(content) => content,
+        Err(_) => return None,
+    };
+    if let Ok(manifest) = parse_plugin_manifest_toml(&content) {
+        return Some((manifest_path, manifest));
     }
 
     None
@@ -4173,7 +4169,6 @@ mod tests {
         assert!(tmp.path().join("src/lib.rs").exists());
         assert!(tmp.path().join("Cargo.toml").exists());
         assert!(tmp.path().join("clawdstrike.plugin.toml").exists());
-        assert!(tmp.path().join("plugin-manifest.toml").exists());
         assert!(tmp.path().join("tests/basic.yaml").exists());
         assert!(tmp.path().join(".cargo/config.toml").exists());
 
@@ -4228,7 +4223,6 @@ mod tests {
         assert!(tmp.path().join("clawdstrike-pkg.toml").exists());
         assert!(!tmp.path().join("src/lib.rs").exists());
         assert!(!tmp.path().join("clawdstrike.plugin.toml").exists());
-        assert!(!tmp.path().join("plugin-manifest.toml").exists());
         assert!(!tmp.path().join("tests/basic.yaml").exists());
     }
 
