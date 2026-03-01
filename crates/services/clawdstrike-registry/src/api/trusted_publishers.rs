@@ -83,10 +83,12 @@ pub async fn add_trusted_publisher(
     let caller_key = crate::auth::verify_signed_caller(&headers, &payload)?;
 
     // For scoped packages, verify org role. For unscoped packages, require
-    // package-level admin rights (publisher of at least one version).
+    // package-level admin rights for existing packages. Brand-new unscoped
+    // packages are allowed to bootstrap trusted publishers before first
+    // release so OIDC publish can complete.
     if let Some((scope, _basename)) = crate::auth::parse_package_scope(&name) {
         crate::auth::authorize_scoped_publish(&db, &scope, &caller_key)?;
-    } else {
+    } else if db.get_package(&name)?.is_some() {
         crate::auth::authorize_unscoped_package_admin(&db, &name, &caller_key)?;
     }
 

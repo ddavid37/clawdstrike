@@ -1,6 +1,7 @@
 //! DELETE /api/v1/packages/{name}/{version} — yank a package version.
 
 use axum::extract::{Path, State};
+use axum::http::HeaderMap;
 use axum::Json;
 use serde::Serialize;
 
@@ -8,7 +9,7 @@ use crate::error::RegistryError;
 use crate::index;
 use crate::state::AppState;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct YankResponse {
     pub name: String,
     pub version: String,
@@ -19,12 +20,21 @@ pub struct YankResponse {
 pub async fn yank(
     State(state): State<AppState>,
     Path((name, version)): Path<(String, String)>,
+    headers: HeaderMap,
 ) -> Result<Json<YankResponse>, RegistryError> {
     let yanked = {
         let db = state
             .db
             .lock()
             .map_err(|e| RegistryError::Internal(format!("db lock poisoned: {e}")))?;
+
+        let payload = format!("yank:{name}:{version}");
+        let caller_key = crate::auth::verify_signed_caller(&headers, &payload)?;
+        if let Some((scope, _basename)) = crate::auth::parse_package_scope(&name) {
+            crate::auth::authorize_scoped_publish(&db, &scope, &caller_key)?;
+        } else {
+            crate::auth::authorize_unscoped_package_admin(&db, &name, &caller_key)?;
+        }
 
         // Verify the version exists.
         db.get_version(&name, &version)?.ok_or_else(|| {

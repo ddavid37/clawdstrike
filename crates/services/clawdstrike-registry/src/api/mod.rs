@@ -393,6 +393,7 @@ mod tests {
         let yanked = yank::yank(
             State(state.clone()),
             Path((scoped_pkg.to_string(), version.to_string())),
+            signed_headers(&owner, &format!("yank:{scoped_pkg}:{version}")),
         )
         .await
         .unwrap();
@@ -499,6 +500,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unscoped_trusted_publisher_allows_bootstrap_before_first_publish() {
+        let (state, _tmp) = test_state();
+        let caller = Keypair::from_seed(&[60u8; 32]);
+        let package = "brand-new-unscoped";
+        let add_payload = format!("trusted-publisher:add:{package}:github:acme/repo::");
+
+        let (status, created) = trusted_publishers::add_trusted_publisher(
+            State(state.clone()),
+            Path(package.to_string()),
+            signed_headers(&caller, &add_payload),
+            Json(trusted_publishers::AddTrustedPublisherRequest {
+                provider: "github".to_string(),
+                repository: "acme/repo".to_string(),
+                workflow: None,
+                environment: None,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(created.0.package_name, package);
+        assert_eq!(created.0.created_by, caller.public_key().to_hex());
+    }
+
+    #[tokio::test]
     async fn unscoped_trusted_publisher_remove_requires_package_publisher() {
         let (state, _tmp) = test_state();
         let owner = Keypair::from_seed(&[37u8; 32]);
@@ -532,6 +558,30 @@ mod tests {
             State(state),
             Path((package.to_string(), created.0.id)),
             signed_headers(&stranger, &remove_payload),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("not authorized"));
+    }
+
+    #[tokio::test]
+    async fn yank_unscoped_requires_package_publisher() {
+        let (state, _tmp) = test_state();
+        let owner = Keypair::from_seed(&[61u8; 32]);
+        let stranger = Keypair::from_seed(&[62u8; 32]);
+        let package = "yankable-unscoped";
+        let version = "1.0.0";
+
+        let (req, _bytes) = publish_request(package, version, &owner);
+        let _published = publish::publish(State(state.clone()), HeaderMap::new(), Json(req))
+            .await
+            .unwrap();
+
+        let payload = format!("yank:{package}:{version}");
+        let err = yank::yank(
+            State(state),
+            Path((package.to_string(), version.to_string())),
+            signed_headers(&stranger, &payload),
         )
         .await
         .unwrap_err();
