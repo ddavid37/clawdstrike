@@ -412,7 +412,8 @@ fn comparator_to_range(comp: &semver::Comparator) -> std::result::Result<VS, Res
                         )));
                     }
                     let lo = semver::Version::new(major, min_val, 0);
-                    let hi = semver::Version::new(major, min_val + 1, 0);
+                    let hi =
+                        semver::Version::new(major, checked_increment(min_val, "minor", comp)?, 0);
                     Ok(Ranges::between(lo, hi))
                 }
                 _ => {
@@ -423,7 +424,7 @@ fn comparator_to_range(comp: &semver::Comparator) -> std::result::Result<VS, Res
                         )));
                     }
                     let lo = semver::Version::new(major, 0, 0);
-                    let hi = semver::Version::new(major + 1, 0, 0);
+                    let hi = semver::Version::new(checked_increment(major, "major", comp)?, 0, 0);
                     Ok(Ranges::between(lo, hi))
                 }
             }
@@ -438,10 +439,14 @@ fn comparator_to_range(comp: &semver::Comparator) -> std::result::Result<VS, Res
                 ))),
                 (Some(min_val), None) => Ok(Ranges::higher_than(semver::Version::new(
                     major,
-                    min_val + 1,
+                    checked_increment(min_val, "minor", comp)?,
                     0,
                 ))),
-                _ => Ok(Ranges::higher_than(semver::Version::new(major + 1, 0, 0))),
+                _ => Ok(Ranges::higher_than(semver::Version::new(
+                    checked_increment(major, "major", comp)?,
+                    0,
+                    0,
+                ))),
             }
         }
         semver::Op::GreaterEq => {
@@ -463,11 +468,11 @@ fn comparator_to_range(comp: &semver::Comparator) -> std::result::Result<VS, Res
                 }
                 (Some(min_val), None) => Ok(Ranges::strictly_lower_than(semver::Version::new(
                     major,
-                    min_val + 1,
+                    checked_increment(min_val, "minor", comp)?,
                     0,
                 ))),
                 _ => Ok(Ranges::strictly_lower_than(semver::Version::new(
-                    major + 1,
+                    checked_increment(major, "major", comp)?,
                     0,
                     0,
                 ))),
@@ -479,8 +484,10 @@ fn comparator_to_range(comp: &semver::Comparator) -> std::result::Result<VS, Res
             // ~I     → [I.0.0, (I+1).0.0)
             let lo = make_version(major, minor, patch, pre);
             let hi = match minor {
-                Some(min_val) => semver::Version::new(major, min_val + 1, 0),
-                None => semver::Version::new(major + 1, 0, 0),
+                Some(min_val) => {
+                    semver::Version::new(major, checked_increment(min_val, "minor", comp)?, 0)
+                }
+                None => semver::Version::new(checked_increment(major, "major", comp)?, 0, 0),
             };
             Ok(Ranges::between(lo, hi))
         }
@@ -499,18 +506,24 @@ fn comparator_to_range(comp: &semver::Comparator) -> std::result::Result<VS, Res
             //   major == 0, minor unspecified (^0) → 1.0.0
             let lo = make_version(major, minor, patch, pre);
             let hi = if major > 0 {
-                semver::Version::new(major + 1, 0, 0)
+                semver::Version::new(checked_increment(major, "major", comp)?, 0, 0)
             } else {
                 match minor {
                     None => {
                         // ^0 → [0.0.0, 1.0.0)
                         semver::Version::new(1, 0, 0)
                     }
-                    Some(min_val) if min_val > 0 => semver::Version::new(0, min_val + 1, 0),
+                    Some(min_val) if min_val > 0 => {
+                        semver::Version::new(0, checked_increment(min_val, "minor", comp)?, 0)
+                    }
                     Some(_) => {
                         // minor == 0
                         match patch {
-                            Some(pat_val) => semver::Version::new(0, 0, pat_val + 1),
+                            Some(pat_val) => semver::Version::new(
+                                0,
+                                0,
+                                checked_increment(pat_val, "patch", comp)?,
+                            ),
                             None => {
                                 // ^0.0 → [0.0.0, 0.1.0)
                                 semver::Version::new(0, 1, 0)
@@ -526,12 +539,12 @@ fn comparator_to_range(comp: &semver::Comparator) -> std::result::Result<VS, Res
             if let Some(min_val) = minor {
                 // X.Y.*: >=X.Y.0, <X.(Y+1).0
                 let lo = semver::Version::new(major, min_val, 0);
-                let hi = semver::Version::new(major, min_val + 1, 0);
+                let hi = semver::Version::new(major, checked_increment(min_val, "minor", comp)?, 0);
                 Ok(Ranges::between(lo, hi))
             } else {
                 // X.* or *: >=X.0.0, <(X+1).0.0
                 let lo = semver::Version::new(major, 0, 0);
-                let hi = semver::Version::new(major + 1, 0, 0);
+                let hi = semver::Version::new(checked_increment(major, "major", comp)?, 0, 0);
                 Ok(Ranges::between(lo, hi))
             }
         }
@@ -540,6 +553,19 @@ fn comparator_to_range(comp: &semver::Comparator) -> std::result::Result<VS, Res
             comp.op
         ))),
     }
+}
+
+fn checked_increment(
+    value: u64,
+    component: &str,
+    comp: &semver::Comparator,
+) -> std::result::Result<u64, ResolverError> {
+    value.checked_add(1).ok_or_else(|| {
+        ResolverError::ConstraintParse(format!(
+            "invalid constraint '{}': {} component overflow",
+            comp, component
+        ))
+    })
 }
 
 /// Build a `semver::Version` from major/optional-minor/optional-patch.
@@ -983,6 +1009,27 @@ mod tests {
         assert!(range.contains(&semver::Version::new(1, 5, 0)));
         assert!(!range.contains(&semver::Version::new(2, 0, 0)));
         assert!(!range.contains(&semver::Version::new(0, 9, 9)));
+    }
+
+    #[test]
+    fn version_req_to_range_rejects_major_overflow() {
+        let req = VersionReq::parse("^18446744073709551615").unwrap();
+        let err = version_req_to_range(&req).unwrap_err();
+        assert!(err.to_string().contains("major component overflow"));
+    }
+
+    #[test]
+    fn version_req_to_range_rejects_minor_overflow() {
+        let req = VersionReq::parse("~1.18446744073709551615").unwrap();
+        let err = version_req_to_range(&req).unwrap_err();
+        assert!(err.to_string().contains("minor component overflow"));
+    }
+
+    #[test]
+    fn version_req_to_range_rejects_patch_overflow() {
+        let req = VersionReq::parse("^0.0.18446744073709551615").unwrap();
+        let err = version_req_to_range(&req).unwrap_err();
+        assert!(err.to_string().contains("patch component overflow"));
     }
 
     #[test]

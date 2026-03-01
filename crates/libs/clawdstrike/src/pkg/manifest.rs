@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::version::VersionReq;
 use crate::error::{Error, Result};
 use crate::plugins::{
     PluginCapabilities, PluginClawdstrikeCompatibility, PluginResourceLimits, PluginTrust,
@@ -181,14 +182,21 @@ impl PkgManifest {
             }
         }
 
-        // Dependency version constraints must be non-empty
+        // Dependency version constraints must be non-empty and parseable semver requirements.
         for (dep_name, constraint) in &self.dependencies {
-            if constraint.trim().is_empty() {
+            let trimmed = constraint.trim();
+            if trimmed.is_empty() {
                 return Err(Error::PkgError(format!(
                     "dependency '{}' has empty version constraint",
                     dep_name
                 )));
             }
+            VersionReq::parse(trimmed).map_err(|e| {
+                Error::PkgError(format!(
+                    "dependency '{}' has invalid version constraint '{}': {}",
+                    dep_name, constraint, e
+                ))
+            })?;
         }
 
         Ok(())
@@ -357,6 +365,27 @@ sandbox = "native"
 "#;
         let err = parse_pkg_manifest_toml(raw).unwrap_err();
         assert!(err.to_string().contains("empty version constraint"));
+    }
+
+    #[test]
+    fn rejects_invalid_dep_constraint() {
+        let raw = r#"
+[package]
+name = "my-pkg"
+version = "1.0.0"
+pkg_type = "guard"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+
+[dependencies]
+"bad-dep" = "not-a-version"
+"#;
+        let err = parse_pkg_manifest_toml(raw).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("dependency 'bad-dep' has invalid version constraint"));
     }
 
     #[test]
