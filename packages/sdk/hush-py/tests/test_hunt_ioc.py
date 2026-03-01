@@ -346,3 +346,16 @@ class TestIocDatabaseMatching:
         ]
         results = db.match_events(events)
         assert len(results) == 2
+
+    def test_unserializable_raw_payload_does_not_break_matching(self) -> None:
+        db = IocDatabase()
+        db.add_entry(IocEntry(
+            indicator="evil.com", ioc_type=IocType.DOMAIN,
+            description=None, source=None,
+        ))
+        circular: dict[str, object] = {}
+        circular["self"] = circular
+        event = _make_event("connection to evil.com", raw=circular)
+        result = db.match_event(event)
+        assert result is not None
+        assert result.match_field == "summary"

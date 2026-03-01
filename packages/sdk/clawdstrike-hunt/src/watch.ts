@@ -8,6 +8,7 @@
 import { parseEnvelope } from "./timeline.js";
 import { CorrelationEngine } from "./correlate/engine.js";
 import { WatchError } from "./errors.js";
+import { buildNatsConnectOptions } from "./nats.js";
 import type {
   Alert,
   TimelineEvent,
@@ -57,10 +58,9 @@ export async function runWatch(
   const startTime = new Date();
 
   // Connect to NATS.
-  const nc = await natsModule.connect({
-    servers: config.natsUrl,
-    ...(config.natsCreds ? { credentials: config.natsCreds } : {}),
-  });
+  const nc = await natsModule.connect(
+    await buildNatsConnectOptions(natsModule, config.natsUrl, config.natsCreds),
+  );
 
   const sub = nc.subscribe(NATS_SUBJECT);
 

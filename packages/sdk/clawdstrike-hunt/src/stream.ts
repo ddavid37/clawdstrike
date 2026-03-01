@@ -8,6 +8,7 @@
 import { parseEnvelope } from './timeline.js';
 import { CorrelationEngine } from './correlate/engine.js';
 import { WatchError } from './errors.js';
+import { buildNatsConnectOptions } from './nats.js';
 import type { Alert, TimelineEvent, WatchConfig } from './types.js';
 
 const NATS_SUBJECT = 'clawdstrike.sdr.fact.>';
@@ -38,10 +39,9 @@ export async function* stream(
   }
 
   const engine = new CorrelationEngine(options.rules);
-  const nc = await natsModule.connect({
-    servers: options.natsUrl,
-    ...(options.natsCreds ? { credentials: options.natsCreds } : {}),
-  });
+  const nc = await natsModule.connect(
+    await buildNatsConnectOptions(natsModule, options.natsUrl, options.natsCreds),
+  );
   const sub = nc.subscribe(NATS_SUBJECT);
 
   if (options.signal) {
@@ -98,10 +98,9 @@ export async function* streamAll(
   }
 
   const engine = new CorrelationEngine(options.rules);
-  const nc = await natsModule.connect({
-    servers: options.natsUrl,
-    ...(options.natsCreds ? { credentials: options.natsCreds } : {}),
-  });
+  const nc = await natsModule.connect(
+    await buildNatsConnectOptions(natsModule, options.natsUrl, options.natsCreds),
+  );
   const sub = nc.subscribe(NATS_SUBJECT);
 
   if (options.signal) {

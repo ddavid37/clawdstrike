@@ -70,6 +70,8 @@ async def stream(config: WatchConfig) -> AsyncIterator[Alert]:
                 envelope = json.loads(msg.data.decode())
             except (json.JSONDecodeError, UnicodeDecodeError):
                 continue
+            if not isinstance(envelope, dict):
+                continue
 
             event = parse_envelope(envelope)
             if event is None:
@@ -119,6 +121,8 @@ async def stream_all(config: WatchConfig) -> AsyncIterator[StreamItem]:
             try:
                 envelope = json.loads(msg.data.decode())
             except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            if not isinstance(envelope, dict):
                 continue
 
             event = parse_envelope(envelope)

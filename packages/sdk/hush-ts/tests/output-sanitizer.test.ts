@@ -61,6 +61,41 @@ describe.skipIf(!wasmAvailable)("output sanitizer", () => {
     expect(r1!.wasRedacted).toBe(true);
   });
 
+  it("streaming does not duplicate overlap across auto-flush boundaries", () => {
+    const s = new OutputSanitizer();
+    const stream = s.createStream({ bufferSize: 10, carryBytes: 3 });
+
+    let out = "";
+    const r1 = stream.write("abcdefghij");
+    if (r1) out += r1.sanitized;
+
+    const r2 = stream.write("klmnop");
+    if (r2) out += r2.sanitized;
+
+    out += stream.flush().sanitized;
+    expect(out).toBe("abcdefghijklmnop");
+  });
+
+  it("streaming redacts secrets split across chunk boundaries", () => {
+    const s = new OutputSanitizer();
+    const stream = s.createStream({ bufferSize: 20, carryBytes: 12 });
+
+    const key = "sk-" + "a".repeat(48);
+    let out = "";
+
+    const r1 = stream.write(`hello ${key.slice(0, 16)}`);
+    if (r1) out += r1.sanitized;
+
+    const r2 = stream.write(`${key.slice(16)} bye`);
+    if (r2) out += r2.sanitized;
+
+    const final = stream.flush();
+    out += final.sanitized;
+
+    expect(out).not.toContain(key);
+    expect(out).toContain("[REDACTED:openai_api_key]");
+  });
+
   it("streaming flush returns sanitized result", () => {
     const s = new OutputSanitizer();
     const stream = s.createStream();

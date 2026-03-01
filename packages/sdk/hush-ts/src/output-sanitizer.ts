@@ -142,6 +142,7 @@ export class SanitizationStream {
   private buffer: string = "";
   private bufferSize: number;
   private carryBytes: number;
+  private static readonly TOKEN_BOUNDARY = /[\s.,;:!?()[\]{}<>"'`\\/]/;
 
   constructor(sanitizer: OutputSanitizer, config?: StreamingConfig) {
     this.sanitizer = sanitizer;
@@ -154,19 +155,89 @@ export class SanitizationStream {
   write(chunk: string): SanitizationResult | null {
     this.buffer += chunk;
     if (this.buffer.length >= this.bufferSize) {
-      return this.flush();
+      return this.flushReady();
     }
     return null;
   }
 
   flush(): SanitizationResult {
     const result = this.sanitizer.sanitize(this.buffer);
-    // Keep the tail so cross-boundary secrets get caught on the next pass.
-    if (this.carryBytes > 0 && this.buffer.length > this.carryBytes) {
-      this.buffer = this.buffer.slice(-this.carryBytes);
-    } else {
-      this.buffer = "";
-    }
+    this.buffer = "";
     return result;
+  }
+
+  private flushReady(): SanitizationResult | null {
+    if (this.buffer.length === 0) {
+      return null;
+    }
+
+    const fullScan = this.sanitizer.sanitize(this.buffer);
+    const carry = Math.max(0, this.carryBytes);
+    if (carry === 0) {
+      this.buffer = "";
+      return fullScan;
+    }
+
+    let cutoff = this.buffer.length - carry;
+    if (cutoff <= 0) {
+      if (fullScan.redactions.length > 0) {
+        this.buffer = "";
+        return fullScan;
+      }
+      return null;
+    }
+
+    // Avoid splitting inside a redaction span.
+    const mergedSpans = fullScan.redactions
+      .map((r) => ({ start: r.originalSpan.start, end: r.originalSpan.end }))
+      .sort((a, b) => a.start - b.start || a.end - b.end)
+      .reduce<Array<{ start: number; end: number }>>((acc, span) => {
+        const last = acc[acc.length - 1];
+        if (last && span.start <= last.end) {
+          last.end = Math.max(last.end, span.end);
+          return acc;
+        }
+        acc.push(span);
+        return acc;
+      }, []);
+
+    for (const span of mergedSpans) {
+      if (span.start < cutoff && cutoff < span.end) {
+        cutoff = span.start;
+        break;
+      }
+    }
+
+    cutoff = this.adjustCutoffToTokenBoundary(cutoff);
+    if (cutoff <= 0) {
+      if (fullScan.redactions.length > 0) {
+        this.buffer = "";
+        return fullScan;
+      }
+      // Force progress if input has no token boundaries and has grown beyond
+      // the target buffer window.
+      if (this.buffer.length > this.bufferSize + carry) {
+        cutoff = this.buffer.length - carry;
+      } else {
+        return null;
+      }
+    }
+
+    if (cutoff <= 0) {
+      return null;
+    }
+
+    const prefix = this.buffer.slice(0, cutoff);
+    this.buffer = this.buffer.slice(cutoff);
+    return this.sanitizer.sanitize(prefix);
+  }
+
+  private adjustCutoffToTokenBoundary(cutoff: number): number {
+    for (let i = cutoff - 1; i >= 0; i -= 1) {
+      if (SanitizationStream.TOKEN_BOUNDARY.test(this.buffer.charAt(i))) {
+        return i + 1;
+      }
+    }
+    return cutoff;
   }
 }

@@ -1,5 +1,4 @@
 import type {
-  AdapterConfig,
   Decision,
   PolicyEngineLike,
   SecurityContext,
@@ -10,7 +9,6 @@ import {
   createSecurityContext,
   isClawdstrikeLike,
   isToolInterceptor,
-  type ClawdstrikeLike,
   type SecuritySource,
 } from "@clawdstrike/adapter-core";
 
@@ -109,36 +107,11 @@ function wrapTools<TTool extends LangChainToolLike>(
   return tools.map((tool) => wrapToolWithContext(tool, interceptor, context, options?.getContext));
 }
 
-function wrapToolWithConfig<TTool extends LangChainToolLike>(
-  tool: TTool,
-  engine: PolicyEngineLike,
-  config: AdapterConfig = {},
-  options?: WrapToolOptions,
-): TTool {
-  const interceptor = createLangChainInterceptor(engine, config);
-  const context =
-    options?.context ??
-    createSecurityContext({
-      metadata: { framework: "langchain" },
-    });
-
-  return wrapToolWithContext(tool, interceptor, context, options?.getContext, {
-    engine,
-    config,
-    options,
-  });
-}
-
 function wrapToolWithContext<TTool extends LangChainToolLike>(
   tool: TTool,
   interceptor: ToolInterceptor,
   context: SecurityContext,
   getContext?: (toolName: string, input: unknown) => SecurityContext,
-  withConfigSupport?: {
-    engine: PolicyEngineLike;
-    config: AdapterConfig;
-    options?: WrapToolOptions;
-  },
 ): TTool {
   const toolName = typeof tool.name === "string" && tool.name.length > 0 ? tool.name : "tool";
   const hasInvoke = typeof tool.invoke === "function";
@@ -195,15 +168,6 @@ function wrapToolWithContext<TTool extends LangChainToolLike>(
       }
       if (prop === "getLastDecision") {
         return () => lastDecision;
-      }
-      if (prop === "withConfig" && withConfigSupport) {
-        return (overrides: Partial<AdapterConfig>) =>
-          wrapToolWithConfig(
-            tool,
-            withConfigSupport.engine,
-            { ...withConfigSupport.config, ...overrides },
-            withConfigSupport.options,
-          );
       }
 
       const value = Reflect.get(target, prop, receiver) as unknown;

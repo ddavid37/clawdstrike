@@ -59,6 +59,13 @@ export class PromptInjectionGuard implements Guard {
       Number.isInteger(config.max_scan_bytes) && (config.max_scan_bytes ?? 0) > 0
         ? Number(config.max_scan_bytes)
         : 200_000;
+
+    const wasm = getWasmModule();
+    if (!wasm?.detect_prompt_injection) {
+      throw new Error(
+        "WASM not initialized. Call initWasm() before using PromptInjectionGuard.",
+      );
+    }
   }
 
   handles(action: GuardAction): boolean {
@@ -81,12 +88,6 @@ export class PromptInjectionGuard implements Guard {
     }
 
     const wasm = getWasmModule();
-    if (!wasm?.detect_prompt_injection) {
-      throw new Error(
-        "WASM not initialized. Call initWasm() before using PromptInjectionGuard.",
-      );
-    }
-
     const resultJson: string = wasm.detect_prompt_injection(text, this.maxScanBytes);
     const result: WasmPromptInjectionResult = JSON.parse(resultJson);
 

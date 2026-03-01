@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import inspect
+import json
+import sys
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -101,6 +103,54 @@ class TestStreamAll:
     def test_stream_all_is_async_generator_function(self) -> None:
         """stream_all should be an async generator function."""
         assert inspect.isasyncgenfunction(stream_all)
+
+    @pytest.mark.asyncio
+    async def test_stream_all_skips_non_object_json_payloads(self, monkeypatch) -> None:
+        """Valid JSON payloads that are not objects should be ignored safely."""
+        valid_envelope = {
+            "issued_at": "2025-01-15T10:00:00Z",
+            "fact": {
+                "schema": "clawdstrike.sdr.fact.receipt.v1",
+                "decision": "allow",
+                "guard": "test",
+            },
+        }
+        payloads = [
+            b'"not-an-object"',
+            json.dumps(valid_envelope).encode(),
+        ]
+
+        class _FakeMsg:
+            def __init__(self, data: bytes) -> None:
+                self.data = data
+
+        class _FakeSub:
+            def __init__(self, items: list[bytes]) -> None:
+                async def _iter():
+                    for item in items:
+                        yield _FakeMsg(item)
+                self.messages = _iter()
+
+        class _FakeNc:
+            async def subscribe(self, _subject: str):
+                return _FakeSub(payloads)
+
+            async def drain(self) -> None:
+                return None
+
+        class _FakeNats:
+            @staticmethod
+            async def connect(*_args, **_kwargs):
+                return _FakeNc()
+
+        monkeypatch.setitem(sys.modules, "nats", _FakeNats)
+
+        items = []
+        async for item in stream_all(_make_config()):
+            items.append(item)
+
+        assert len(items) == 1
+        assert items[0].type == "event"
 
 
 class TestStreamItems:

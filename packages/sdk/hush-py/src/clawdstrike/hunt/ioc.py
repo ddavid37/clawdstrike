@@ -439,7 +439,12 @@ class IocDatabase:
             if isinstance(event.raw, str):
                 raw_lower = event.raw.lower()
             else:
-                raw_lower = json.dumps(event.raw, default=str).lower()
+                try:
+                    raw_lower = json.dumps(event.raw, default=str).lower()
+                except (TypeError, ValueError, OverflowError, RecursionError):
+                    # Ignore unserializable/circular payloads and continue
+                    # scanning summary/process fields.
+                    raw_lower = ""
 
         all_matched: list[IocEntry] = []
         match_field: str | None = None

@@ -783,9 +783,8 @@ function sanitizeStreamChunkIfNeeded(
     if (!result) {
       return null;
     }
-    // Always use result.sanitized — it contains the full buffered content
-    // (prior suppressed chunks + current delta). Using the original chunk
-    // would discard the buffered prefix accumulated while write() returned null.
+    // Use the stream-processed chunk. This may differ from the incoming delta
+    // due to buffering and cross-boundary redaction.
     return { ...chunk, textDelta: result.sanitized };
   }
 
