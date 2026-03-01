@@ -166,16 +166,25 @@ pub async fn publish(
         );
     }
 
-    // 1b. Scope authorization for @scope/name packages (for non-OIDC publishes).
+    // 1b. Package authorization (for non-OIDC publishes).
+    //
+    // - Scoped packages: caller must be org owner/maintainer for @scope.
+    // - Unscoped packages:
+    //   - First publish (package does not exist yet): allowed.
+    //   - Existing package: caller must be an existing package publisher.
     if !is_oidc {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| RegistryError::Internal(format!("db lock poisoned: {e}")))?;
+
         if let Some((scope, _basename)) = crate::auth::parse_package_scope(&name) {
-            let db = state
-                .db
-                .lock()
-                .map_err(|e| RegistryError::Internal(format!("db lock poisoned: {e}")))?;
             crate::auth::authorize_scoped_publish(&db, &scope, &req.publisher_key)?;
-            drop(db);
+        } else if db.get_package(&name)?.is_some() {
+            crate::auth::authorize_unscoped_package_admin(&db, &name, &req.publisher_key)?;
         }
+
+        drop(db);
     }
 
     // 3. Compute SHA-256 of the archive.

@@ -846,4 +846,26 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("organization 'missing' not found"));
     }
+
+    #[tokio::test]
+    async fn publish_unscoped_existing_package_requires_existing_publisher() {
+        let (state, _tmp) = test_state();
+        let owner = Keypair::from_seed(&[52u8; 32]);
+        let attacker = Keypair::from_seed(&[53u8; 32]);
+
+        let (first_req, _bytes) = publish_request("demo", "1.0.0", &owner);
+        let first = publish::publish(State(state.clone()), HeaderMap::new(), Json(first_req))
+            .await
+            .unwrap();
+        assert_eq!(first.0.name, "demo");
+        assert_eq!(first.0.version, "1.0.0");
+
+        let (second_req, _bytes) = publish_request("demo", "1.1.0", &attacker);
+        let err = publish::publish(State(state), HeaderMap::new(), Json(second_req))
+            .await
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("caller is not authorized to administer unscoped package 'demo'"));
+    }
 }

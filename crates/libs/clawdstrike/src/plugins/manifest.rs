@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::semver_utils::parse_strict_semver;
+use crate::semver_utils::{is_strict_semver, parse_strict_semver};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -247,10 +247,6 @@ pub fn parse_plugin_manifest_toml(content: &str) -> Result<PluginManifest> {
         .map_err(|e| Error::ConfigError(format!("failed to parse plugin manifest TOML: {e}")))?;
     manifest.validate()?;
     Ok(manifest)
-}
-
-fn is_strict_semver(value: &str) -> bool {
-    parse_strict_semver(value).is_some()
 }
 
 fn is_semver_range(value: &str) -> bool {

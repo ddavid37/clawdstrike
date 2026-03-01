@@ -109,6 +109,26 @@ fn is_valid_unscoped_name(name: &str) -> bool {
     })
 }
 
+/// Regex for scope names: `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`
+fn is_valid_scope_name(scope: &str) -> bool {
+    if scope.is_empty() {
+        return false;
+    }
+    let bytes = scope.as_bytes();
+    if !bytes[0].is_ascii_lowercase() && !bytes[0].is_ascii_digit() {
+        return false;
+    }
+    if bytes.len() > 1 {
+        let last = bytes[bytes.len() - 1];
+        if !last.is_ascii_lowercase() && !last.is_ascii_digit() {
+            return false;
+        }
+    }
+    bytes
+        .iter()
+        .all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
 /// Validate package name: unscoped or `@scope/name`.
 fn is_valid_pkg_name(name: &str) -> bool {
     if let Some(rest) = name.strip_prefix('@') {
@@ -122,10 +142,8 @@ fn is_valid_pkg_name(name: &str) -> bool {
             Some(s) if !s.is_empty() => s,
             _ => return false,
         };
-        // scope must be [a-z0-9-]+
-        let scope_valid = scope
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+        // scope must match [a-z0-9]([a-z0-9-]*[a-z0-9])?
+        let scope_valid = is_valid_scope_name(scope);
         scope_valid && is_valid_unscoped_name(pkg)
     } else {
         is_valid_unscoped_name(name)
@@ -378,5 +396,11 @@ sandbox = "native"
         assert!(!is_valid_pkg_name("@scope/"));
         // no @ prefix but has slash
         assert!(!is_valid_pkg_name("scope/name"));
+        // scoped: scope cannot start/end with '-'
+        assert!(!is_valid_pkg_name("@-scope/name"));
+        assert!(!is_valid_pkg_name("@scope-/name"));
+        assert!(!is_valid_pkg_name("@--/name"));
+        // scoped valid boundaries
+        assert!(is_valid_pkg_name("@scope-1/name"));
     }
 }

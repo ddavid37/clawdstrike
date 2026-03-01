@@ -268,6 +268,17 @@ impl RegistryDb {
                 "UPDATE packages SET description = COALESCE(?1, description), updated_at = ?2 WHERE name = ?3",
                 params![description, now, name],
             )?;
+            let effective_description: String = self.conn.query_row(
+                "SELECT COALESCE(description, '') FROM packages WHERE name = ?1",
+                params![name],
+                |row| row.get(0),
+            )?;
+            // Keep FTS in sync with package metadata updates.
+            self.conn.execute(
+                "INSERT OR REPLACE INTO search_index (rowid, name, description, keywords)
+                 VALUES ((SELECT rowid FROM search_index WHERE name = ?1), ?1, ?2, '')",
+                params![name, effective_description],
+            )?;
             Ok(false)
         } else {
             self.conn.execute(
@@ -1044,6 +1055,26 @@ mod tests {
         let pkg = db.get_package("my-guard").unwrap().unwrap();
         assert_eq!(pkg.description.as_deref(), Some("v2"));
         assert_eq!(pkg.updated_at, "2025-01-02T00:00:00Z");
+    }
+
+    #[test]
+    fn upsert_package_refreshes_search_index_description() {
+        let db = test_db();
+        db.upsert_package("my-guard", Some("v1-desc"), "2025-01-01T00:00:00Z")
+            .unwrap();
+        let initial = db.search("v1-desc", 10, 0).unwrap();
+        assert_eq!(initial.len(), 1);
+        assert_eq!(initial[0].name, "my-guard");
+
+        db.upsert_package("my-guard", Some("v2-updated"), "2025-01-02T00:00:00Z")
+            .unwrap();
+
+        let stale = db.search("v1-desc", 10, 0).unwrap();
+        assert!(stale.is_empty());
+
+        let updated = db.search("v2-updated", 10, 0).unwrap();
+        assert_eq!(updated.len(), 1);
+        assert_eq!(updated[0].name, "my-guard");
     }
 
     #[test]

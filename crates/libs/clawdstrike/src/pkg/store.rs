@@ -138,11 +138,6 @@ impl PackageStore {
             return Err(e.into());
         }
 
-        // Remove old backup only after successful replacement.
-        if let Some(backup_path) = backup {
-            let _ = fs::remove_dir_all(backup_path);
-        }
-
         // Disarm the guard — the temp dir no longer exists (it was renamed).
         guard.disarmed = true;
 
@@ -153,8 +148,34 @@ impl PackageStore {
             name: Some(name.clone()),
         };
         let meta_path = target.join(".pkg-meta.json");
-        let meta_json = serde_json::to_string_pretty(&meta)?;
-        fs::write(&meta_path, meta_json)?;
+        let meta_json = match serde_json::to_string_pretty(&meta) {
+            Ok(v) => v,
+            Err(e) => {
+                // Roll back to previous install if metadata serialization fails.
+                if let Some(ref backup_path) = backup {
+                    let _ = fs::remove_dir_all(&target);
+                    let _ = fs::rename(backup_path, &target);
+                } else {
+                    let _ = fs::remove_dir_all(&target);
+                }
+                return Err(e.into());
+            }
+        };
+        if let Err(e) = fs::write(&meta_path, meta_json) {
+            // Roll back to previous install if metadata persistence fails.
+            if let Some(ref backup_path) = backup {
+                let _ = fs::remove_dir_all(&target);
+                let _ = fs::rename(backup_path, &target);
+            } else {
+                let _ = fs::remove_dir_all(&target);
+            }
+            return Err(e.into());
+        }
+
+        // Remove old backup only after metadata write succeeds.
+        if let Some(backup_path) = backup {
+            let _ = fs::remove_dir_all(backup_path);
+        }
 
         Ok(InstalledPackage {
             name: name.clone(),
@@ -314,6 +335,37 @@ sandbox = "native"
         archive_path
     }
 
+    fn create_test_package_with_meta_path_directory(
+        tmp: &Path,
+        name: &str,
+        version: &str,
+        pkg_type: &str,
+        suffix: &str,
+        payload: &[u8],
+    ) -> PathBuf {
+        let src = tmp.join(format!("pkg-src-{suffix}"));
+        fs::create_dir_all(&src).unwrap();
+
+        let manifest = format!(
+            r#"[package]
+name = "{name}"
+version = "{version}"
+pkg_type = "{pkg_type}"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+"#
+        );
+        fs::write(src.join("clawdstrike-pkg.toml"), &manifest).unwrap();
+        fs::create_dir_all(src.join(".pkg-meta.json")).unwrap();
+        fs::write(src.join("guard.wasm"), payload).unwrap();
+
+        let archive_path = tmp.join(format!("{suffix}.cpkg"));
+        archive::pack(&src, &archive_path).unwrap();
+        archive_path
+    }
+
     #[test]
     fn install_and_get() {
         let tmp = tempfile::tempdir().unwrap();
@@ -405,6 +457,29 @@ sandbox = "native"
 
         assert_eq!(first.content_hash, second.content_hash);
         assert_eq!(store.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn metadata_write_failure_restores_previous_install() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = PackageStore::with_root(tmp.path().join("store")).unwrap();
+
+        let good = create_test_package(tmp.path(), "demo", "1.0.0", "guard", "h");
+        let first = store.install_from_file(&good).unwrap();
+
+        let bad = create_test_package_with_meta_path_directory(
+            tmp.path(),
+            "demo",
+            "1.0.0",
+            "guard",
+            "i",
+            b"new payload",
+        );
+        let _err = store.install_from_file(&bad).unwrap_err();
+
+        let current = store.get("demo", "1.0.0").unwrap().unwrap();
+        assert_eq!(current.content_hash, first.content_hash);
+        assert!(current.path.join(".pkg-meta.json").is_file());
     }
 
     #[test]
