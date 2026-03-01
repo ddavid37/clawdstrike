@@ -6,15 +6,10 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
 /**
  * Serialize object to canonical JSON per RFC 8785 (JCS).
  *
- * Delegates to the WASM module's `canonicalize_json` for deterministic output.
- *
- * @param obj - Object to serialize
- * @returns Canonical JSON string
- * @throws If WASM is not initialized
+ * Uses WASM when available, otherwise falls back to a pure-TS implementation.
  */
 export function canonicalize(obj: JsonValue): string {
   // Pre-validate: RFC 8785 rejects non-finite numbers.
-  // JSON.stringify silently converts NaN/Infinity to null, so check first.
   JSON.stringify(obj, (_, value) => {
     if (typeof value === "number" && !Number.isFinite(value)) {
       throw new Error(`RFC 8785 does not support non-finite numbers: ${value}`);
@@ -22,10 +17,27 @@ export function canonicalize(obj: JsonValue): string {
     return value;
   });
   const wasm = getWasmModule();
-  if (!wasm?.canonicalize_json) {
-    throw new Error("WASM not initialized. Call initWasm() before using canonicalize.");
+  if (wasm?.canonicalize_json) {
+    return wasm.canonicalize_json(JSON.stringify(obj));
   }
-  return wasm.canonicalize_json(JSON.stringify(obj));
+  return jcsSerialize(obj);
+}
+
+/** Pure-TS RFC 8785 serialization (sorted keys, ES6 number formatting). */
+function jcsSerialize(value: JsonValue): string {
+  if (value === null || typeof value === "boolean" || typeof value === "number") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "string") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return "[" + value.map(jcsSerialize).join(",") + "]";
+  }
+  // Object — sort keys lexicographically by UTF-16 code units (default JS sort).
+  const keys = Object.keys(value).sort();
+  const members = keys.map((k) => JSON.stringify(k) + ":" + jcsSerialize(value[k]));
+  return "{" + members.join(",") + "}";
 }
 
 /**

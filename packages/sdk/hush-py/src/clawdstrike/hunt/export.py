@@ -237,8 +237,8 @@ def _item_to_json(item: Union[Alert, TimelineEvent]) -> dict:
 
 
 def _escape_stix_value(value: str) -> str:
-    """Escape backslashes and single quotes for embedding in STIX patterns."""
-    return value.replace("\\", "\\\\").replace("'", "\\'")
+    """Escape backslashes, single quotes, and brackets for STIX patterns."""
+    return value.replace("\\", "\\\\").replace("'", "\\'").replace("]", "\\]")
 
 
 def _ioc_to_stix_pattern(ioc: IocEntry) -> str:

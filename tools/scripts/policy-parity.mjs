@@ -167,6 +167,11 @@ async function runTsEngine(env, policyRef, events, engineKind) {
       throw new Error(`missing hush-ts dist at ${distEntry}; run npm --prefix packages/sdk/hush-ts run build`);
     }
     const mod = await import(pathToFileURL(distEntry).href);
+    // JailbreakDetector (and other detection modules) require the WASM backend.
+    // Initialize it before instantiating the SDK so guard construction succeeds.
+    if (typeof mod.initWasm === 'function') {
+      await mod.initWasm();
+    }
     const sdk = await mod.Clawdstrike.fromPolicy(policyRef);
     for (const evt of events) {
       const decision = await evaluateSdkEvent(sdk, evt);

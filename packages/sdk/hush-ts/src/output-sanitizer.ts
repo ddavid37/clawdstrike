@@ -141,10 +141,14 @@ export class SanitizationStream {
   private sanitizer: OutputSanitizer;
   private buffer: string = "";
   private bufferSize: number;
+  private carryBytes: number;
 
   constructor(sanitizer: OutputSanitizer, config?: StreamingConfig) {
     this.sanitizer = sanitizer;
     this.bufferSize = config?.bufferSize ?? 50_000;
+    // Carry the last N bytes from each flush into the next buffer so secrets
+    // that span chunk boundaries are still detected.
+    this.carryBytes = config?.carryBytes ?? 128;
   }
 
   write(chunk: string): SanitizationResult | null {
@@ -157,7 +161,12 @@ export class SanitizationStream {
 
   flush(): SanitizationResult {
     const result = this.sanitizer.sanitize(this.buffer);
-    this.buffer = "";
+    // Keep the tail so cross-boundary secrets get caught on the next pass.
+    if (this.carryBytes > 0 && this.buffer.length > this.carryBytes) {
+      this.buffer = this.buffer.slice(-this.carryBytes);
+    } else {
+      this.buffer = "";
+    }
     return result;
   }
 }

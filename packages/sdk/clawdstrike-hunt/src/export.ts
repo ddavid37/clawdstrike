@@ -264,7 +264,7 @@ function csvEscape(value: string): string {
 }
 
 function escapeStixValue(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/]/g, '\\]');
 }
 
 function iocToStixPattern(ioc: IocEntry): string {

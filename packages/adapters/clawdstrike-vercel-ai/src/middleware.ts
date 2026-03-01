@@ -724,21 +724,21 @@ function sanitizeStreamChunkIfNeeded(
       return chunk;
     }
 
-    const sanitized = streamRef.stream.write(delta);
-    if (!sanitized) {
+    const result = streamRef.stream.write(delta);
+    if (!result) {
       return null;
     }
-    if (sanitized === delta) {
+    if (!result.wasRedacted) {
       return chunk;
     }
-    return { ...chunk, textDelta: sanitized };
+    return { ...chunk, textDelta: result.sanitized };
   }
 
   if (type === "finish" || type === "error") {
-    const final = streamRef.stream.end();
+    const final = streamRef.stream.flush();
     streamRef.stream = null;
 
-    if (final.redacted) {
+    if (final.wasRedacted) {
       context.addAuditEvent({
         id: createEventId("psos"),
         type: "prompt_security_output_sanitized",
@@ -756,7 +756,7 @@ function sanitizeStreamChunkIfNeeded(
       });
     }
 
-    if (type === "finish" && final.sanitized) {
+    if (type === "finish" && final.wasRedacted) {
       return [{ type: "text-delta", textDelta: final.sanitized }, chunk];
     }
     return chunk;
@@ -765,8 +765,8 @@ function sanitizeStreamChunkIfNeeded(
   if (type === "tool-result") {
     const toolResult = (chunk as any).result;
     if (typeof toolResult === "string") {
-      const r = runtime.outputSanitizer.sanitizeSync(toolResult);
-      if (r.redacted) {
+      const r = runtime.outputSanitizer.sanitize(toolResult);
+      if (r.wasRedacted) {
         context.addAuditEvent({
           id: createEventId("psos"),
           type: "prompt_security_output_sanitized",
@@ -883,8 +883,8 @@ function maybeSanitizeGeneratedText(
   const text = result?.text;
   if (typeof text !== "string" || !text) return;
 
-  const r = runtime.outputSanitizer.sanitizeSync(text);
-  if (!r.redacted) return;
+  const r = runtime.outputSanitizer.sanitize(text);
+  if (!r.wasRedacted) return;
 
   result.text = r.sanitized;
   result.__clawdstrike_redacted = true;

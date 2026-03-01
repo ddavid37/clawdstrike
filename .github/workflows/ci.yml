@@ -461,12 +461,14 @@ jobs:
       - name: Check bundle size
         run: |
           SIZE=$(wc -c < crates/libs/hush-wasm/pkg/hush_wasm_bg.wasm)
-          echo "Bundle size: $SIZE bytes"
-          if [ $SIZE -gt 512000 ]; then
-            echo "ERROR: Bundle exceeds 500KB limit"
+          echo "Bundle size: $SIZE bytes ($(( SIZE / 1024 ))KB)"
+          # Limit raised from 512KB to 2MB after adding clawdstrike detection
+          # modules (regex patterns for jailbreak/injection detection) to WASM.
+          if [ $SIZE -gt 2097152 ]; then
+            echo "ERROR: Bundle exceeds 2MB limit"
             exit 1
           fi
-          echo "Bundle size is within 500KB limit"
+          echo "Bundle size is within 2MB limit"
 
   proptest:
     name: Property Tests
