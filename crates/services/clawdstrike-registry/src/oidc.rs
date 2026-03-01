@@ -32,7 +32,7 @@ pub struct GitHubClaims {
     pub environment: Option<String>,
     pub iss: String,
     #[serde(default)]
-    pub aud: String,
+    pub aud: Option<OidcAudienceClaim>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,7 +45,25 @@ pub struct GitLabClaims {
     pub environment: Option<String>,
     pub iss: String,
     #[serde(default)]
-    pub aud: String,
+    pub aud: Option<OidcAudienceClaim>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum OidcAudienceClaim {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl OidcAudienceClaim {
+    fn matches_any_allowed(&self, allowed_audiences: &[String]) -> bool {
+        match self {
+            OidcAudienceClaim::Single(aud) => allowed_audiences.iter().any(|a| a == aud),
+            OidcAudienceClaim::Multiple(values) => values
+                .iter()
+                .any(|aud| allowed_audiences.iter().any(|allowed| allowed == aud)),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -211,23 +229,43 @@ pub async fn validate_oidc_token(
     let mut validation = Validation::new(algorithm);
     validation.set_issuer(&[issuer]);
     let allowed_audiences = configured_allowed_audiences(provider);
-    let allowed_refs: Vec<&str> = allowed_audiences.iter().map(String::as_str).collect();
-    validation.set_audience(&allowed_refs);
+    // jsonwebtoken interprets array audiences as "token audiences must include
+    // all configured audiences". We want alternatives (any configured value),
+    // so validate aud manually after signature/issuer verification.
+    validation.validate_aud = false;
 
     match provider.to_ascii_lowercase().as_str() {
         "github" => {
             let token_data = decode::<GitHubClaims>(token, &decoding_key, &validation)
                 .map_err(|e| RegistryError::Unauthorized(format!("JWT validation failed: {e}")))?;
+            validate_token_audience(token_data.claims.aud.as_ref(), &allowed_audiences)?;
             Ok(OidcClaims::GitHub(token_data.claims))
         }
         "gitlab" => {
             let token_data = decode::<GitLabClaims>(token, &decoding_key, &validation)
                 .map_err(|e| RegistryError::Unauthorized(format!("JWT validation failed: {e}")))?;
+            validate_token_audience(token_data.claims.aud.as_ref(), &allowed_audiences)?;
             Ok(OidcClaims::GitLab(token_data.claims))
         }
         _ => Err(RegistryError::BadRequest(format!(
             "unsupported OIDC provider: {provider}"
         ))),
+    }
+}
+
+fn validate_token_audience(
+    audience: Option<&OidcAudienceClaim>,
+    allowed_audiences: &[String],
+) -> Result<(), RegistryError> {
+    let aud = audience.ok_or_else(|| {
+        RegistryError::Unauthorized("OIDC token missing required audience claim".into())
+    })?;
+    if aud.matches_any_allowed(allowed_audiences) {
+        Ok(())
+    } else {
+        Err(RegistryError::Unauthorized(
+            "OIDC token audience is not allowed for this registry".into(),
+        ))
     }
 }
 
@@ -241,7 +279,12 @@ fn configured_allowed_audiences(provider: &str) -> Vec<String> {
         .or_else(|| std::env::var("CLAWDSTRIKE_OIDC_ALLOWED_AUDIENCES").ok())
         .unwrap_or_else(|| DEFAULT_OIDC_AUDIENCE.to_string());
 
-    parse_allowed_audiences(&raw)
+    let parsed = parse_allowed_audiences(&raw);
+    if parsed.is_empty() {
+        vec![DEFAULT_OIDC_AUDIENCE.to_string()]
+    } else {
+        parsed
+    }
 }
 
 fn parse_allowed_audiences(raw: &str) -> Vec<String> {
@@ -362,7 +405,9 @@ mod tests {
             workflow_ref: workflow.map(String::from),
             environment: env.map(String::from),
             iss: GITHUB_ISSUER.to_string(),
-            aud: "clawdstrike-registry".to_string(),
+            aud: Some(OidcAudienceClaim::Single(
+                "clawdstrike-registry".to_string(),
+            )),
         })
     }
 
@@ -373,7 +418,9 @@ mod tests {
             git_ref: git_ref.map(String::from),
             environment: env.map(String::from),
             iss: GITLAB_ISSUER.to_string(),
-            aud: "clawdstrike-registry".to_string(),
+            aud: Some(OidcAudienceClaim::Single(
+                "clawdstrike-registry".to_string(),
+            )),
         })
     }
 
@@ -572,5 +619,27 @@ mod tests {
                 "prod".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn audience_validation_treats_allowed_values_as_alternatives() {
+        let allowed = vec!["clawdstrike-registry".to_string(), "ci-release".to_string()];
+        let single = OidcAudienceClaim::Single("ci-release".to_string());
+        let multiple = OidcAudienceClaim::Multiple(vec![
+            "not-allowed".to_string(),
+            "clawdstrike-registry".to_string(),
+        ]);
+
+        assert!(super::validate_token_audience(Some(&single), &allowed).is_ok());
+        assert!(super::validate_token_audience(Some(&multiple), &allowed).is_ok());
+    }
+
+    #[test]
+    fn audience_validation_rejects_missing_or_disallowed_audience() {
+        let allowed = vec!["clawdstrike-registry".to_string()];
+        let disallowed = OidcAudienceClaim::Single("other".to_string());
+
+        assert!(super::validate_token_audience(None, &allowed).is_err());
+        assert!(super::validate_token_audience(Some(&disallowed), &allowed).is_err());
     }
 }

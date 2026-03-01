@@ -58,6 +58,22 @@ fn default_role() -> String {
     "member".to_string()
 }
 
+fn is_valid_org_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > 64 {
+        return false;
+    }
+
+    let bytes = name.as_bytes();
+    let first = bytes[0];
+    let last = bytes[bytes.len() - 1];
+    let starts_and_ends_alnum = (first.is_ascii_lowercase() || first.is_ascii_digit())
+        && (last.is_ascii_lowercase() || last.is_ascii_digit());
+    starts_and_ends_alnum
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+}
+
 #[derive(Serialize)]
 pub struct OrgPackagesResponse {
     pub packages: Vec<OrgPackageEntry>,
@@ -80,18 +96,10 @@ pub async fn create_org(
     headers: HeaderMap,
     Json(req): Json<CreateOrgRequest>,
 ) -> Result<(StatusCode, Json<CreateOrgResponse>), RegistryError> {
-    if req.name.is_empty() || req.name.len() > 64 {
+    if !is_valid_org_name(&req.name) {
         return Err(RegistryError::BadRequest(
-            "organization name must be 1-64 characters".into(),
-        ));
-    }
-    if !req
-        .name
-        .chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-    {
-        return Err(RegistryError::BadRequest(
-            "organization name must contain only lowercase letters, digits, or hyphens".into(),
+            "organization name must match [a-z0-9]([a-z0-9-]*[a-z0-9])? and be 1-64 characters"
+                .into(),
         ));
     }
 
@@ -318,4 +326,26 @@ pub async fn list_org_packages(
             })
             .collect(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_valid_org_name;
+
+    #[test]
+    fn org_name_validation_accepts_scope_compatible_names() {
+        assert!(is_valid_org_name("acme"));
+        assert!(is_valid_org_name("acme-1"));
+        assert!(is_valid_org_name("1acme"));
+    }
+
+    #[test]
+    fn org_name_validation_rejects_non_scope_compatible_names() {
+        assert!(!is_valid_org_name(""));
+        assert!(!is_valid_org_name("-acme"));
+        assert!(!is_valid_org_name("acme-"));
+        assert!(!is_valid_org_name("Acme"));
+        assert!(!is_valid_org_name("acme_org"));
+        assert!(!is_valid_org_name(&"a".repeat(65)));
+    }
 }
