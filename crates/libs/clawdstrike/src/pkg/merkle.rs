@@ -367,32 +367,46 @@ pub fn verify_inclusion_proof(proof: &InclusionProof, leaf_hash_hex: &str, root:
 /// `affects_old_root` is true when the sibling should be combined into
 /// the old root accumulator (i.e., we went right at that level, meaning
 /// the sibling is the left subtree hash which is part of the old tree).
+///
+/// The returned boolean indicates whether proof generation emits an explicit
+/// seed hash in `proof_path[0]` (the `old_size == n` base hash when the
+/// recursion has already moved off the old root).
 fn consistency_decomposition(old_size: usize, new_size: usize) -> (Vec<(Side, bool)>, bool) {
     let mut levels = Vec::new();
-    let old_is_pow2 = old_size.is_power_of_two();
-
-    consistency_decomposition_inner(old_size, new_size, &mut levels);
+    let path_includes_seed = consistency_decomposition_inner(old_size, new_size, true, &mut levels);
 
     // Note: NOT reversed. consistency_decomposition_inner recurses first then
     // pushes, producing levels in the same bottom-up order as the proof path.
-    (levels, old_is_pow2)
+    (levels, path_includes_seed)
 }
 
-fn consistency_decomposition_inner(old_size: usize, n: usize, levels: &mut Vec<(Side, bool)>) {
-    if old_size == n || n <= 1 {
-        return;
+fn consistency_decomposition_inner(
+    old_size: usize,
+    n: usize,
+    start_from_old_root: bool,
+    levels: &mut Vec<(Side, bool)>,
+) -> bool {
+    if old_size == n {
+        return !start_from_old_root;
+    }
+    if n <= 1 {
+        return false;
     }
     let k = largest_power_of_two_less_than(n);
     if old_size <= k {
         // old boundary is in the left subtree, sibling is RIGHT
-        consistency_decomposition_inner(old_size, k, levels);
+        let path_includes_seed =
+            consistency_decomposition_inner(old_size, k, start_from_old_root, levels);
         // The right subtree hash only affects new_root (not old_root).
         levels.push((Side::Right, false));
+        path_includes_seed
     } else {
         // old boundary is in the right subtree, sibling is LEFT
-        consistency_decomposition_inner(old_size - k, n - k, levels);
+        let path_includes_seed =
+            consistency_decomposition_inner(old_size - k, n - k, false, levels);
         // The left subtree hash affects BOTH old and new root.
         levels.push((Side::Left, true));
+        path_includes_seed
     }
 }
 
@@ -423,19 +437,19 @@ pub fn verify_consistency_proof_full(
         return path.is_empty() && old_root_hash == new_root_hash;
     }
 
-    let (levels, old_is_pow2) = consistency_decomposition(old_size, new_size);
+    let (levels, path_includes_seed) = consistency_decomposition(old_size, new_size);
 
     // The proof path may have one extra element at the front (the seed node)
-    // when old_size is NOT a power of 2 (the old tree boundary hash).
-    let (seed, proof_hashes) = if old_is_pow2 {
-        // old_root is not in the proof; use the caller-provided old_root as seed.
-        (old_root_hash, path.as_slice())
-    } else {
+    // when proof generation emitted the base subtree hash.
+    let (seed, proof_hashes) = if path_includes_seed {
         // First element is the seed (the old tree boundary node hash).
         if path.is_empty() {
             return false;
         }
         (path[0], &path[1..])
+    } else {
+        // old_root is not in the proof; use the caller-provided old_root as seed.
+        (old_root_hash, path.as_slice())
     };
 
     if levels.len() != proof_hashes.len() {
@@ -657,6 +671,31 @@ mod tests {
                 verify_consistency_proof_full(&proof, old_root, new_root),
                 "consistency failed for old_size={old_size} -> {max}"
             );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Consistency decomposition stays in sync with proof generation shape
+    // -----------------------------------------------------------------------
+    #[test]
+    fn consistency_decomposition_matches_generated_path_shape() {
+        let mut tree = MerkleTree::new();
+        for i in 0..64u64 {
+            tree.append(format!("leaf-{i}").as_bytes());
+        }
+
+        for new_size in 2usize..=64 {
+            let leaves = &tree.leaf_hashes[..new_size];
+            for old_size in 1usize..new_size {
+                let path = consistency_proof_path(old_size, new_size, leaves);
+                let (levels, path_includes_seed) = consistency_decomposition(old_size, new_size);
+                let expected_len = levels.len() + usize::from(path_includes_seed);
+                assert_eq!(
+                    path.len(),
+                    expected_len,
+                    "shape mismatch old_size={old_size} new_size={new_size}"
+                );
+            }
         }
     }
 
