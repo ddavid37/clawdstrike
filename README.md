@@ -72,10 +72,17 @@
 
 ### CLI
 
+#### Install
+
 ```bash
 brew tap backbay-labs/tap
 brew install clawdstrike
+clawdstrike --version
+```
 
+#### Enforce
+
+```bash
 # Block access to sensitive paths
 clawdstrike check --action-type file --ruleset strict ~/.ssh/id_rsa
 # → BLOCKED [Critical]: Access to forbidden path: ~/.ssh/id_rsa
@@ -88,12 +95,75 @@ clawdstrike check --action-type egress --ruleset strict api.openai.com:443
 clawdstrike check --action-type mcp --ruleset strict shell_exec
 # → BLOCKED [Error]: Tool 'shell_exec' is blocked by policy
 
-# Show available rulesets
+# Show available built-in rulesets
 clawdstrike policy list
 
-# Diff two policies
+# Diff two policies to understand enforcement differences
 clawdstrike policy diff strict default
+
+# Enforce policy while running a real command
+clawdstrike run --policy clawdstrike:strict -- python my_agent.py
 ```
+
+#### Hunt
+
+```bash
+# Scan local MCP configs/tooling for risky exposure
+clawdstrike hunt scan --target cursor --include-builtin
+
+# Query recent denied events
+clawdstrike hunt query --source receipt --verdict deny --start 1h --limit 50
+
+# Natural-language hunt query
+clawdstrike hunt query --nl "blocked egress last 30 minutes" --jsonl
+
+# Build a timeline across sources
+clawdstrike hunt timeline --source tetragon,hubble --start 1h
+
+# Correlate events against detection rules
+clawdstrike hunt correlate --rules ./rules/exfil.yaml --start 1h
+```
+
+### Desktop Agent (Recommended)
+
+Use the desktop agent for local runtime management:
+
+- tray controls
+- managed daemon
+- built-in MCP server
+
+```bash
+# Build and run the desktop agent
+cd apps/agent
+cargo tauri dev
+```
+
+Prefer a packaged build? Download the latest release:
+[github.com/backbay-labs/clawdstrike/releases/latest](https://github.com/backbay-labs/clawdstrike/releases/latest)
+(current: `v0.1.3`).
+
+When running, the agent manages these local services:
+
+| Service                             | Default                    |
+| ----------------------------------- | -------------------------- |
+| `hushd` policy daemon               | `127.0.0.1:9876`           |
+| MCP `policy_check` server           | `127.0.0.1:9877`           |
+| Authenticated agent API             | `127.0.0.1:9878`           |
+| Local management dashboard (Web UI) | `http://127.0.0.1:9878/ui` |
+
+Tray menu actions:
+
+- enable/disable enforcement
+- reload policy
+- install Claude Code hooks
+- open the local Web UI
+
+Integrations menu:
+
+- `Configure SIEM Export` (providers: Datadog, Splunk, Elastic, Sumo Logic, Custom endpoint)
+- `Configure Webhooks` (generic webhook forwarding for SOAR/automation endpoints)
+
+For full setup and configuration, see [`apps/agent/README.md`](apps/agent/README.md).
 
 ### TypeScript
 
@@ -222,17 +292,17 @@ flowchart LR
 
 Composable, policy-driven security checks at the tool boundary. Each guard handles a specific threat surface and returns a verdict with evidence. Fail-fast or aggregate, your call.
 
-| Guard                    | What It Catches                                                                  |
-| ------------------------ | -------------------------------------------------------------------------------- |
-| **ForbiddenPathGuard**   | Blocks access to `.ssh`, `.env`, `.aws`, credential stores, registry hives       |
-| **EgressAllowlistGuard** | Controls outbound network by domain. Deny-by-default or allowlist                |
-| **SecretLeakGuard**      | Detects AWS keys, GitHub tokens, private keys, API secrets in file writes        |
-| **PatchIntegrityGuard**  | Validates patch safety. Catches `rm -rf /`, `chmod 777`, `disable security`      |
-| **McpToolGuard**         | Restricts which MCP tools agents can invoke, with confirmation gates             |
-| **PromptInjectionGuard** | Detects injection attacks in untrusted input                                     |
-| **JailbreakGuard**       | 4-layer detection engine with session aggregation (see below)                    |
-| **ComputerUseGuard**     | Controls CUA actions: remote sessions, clipboard, input injection, file transfer |
-| **ShellCommandGuard**    | Blocks dangerous shell commands before execution                                 |
+| Guard                                  | What It Catches                                                                                                                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **ForbiddenPathGuard**                 | Blocks access to `.ssh`, `.env`, `.aws`, credential stores, registry hives                                                                                                                 |
+| **EgressAllowlistGuard**               | Controls outbound network by domain. Deny-by-default or allowlist                                                                                                                          |
+| **SecretLeakGuard**                    | Detects AWS keys, GitHub tokens, private keys, API secrets in file writes                                                                                                                  |
+| **PatchIntegrityGuard**                | Validates patch safety. Catches `rm -rf /`, `chmod 777`, `disable security`                                                                                                                |
+| **McpToolGuard**                       | Restricts which MCP tools agents can invoke, with confirmation gates                                                                                                                       |
+| **PromptInjectionGuard**               | Detects injection attacks in untrusted input                                                                                                                                               |
+| **JailbreakGuard**                     | 4-layer detection engine with session aggregation (see below)                                                                                                                              |
+| **ComputerUseGuard**                   | Controls CUA actions: remote sessions, clipboard, input injection, file transfer                                                                                                           |
+| **ShellCommandGuard**                  | Blocks dangerous shell commands before execution                                                                                                                                           |
 | **SpiderSenseGuard**&nbsp;<sup>β</sup> | Hierarchical threat screening adapted from [Yu et al. 2026](https://arxiv.org/abs/2602.05386): fast vector similarity resolves known patterns, optional LLM escalation for ambiguous cases |
 
 ---
@@ -240,6 +310,7 @@ Composable, policy-driven security checks at the tool boundary. Each guard handl
 <h3 align="center">Jailbreak Detection</h3>
 
 <a id="jailbreak-detection"></a>
+
 <table>
 <tr>
 <td width="50%">
@@ -291,6 +362,7 @@ When agents spawn agents, who controls whom? Clawdstrike's multi-agent layer pro
 ---
 
 <a id="irm--output-sanitization--watermarking--threat-intel"></a>
+
 <table>
 <tr>
 <td width="50%" valign="top">
@@ -349,12 +421,12 @@ For agents running local models in environments where the internet is a liabilit
 
 Clawdstrike's [Spine protocol](docs/specs/12-reticulum-adapter.md) carries the same Ed25519-signed envelopes over [Reticulum](https://reticulum.network/) mesh networks: LoRa radios, packet radio, serial lines, WiFi, TCP/UDP. Anything that can move 5 bits per second through a 500-byte aperture. The transport changes. The cryptographic proof doesn't.
 
-| Environment | What Propagates | How |
-|---|---|---|
-| **SCIF / air-gapped facility** | Policy deltas, revocations, checkpoints | USB sneakernet with offline Merkle proof verification |
-| **Disaster response / degraded infra** | Emergency revocations, incident facts | Ad-hoc LoRa mesh, store-and-forward via LXMF |
-| **Hostile network / denied spectrum** | Signed revocations at priority 1 | Multi-hop Reticulum over any available carrier |
-| **Remote IoT / edge** | Policy enforcement + attestation receipts | LoRa at 1,200 bps, 6+ km line-of-sight |
+| Environment                            | What Propagates                           | How                                                   |
+| -------------------------------------- | ----------------------------------------- | ----------------------------------------------------- |
+| **SCIF / air-gapped facility**         | Policy deltas, revocations, checkpoints   | USB sneakernet with offline Merkle proof verification |
+| **Disaster response / degraded infra** | Emergency revocations, incident facts     | Ad-hoc LoRa mesh, store-and-forward via LXMF          |
+| **Hostile network / denied spectrum**  | Signed revocations at priority 1          | Multi-hop Reticulum over any available carrier        |
+| **Remote IoT / edge**                  | Policy enforcement + attestation receipts | LoRa at 1,200 bps, 6+ km line-of-sight                |
 
 **Bandwidth-aware priority scheduling.** Seven tiers. Revocations always transmit first. Under 2 seconds on LoRa. Heartbeats drop when the link can't spare the bytes. A compromised signing key gets revoked across the mesh before the attacker finishes their coffee.
 
@@ -396,29 +468,42 @@ Additional language bindings (C, Go, C#) available via FFI. See [Multi-Language 
 
 Clawdstrike scales from a single developer's laptop to a fleet of thousands of managed agents. The same policy engine and receipt format work at every tier.
 
-| Mode | How You Run It | Who It's For |
-| ---- | -------------- | ------------ |
-| **SDK** | `npm install @clawdstrike/sdk` or `pip install clawdstrike` | Individual devs, CI/CD pipelines |
-| **Desktop Agent** | Tauri app with system tray, hushd daemon, local dashboard | Teams, workstation security |
-| **Enterprise Fleet** | Cloud API + NATS + enrollment + cloud dashboard | Security teams managing org-wide agent fleets |
+| Mode                 | How You Run It                                              | Who It's For                                  |
+| -------------------- | ----------------------------------------------------------- | --------------------------------------------- |
+| **SDK**              | `npm install @clawdstrike/sdk` or `pip install clawdstrike` | Individual devs, CI/CD pipelines              |
+| **Desktop Agent**    | Tauri app with system tray, hushd daemon, local dashboard   | Teams, workstation security                   |
+| **Enterprise Fleet** | Cloud API + NATS + enrollment + cloud dashboard             | Security teams managing org-wide agent fleets |
 
 ### Adaptive Engine
 
-The `@clawdstrike/engine-adaptive` package bridges standalone and enterprise deployments. It wraps a local and remote engine behind the same `PolicyEngineLike` interface and automatically transitions between three modes:
+<table>
+<tr>
+<td width="55%" valign="top">
 
-```mermaid
-stateDiagram-v2
-    [*] --> standalone
-    standalone --> connected : remote healthy
-    connected --> degraded : remote fails
-    degraded --> connected : remote recovers
-```
+The `@clawdstrike/engine-adaptive` package is built for production turbulence: packet loss, control-plane outages, restarts, and partial partitions.
 
-- **Standalone** — local policy engine only. Zero network dependency.
-- **Connected** — remote (enterprise) engine for centrally managed policy. Falls back to local on connectivity failure.
-- **Degraded** — local engine with offline receipt queue. Queued receipts are drained and replayed when the remote recovers.
+Build once against `PolicyEngineLike`; deploy from laptop to fleet without changing enforcement code.
 
-Every error path produces a **fail-closed deny**. The agent is never unprotected, regardless of network conditions.
+- **Health-aware routing** between local and remote evaluators.
+- **Automatic continuity** without manual failover playbooks.
+- **Signed, attributable decisions** in every mode.
+- **Offline receipt buffering and replay** for audit continuity across disconnect/reconnect cycles.
+- **Consistent behavior** across local dev, CI, and production agents.
+- **No blind window** where actions bypass policy evaluation.
+
+The threat model is explicit: uncertainty increases restriction, not exposure.
+
+- Connectivity loss never creates implicit allow paths.
+- Ambiguous failure paths resolve to deny.
+- Recovery is stateful, with queued evidence reconciliation.
+- Control-plane failure degrades to containment, not policy drift.
+
+</td>
+<td width="45%" valign="top">
+<img src="docs/static/adaptive-engine-intro.png" alt="Adaptive Engine with standalone, connected, and degraded modes and fail-closed behavior" width="100%" />
+</td>
+</tr>
+</table>
 
 ---
 
@@ -465,6 +550,7 @@ curl -X POST http://localhost:9878/api/v1/enroll \
 ```
 
 The enrollment handshake:
+
 1. Agent generates an Ed25519 keypair
 2. Sends the public key + enrollment token to the cloud API
 3. Cloud API validates the token, provisions NATS credentials, and returns connection details
@@ -491,17 +577,18 @@ Hash chaining means tampering with any single record breaks the chain for every 
 
 All enterprise features run over NATS JetStream with scoped credentials per agent:
 
-| Capability | Direction | Mechanism |
-| ---------- | --------- | --------- |
-| **Policy Sync** | Cloud → Agent | KV watch — policy updates propagate to agents in real time |
-| **Telemetry** | Agent → Cloud | JetStream publish — heartbeats, eval receipts, agent metadata |
-| **Posture Commands** | Cloud → Agent | NATS request/reply — `set_posture`, `request_policy_reload` |
-| **Kill Switch** | Cloud → Agent | Immediate posture lock to deny-all + daemon restart |
+| Capability              | Direction             | Mechanism                                                        |
+| ----------------------- | --------------------- | ---------------------------------------------------------------- |
+| **Policy Sync**         | Cloud → Agent         | KV watch — policy updates propagate to agents in real time       |
+| **Telemetry**           | Agent → Cloud         | JetStream publish — heartbeats, eval receipts, agent metadata    |
+| **Posture Commands**    | Cloud → Agent         | NATS request/reply — `set_posture`, `request_policy_reload`      |
+| **Kill Switch**         | Cloud → Agent         | Immediate posture lock to deny-all + daemon restart              |
 | **Approval Escalation** | Agent → Cloud → Agent | High-risk actions escalated for human review via cloud dashboard |
 
 ### Kill Switch
 
 When a compromised agent is detected, a single command from the cloud dashboard:
+
 1. Sets the agent's posture to `locked` (deny-all for every policy evaluation)
 2. Restarts the enforcement daemon with the locked posture
 3. Reports status back to the operator
@@ -511,6 +598,7 @@ The agent is locked down before the next tool invocation fires, regardless of wh
 ### Cloud Dashboard
 
 Web UI for security teams to manage their agent fleet:
+
 - Real-time agent status, heartbeats, and enrollment state
 - Pending approval queue for high-risk actions escalated by agents
 - Policy management and distribution
@@ -523,10 +611,10 @@ See [Enterprise Enrollment Guide](docs/src/guides/enterprise-enrollment.md) and 
 
 Every guard decision maps to a regulatory control. Templates ship with pre-built evidence collectors, guard-to-control mappings, and exportable evidence bundles for auditors.
 
-| Framework | What Clawdstrike Proves | Key Controls |
-|---|---|---|
-| **HIPAA** | PHI never left the allowed path. Signed receipts for every access decision. Breach forensics from session reconstruction, not guesswork | 164.312(a)(1) Access Control · 164.312(b) Audit · 164.312(e)(1) Transmission Security |
-| **PCI-DSS v4.0** | Cardholder data stayed in scope. Egress locked to the CDE. Secrets masked before they hit the model | 1.4.1 Network Segmentation · 3.5.1 PAN Masking · 7.2.1 Access Control · 10.2.1 Audit Trail |
+| Framework        | What Clawdstrike Proves                                                                                                                                         | Key Controls                                                                                         |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **HIPAA**        | PHI never left the allowed path. Signed receipts for every access decision. Breach forensics from session reconstruction, not guesswork                         | 164.312(a)(1) Access Control · 164.312(b) Audit · 164.312(e)(1) Transmission Security                |
+| **PCI-DSS v4.0** | Cardholder data stayed in scope. Egress locked to the CDE. Secrets masked before they hit the model                                                             | 1.4.1 Network Segmentation · 3.5.1 PAN Masking · 7.2.1 Access Control · 10.2.1 Audit Trail           |
 | **SOC2 Type II** | Continuous control evidence across a 6-12 month observation window. Guard verdicts feed directly into CC6/CC7/CC8 criteria with zero manual evidence collection | CC6.1 Logical Access · CC6.6 Network Boundaries · CC7.2 Security Anomalies · CC8.1 Change Management |
 
 **Certification tiers:** Certified (OSS baseline) → Silver (egress lockdown, secret redaction, 90-day retention) → Gold (compliance templates, external auditor attestation, 1-year retention) → Platinum (multi-framework, 7-year archive, real-time SIEM, 99.9% SLA).
@@ -583,14 +671,14 @@ Full CUA policy enforcement for agents operating remote desktop surfaces:
 
 Six layers. Kernel to chain. Every layer signs its work.
 
-| Layer | What | How |
-|---|---|---|
-| **L0 — Identity** | Workload identity binding | [SPIRE/SPIFFE](docs/specs/06-spire-identity-binding.md) X.509 SVIDs, automated rotation, bound to Spine Ed25519 issuers |
-| **L1 — Kernel** | Syscall-level runtime visibility | [Tetragon](crates/bridges/tetragon-bridge/) eBPF kprobes + LSM hooks — process ancestry, file integrity (IMA), capability enforcement |
-| **L2 — Network** | Identity-based L7 segmentation | [Cilium/Hubble](crates/bridges/hubble-bridge/) CNI with WireGuard encryption, FQDN egress control, flow-level audit |
-| **L3 — Agent** | Tool-boundary policy enforcement | Guard stack + cryptographic receipts + delegation tokens with capability ceilings |
-| **L4 — Attestation** | Tamper-evident proof chain | [AegisNet](docs/specs/13-eas-onchain-anchoring.md) Merkle tree (RFC 6962), witness co-signatures, on-chain anchoring via EAS on Base L2 |
-| **L5 — Transport** | Multi-plane envelope distribution | NATS JetStream (datacenter) · libp2p gossipsub (P2P) · [Reticulum mesh](integrations/transports/reticulum/) (off-grid) · WireGuard overlay (enclaves) |
+| Layer                | What                              | How                                                                                                                                                   |
+| -------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **L0 — Identity**    | Workload identity binding         | [SPIRE/SPIFFE](docs/specs/06-spire-identity-binding.md) X.509 SVIDs, automated rotation, bound to Spine Ed25519 issuers                               |
+| **L1 — Kernel**      | Syscall-level runtime visibility  | [Tetragon](crates/bridges/tetragon-bridge/) eBPF kprobes + LSM hooks — process ancestry, file integrity (IMA), capability enforcement                 |
+| **L2 — Network**     | Identity-based L7 segmentation    | [Cilium/Hubble](crates/bridges/hubble-bridge/) CNI with WireGuard encryption, FQDN egress control, flow-level audit                                   |
+| **L3 — Agent**       | Tool-boundary policy enforcement  | Guard stack + cryptographic receipts + delegation tokens with capability ceilings                                                                     |
+| **L4 — Attestation** | Tamper-evident proof chain        | [AegisNet](docs/specs/13-eas-onchain-anchoring.md) Merkle tree (RFC 6962), witness co-signatures, on-chain anchoring via EAS on Base L2               |
+| **L5 — Transport**   | Multi-plane envelope distribution | NATS JetStream (datacenter) · libp2p gossipsub (P2P) · [Reticulum mesh](integrations/transports/reticulum/) (off-grid) · WireGuard overlay (enclaves) |
 
 Every layer produces signed facts that feed into the same append-only Spine protocol. An attestation for a file write carries the process ancestry from Tetragon, the SPIFFE ID from SPIRE, the network policy from Cilium, the guard verdict from Clawdstrike, and a Merkle inclusion proof from AegisNet — in one envelope, verified with one signature check.
 
@@ -618,7 +706,7 @@ Every layer produces signed facts that feed into the same append-only Spine prot
 | **Concepts**         | [Design Philosophy](docs/src/concepts/design-philosophy.md) &middot; [Enforcement Tiers](docs/src/concepts/enforcement-tiers.md) &middot; [Multi-Language](docs/src/concepts/multi-language.md)                                                                                                                       |
 | **Framework Guides** | [OpenAI](packages/adapters/clawdstrike-openai/README.md) &middot; [Claude](packages/adapters/clawdstrike-claude/README.md) &middot; [Vercel AI](docs/src/guides/vercel-ai-integration.md) &middot; [LangChain](docs/src/guides/langchain-integration.md) &middot; [OpenClaw](docs/src/guides/openclaw-integration.md) |
 | **Reference**        | [Guards](docs/src/reference/guards/README.md) &middot; [Policy Schema](docs/src/reference/policy-schema.md) &middot; [Repo Map](docs/REPO_MAP.md)                                                                                                                                                                     |
-| **Enterprise**       | [Enrollment Guide](docs/src/guides/enterprise-enrollment.md) &middot; [Adaptive Deployment](docs/src/guides/adaptive-deployment.md) &middot; [Adaptive Architecture](docs/src/concepts/adaptive-architecture.md)                                                                                                       |
+| **Enterprise**       | [Enrollment Guide](docs/src/guides/enterprise-enrollment.md) &middot; [Adaptive Deployment](docs/src/guides/adaptive-deployment.md) &middot; [Adaptive Architecture](docs/src/concepts/adaptive-architecture.md)                                                                                                      |
 | **Operations**       | [OpenClaw Runbook](docs/src/guides/agent-openclaw-operations.md) &middot; [CUA Gateway Testing](apps/desktop/docs/openclaw-gateway-testing.md) &middot; [CUA Roadmap](docs/roadmaps/cua/INDEX.md)                                                                                                                     |
 
 ## Security

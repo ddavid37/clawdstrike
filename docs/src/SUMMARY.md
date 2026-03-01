@@ -81,6 +81,20 @@
   - [CLI](reference/api/cli.md)
 - [Benchmarks](reference/benchmarks.md)
 
+# Hunt (Threat Hunting)
+
+- [Overview](hunt/index.md)
+  - [hunt scan](hunt/scan.md)
+  - [hunt query](hunt/query.md)
+  - [hunt timeline](hunt/timeline.md)
+  - [hunt correlate](hunt/correlate.md)
+  - [hunt watch](hunt/watch.md)
+  - [hunt ioc](hunt/ioc.md)
+  - [hunt testing](hunt/testing.md)
+  - [hunt report (planned)](hunt/report.md)
+  - [Discovery Reference](hunt/discovery-reference.md)
+  - [Models Reference](hunt/models-reference.md)
+
 # Recipes
 
 - [Claude Integration](recipes/claude.md)

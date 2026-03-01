@@ -1,0 +1,33 @@
+[package]
+name = "hunt-correlate"
+description = "Correlation rules, watch mode, and IOC matching for clawdstrike hunt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hunt-scan.workspace = true
+hunt-query.workspace = true
+spine.workspace = true
+hush-core.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+async-nats = "0.39"
+chrono.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+regex.workspace = true
+crossterm.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
+
+[lints]
+workspace = true

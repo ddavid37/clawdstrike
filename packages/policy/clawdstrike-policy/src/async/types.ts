@@ -30,6 +30,13 @@ export interface RetryConfig {
   multiplier: number;
 }
 
+export type RetryPredicate = (error: unknown, attempt: number) => boolean;
+
+export interface RetryOptions {
+  shouldRetry?: RetryPredicate;
+  random?: () => number;
+}
+
 export interface AsyncGuardConfig {
   timeoutMs: number;
   onTimeout: TimeoutBehavior;

@@ -24,6 +24,7 @@ jobs:
       - name: Run security regression contract tests
         run: |
           cargo test -p hush-cli --test abuse_harness -- --nocapture
+          cargo test -p hush-cli --test hunt_e2e -- --nocapture --test-threads=1
           cargo test -p clawdstrike --test security_regressions -- --nocapture
           cargo test -p hushd --test security_regressions -- --nocapture
           cargo test -p hush-cli hush_run::tests::connect_proxy_rejects_ip_target_with_allowlisted_sni_mismatch -- --exact
@@ -105,6 +106,9 @@ jobs:
 
       - name: Validate architecture guardrails
         run: bash scripts/architecture-guardrails.sh
+
+      - name: Slop audit (critical paths)
+        run: bash scripts/slop-audit.sh
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -402,6 +406,9 @@ jobs:
             | grep -v '^apps/desktop/src-tauri/' \
             | grep -v '^packages/sdk/hush-py/hush-native/' \
             | grep -Ev '(^|/)tests/|_test\.rs$|_tests\.rs$|integration_tests\.rs$' \
+            | grep -Ev '^crates/libs/hunt-(correlate|query|scan)/src/(lib|error)\.rs$' \
+            | grep -Ev '^crates/libs/hush-core/src/lib\.rs$' \
+            | grep -Ev '^crates/services/hush-cli/src/tests\.rs$' \
             > changed_rust_files.coverage.txt || true
 
           if [ ! -s changed_rust_files.coverage.txt ]; then

@@ -5,7 +5,14 @@ import { CircuitBreaker } from "./circuit-breaker.js";
 import { FetchHttpClient } from "./http.js";
 import { TokenBucket } from "./rate-limit.js";
 import { retry } from "./retry.js";
-import type { AsyncGuard, AsyncGuardConfig, GuardResult, HttpClient } from "./types.js";
+import {
+  AsyncGuardError,
+  type AsyncGuard,
+  type AsyncGuardConfig,
+  type AsyncGuardErrorKind,
+  type GuardResult,
+  type HttpClient,
+} from "./types.js";
 
 export class AsyncGuardRuntime {
   private readonly http: HttpClient;
@@ -153,6 +160,7 @@ export class AsyncGuardRuntime {
             cfg.retry,
             async () => await guard.checkUncached(event, this.http, combined.signal),
             combined.signal,
+            { shouldRetry: shouldRetryAsyncError },
           );
         }
         return await guard.checkUncached(event, this.http, combined.signal);
@@ -175,7 +183,7 @@ export class AsyncGuardRuntime {
       }
 
       const message = err instanceof Error ? err.message : String(err);
-      const kind = combined.signal.aborted ? "timeout" : "other";
+      const kind = classifyAsyncErrorKind(err, combined.signal.aborted);
       return this.fallback(guard, cfg, kind, message, cacheKey);
     } finally {
       clearTimeout(timeoutId);
@@ -215,7 +223,7 @@ export class AsyncGuardRuntime {
   private fallback(
     guard: AsyncGuard,
     cfg: AsyncGuardConfig,
-    kind: string,
+    kind: AsyncGuardErrorKind,
     message: string,
     cacheKey: string | null,
   ): GuardResult {
@@ -258,6 +266,47 @@ export class AsyncGuardRuntime {
       details,
     };
   }
+}
+
+function shouldRetryAsyncError(error: unknown): boolean {
+  if (error instanceof AsyncGuardError) {
+    if (error.kind === "timeout" || error.kind === "parse" || error.kind === "circuit_open") {
+      return false;
+    }
+
+    if (error.kind === "http") {
+      if (typeof error.status !== "number") {
+        // Network/transport failure without HTTP status is transient by default.
+        return true;
+      }
+      return error.status === 429 || error.status >= 500;
+    }
+
+    return false;
+  }
+
+  if (isAbortError(error)) {
+    return false;
+  }
+
+  return true;
+}
+
+function classifyAsyncErrorKind(error: unknown, aborted: boolean): AsyncGuardErrorKind {
+  if (error instanceof AsyncGuardError) {
+    return error.kind;
+  }
+  if (aborted || isAbortError(error)) {
+    return "timeout";
+  }
+  return "other";
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.message.toLowerCase().includes("aborted"))
+  );
 }
 
 function withMergedDetails(result: GuardResult, extra: Record<string, unknown>): GuardResult {

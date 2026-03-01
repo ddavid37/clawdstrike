@@ -18,6 +18,9 @@ members = [
     "crates/services/cloud-api",
     "packages/sdk/hush-py/hush-native",
     "crates/libs/hush-ffi",
+    "crates/libs/hunt-scan",
+    "crates/libs/hunt-query",
+    "crates/libs/hunt-correlate",
 ]
 exclude = [
     "fuzz",
@@ -76,6 +79,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = { version = "0.10", features = ["serde"] }
+crossterm = "0.28"
+time = "0.3"
 
 # UUID
 uuid = { version = "1.21", features = ["v4", "v7", "serde", "js"] }
@@ -117,6 +122,11 @@ flate2 = "1.1"
 # URL parsing
 url = "2.5"
 
+# Parsing
+shell-words = "1.1"
+json5 = "0.4"
+md-5 = "0.10"
+
 # JWT (OIDC)
 jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 
@@ -126,6 +136,9 @@ hush-proxy = { path = "crates/libs/hush-proxy", version = "0.1.0" }
 clawdstrike = { path = "crates/libs/clawdstrike", version = "0.1.1" }
 hush-certification = { path = "crates/libs/hush-certification", version = "0.1.0" }
 spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.1.0" }
+hunt-scan = { path = "crates/libs/hunt-scan", version = "0.1.3" }
+hunt-query = { path = "crates/libs/hunt-query", version = "0.1.3" }
+hunt-correlate = { path = "crates/libs/hunt-correlate", version = "0.1.3" }
 
 [profile.release]
 lto = true

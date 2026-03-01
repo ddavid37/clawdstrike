@@ -153,11 +153,17 @@ pub async fn eval_policy_event(
 
     // Record to audit ledger v2 (best-effort).
     {
-        let policy_yaml = engine.policy().to_yaml().unwrap_or_default();
-        let policy_hash = format!(
-            "sha256:{}",
-            hush_core::sha256(policy_yaml.as_bytes()).to_hex()
-        );
+        let policy_hash = match engine.policy_hash() {
+            Ok(hash) => format!("sha256:{}", hash.to_hex()),
+            Err(err) => {
+                state.metrics.inc_audit_write_failure();
+                tracing::warn!(
+                    error = %err,
+                    "Failed to derive policy hash for eval audit_v2 event"
+                );
+                "sha256:unavailable".to_string()
+            }
+        };
 
         let organization_id = mapped
             .context
@@ -181,7 +187,24 @@ pub async fn eval_policy_event(
             })
         });
 
-        let _ = state.audit_v2.record(NewAuditEventV2 {
+        let action_parameters = match serde_json::to_value(&event) {
+            Ok(value) => Some(value),
+            Err(err) => {
+                state.metrics.inc_audit_write_failure();
+                tracing::warn!(
+                    error = %err,
+                    "Failed to serialize eval event for audit_v2 action_parameters"
+                );
+                None
+            }
+        };
+
+        let action_resource = mapped
+            .action
+            .target()
+            .unwrap_or_else(|| "<none>".to_string());
+
+        if let Err(err) = state.audit_v2.record(NewAuditEventV2 {
             session_id: mapped
                 .context
                 .session_id
@@ -191,10 +214,8 @@ pub async fn eval_policy_event(
             organization_id,
             correlation_id: None,
             action_type: mapped.action.action_type().to_string(),
-            action_resource: mapped.action.target().unwrap_or_default(),
-            action_parameters: Some(
-                serde_json::to_value(&event).unwrap_or(serde_json::Value::Null),
-            ),
+            action_resource,
+            action_parameters,
             action_result: None,
             decision_allowed: report.overall.allowed,
             decision_guard: Some(report.overall.guard.clone()),
@@ -203,29 +224,52 @@ pub async fn eval_policy_event(
             decision_policy_hash: policy_hash,
             provenance,
             extensions: None,
-        });
+        }) {
+            state.metrics.inc_audit_write_failure();
+            tracing::warn!(error = %err, "Failed to record eval audit_v2 event");
+        }
     }
 
     // Publish to Spine (best-effort, non-blocking).
     if let Some(ref publisher) = state.spine_publisher {
-        let decision_json = serde_json::to_value(&decision).unwrap_or_default();
-        let event_json = serde_json::to_value(&event).unwrap_or_default();
-        let policy_ref = engine.policy().name.clone();
-        let session_id_ref = mapped.context.session_id.clone();
-        let publisher = publisher.clone();
-        tokio::spawn(async move {
-            if let Err(e) = publisher
-                .publish_eval_receipt(
-                    &decision_json,
-                    &event_json,
-                    &policy_ref,
-                    session_id_ref.as_deref(),
-                )
-                .await
-            {
-                tracing::warn!(error = %e, "Failed to publish eval receipt to Spine");
+        let decision_json = match serde_json::to_value(&decision) {
+            Ok(value) => Some(value),
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    "Skipping Spine eval publish: failed to serialize decision payload"
+                );
+                None
             }
-        });
+        };
+        let event_json = match serde_json::to_value(&event) {
+            Ok(value) => Some(value),
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    "Skipping Spine eval publish: failed to serialize event payload"
+                );
+                None
+            }
+        };
+        if let (Some(decision_json), Some(event_json)) = (decision_json, event_json) {
+            let policy_ref = engine.policy().name.clone();
+            let session_id_ref = mapped.context.session_id.clone();
+            let publisher = publisher.clone();
+            tokio::spawn(async move {
+                if let Err(e) = publisher
+                    .publish_eval_receipt(
+                        &decision_json,
+                        &event_json,
+                        &policy_ref,
+                        session_id_ref.as_deref(),
+                    )
+                    .await
+                {
+                    tracing::warn!(error = %e, "Failed to publish eval receipt to Spine");
+                }
+            });
+        }
     }
 
     // Broadcast event (SSE) for real-time monitoring + attribution.
@@ -233,7 +277,10 @@ pub async fn eval_policy_event(
     // Keep the payload close to `/api/v1/check` so clients can build a unified
     // attribution stream across both endpoints.
     let action_type = mapped.action.action_type();
-    let target = mapped.action.target().unwrap_or_default();
+    let target = mapped
+        .action
+        .target()
+        .unwrap_or_else(|| "<none>".to_string());
     let session_id = mapped.context.session_id.clone();
     let agent_id = mapped.context.agent_id.clone();
 

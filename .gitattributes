@@ -1,0 +1,2 @@
+# Treat vendored dependency snapshots as generated in GitHub diffs/review UIs.
+infra/vendor/** linguist-generated=true

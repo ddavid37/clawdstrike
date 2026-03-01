@@ -109,12 +109,19 @@ pub async fn okta_webhook(
 
             let user_ids = extract_okta_user_ids(ev);
             for user_id in user_ids {
-                terminated = terminated.saturating_add(
-                    state
-                        .sessions
-                        .terminate_sessions_for_user(&user_id, Some("okta_webhook"))
-                        .unwrap_or(0),
-                );
+                let terminated_for_user = state
+                    .sessions
+                    .terminate_sessions_for_user(&user_id, Some("okta_webhook"))
+                    .map_err(|e| {
+                        V1Error::internal(
+                            "SESSION_TERMINATION_FAILED",
+                            format!(
+                                "failed to terminate sessions for Okta user_id {}: {e}",
+                                user_id
+                            ),
+                        )
+                    })?;
+                terminated = terminated.saturating_add(terminated_for_user);
             }
         }
     }
@@ -126,7 +133,10 @@ pub async fn okta_webhook(
     audit.target = Some("okta".to_string());
     audit.message = Some("Okta webhook processed".to_string());
     audit.metadata = Some(serde_json::json!({ "terminated_sessions": terminated }));
-    let _ = state.ledger.record(&audit);
+    if let Err(err) = state.ledger.record(&audit) {
+        state.metrics.inc_audit_write_failure();
+        tracing::warn!(error = %err, "Failed to record Okta webhook audit event");
+    }
 
     state.broadcast(crate::state::DaemonEvent {
         event_type: "webhook_okta".to_string(),
@@ -198,12 +208,19 @@ pub async fn auth0_webhook(
     let mut terminated = 0u64;
     for (event_type, user_id) in extract_auth0_events(&payload) {
         if matches!(event_type.as_str(), "du" | "slo") {
-            terminated = terminated.saturating_add(
-                state
-                    .sessions
-                    .terminate_sessions_for_user(&user_id, Some("auth0_webhook"))
-                    .unwrap_or(0),
-            );
+            let terminated_for_user = state
+                .sessions
+                .terminate_sessions_for_user(&user_id, Some("auth0_webhook"))
+                .map_err(|e| {
+                    V1Error::internal(
+                        "SESSION_TERMINATION_FAILED",
+                        format!(
+                            "failed to terminate sessions for Auth0 user_id {}: {e}",
+                            user_id
+                        ),
+                    )
+                })?;
+            terminated = terminated.saturating_add(terminated_for_user);
         }
     }
 
@@ -213,7 +230,10 @@ pub async fn auth0_webhook(
     audit.target = Some("auth0".to_string());
     audit.message = Some("Auth0 webhook processed".to_string());
     audit.metadata = Some(serde_json::json!({ "terminated_sessions": terminated }));
-    let _ = state.ledger.record(&audit);
+    if let Err(err) = state.ledger.record(&audit) {
+        state.metrics.inc_audit_write_failure();
+        tracing::warn!(error = %err, "Failed to record Auth0 webhook audit event");
+    }
 
     state.broadcast(crate::state::DaemonEvent {
         event_type: "webhook_auth0".to_string(),
@@ -265,5 +285,69 @@ fn find_string_field(value: &serde_json::Value, keys: &[&str]) -> Option<String>
         }
         serde_json::Value::Array(arr) => arr.iter().find_map(|v| find_string_field(v, keys)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::{header, HeaderMap, HeaderValue};
+
+    #[test]
+    fn bearer_token_extraction_requires_bearer_scheme() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer secret-token"),
+        );
+        assert_eq!(
+            extract_bearer_token(&headers).as_deref(),
+            Some("secret-token")
+        );
+
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Basic secret-token"),
+        );
+        assert!(extract_bearer_token(&headers).is_none());
+    }
+
+    #[test]
+    fn extract_okta_user_ids_filters_target_types() {
+        let event = serde_json::json!({
+            "target": [
+                { "type": "User", "id": "user-1" },
+                { "type": "AppUser", "id": "user-2" },
+                { "type": "Group", "id": "group-1" }
+            ]
+        });
+
+        let ids = extract_okta_user_ids(&event);
+        assert_eq!(ids, vec!["user-1".to_string(), "user-2".to_string()]);
+    }
+
+    #[test]
+    fn extract_auth0_events_supports_array_and_nested_user_id() {
+        let payload = serde_json::json!([
+            { "type": "du", "user_id": "auth0|abc" },
+            { "type": "slo", "details": { "userId": "auth0|def" } },
+            { "type": "s", "user_id": "auth0|ignored" }
+        ]);
+
+        let events = extract_auth0_events(&payload);
+        assert_eq!(
+            events,
+            vec![
+                ("du".to_string(), "auth0|abc".to_string()),
+                ("slo".to_string(), "auth0|def".to_string()),
+                ("s".to_string(), "auth0|ignored".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn timing_safe_eq_rejects_different_lengths() {
+        assert!(timing_safe_eq("abc", "abc"));
+        assert!(!timing_safe_eq("abc", "ab"));
     }
 }

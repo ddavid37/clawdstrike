@@ -325,7 +325,7 @@ pub async fn check_action(
             let perms = state
                 .rbac
                 .effective_permission_strings_for_roles(&roles)
-                .unwrap_or_default();
+                .map_err(|e| V1Error::internal("RBAC_RESOLUTION_ERROR", e.to_string()))?;
             principal_for_audit = Some(principal.clone());
             roles_for_audit = Some(roles.clone());
             permissions_for_audit = Some(perms.clone());
@@ -655,7 +655,7 @@ pub async fn check_action(
             );
         }
 
-        let _ = state.audit_v2.record(NewAuditEventV2 {
+        if let Err(err) = state.audit_v2.record(NewAuditEventV2 {
             session_id: request
                 .session_id
                 .clone()
@@ -674,7 +674,10 @@ pub async fn check_action(
             decision_policy_hash: policy_hash_sha256.clone(),
             provenance: Some(provenance),
             extensions: Some(serde_json::Value::Object(extensions)),
-        });
+        }) {
+            state.metrics.inc_audit_write_failure();
+            tracing::warn!(error = %err, "Failed to record check audit_v2 event");
+        }
     }
 
     let action_type = request.action_type.clone();
