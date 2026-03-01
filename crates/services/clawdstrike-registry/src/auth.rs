@@ -132,9 +132,9 @@ pub fn verify_signed_caller(headers: &HeaderMap, payload: &str) -> Result<String
 /// Middleware that validates a bearer token against the configured API key.
 ///
 /// If no API key is configured (empty string), all requests are allowed through.
-/// OIDC-authenticated requests are passed through without API key validation;
-/// the OIDC token is validated later in the publish handler where the package
-/// name is available for trusted-publisher matching.
+/// OIDC-authenticated publish requests are pre-validated here (signature/issuer/
+/// audience). The publish handler then performs package-specific trusted-
+/// publisher matching.
 pub async fn require_publish_auth(
     State(state): State<AppState>,
     req: Request<Body>,

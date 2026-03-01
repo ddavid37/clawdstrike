@@ -109,6 +109,22 @@ impl BlobStorage {
 
         Ok(())
     }
+
+    /// Delete a blob by hash if it exists.
+    pub fn delete(&self, hash: &str) -> Result<(), RegistryError> {
+        let canonical = Self::canonical_hash(hash)?;
+        let blob_path = self.blob_path(&canonical);
+        match fs::remove_file(&blob_path) {
+            Ok(()) => {
+                if let Some(parent) = blob_path.parent() {
+                    let _ = fs::remove_dir(parent);
+                }
+                Ok(())
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(RegistryError::Io(err)),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -205,5 +221,20 @@ mod tests {
         let err = storage.store_with_hash(data, &wrong_hash).unwrap_err();
         assert!(err.to_string().contains("does not match payload digest"));
         assert!(!storage.exists(&wrong_hash));
+    }
+
+    #[test]
+    fn delete_removes_blob_and_is_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage = BlobStorage::new(tmp.path().join("blobs")).unwrap();
+
+        let data = b"delete me";
+        let hash = storage.store(data).unwrap();
+        assert!(storage.exists(&hash));
+
+        storage.delete(&hash).unwrap();
+        assert!(!storage.exists(&hash));
+
+        storage.delete(&hash).unwrap();
     }
 }

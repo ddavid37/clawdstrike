@@ -195,10 +195,7 @@ pub async fn publish(
         ));
     }
 
-    // 6. Store blob.
-    state.blobs.store_with_hash(&archive_bytes, &checksum)?;
-
-    // 7. Serialize dependencies JSON.
+    // 6. Serialize dependencies JSON.
     let deps_json = serde_json::to_string(&manifest.dependencies)
         .map_err(|e| RegistryError::Internal(format!("failed to serialize deps: {e}")))?;
 
@@ -284,17 +281,29 @@ pub async fn publish(
     let rollback_partial_publish = |stage: &str, cause: String| -> RegistryError {
         let rollback_result = db.rollback_published_version(&name, &version);
         let reindex_result = index::update_index(&db, &state.config.index_dir(), &name);
-        match (rollback_result, reindex_result) {
-            (Ok(()), Ok(())) => RegistryError::Internal(format!(
-                "publish failed during {stage}; rolled back DB/index state: {cause}"
+        let blob_cleanup_result = match db.has_versions_with_checksum(&checksum) {
+            Ok(true) => Ok(()),
+            Ok(false) => state.blobs.delete(&checksum),
+            Err(e) => Err(e),
+        };
+
+        match (rollback_result, reindex_result, blob_cleanup_result) {
+            (Ok(()), Ok(()), Ok(())) => RegistryError::Internal(format!(
+                "publish failed during {stage}; rolled back DB/index/blob state: {cause}"
             )),
-            (rollback_res, reindex_res) => RegistryError::Internal(format!(
-                "publish failed during {stage} ({cause}); rollback status: db={rollback_res:?}, index={reindex_res:?}"
+            (rollback_res, reindex_res, blob_cleanup_res) => RegistryError::Internal(format!(
+                "publish failed during {stage} ({cause}); rollback status: db={rollback_res:?}, index={reindex_res:?}, blob={blob_cleanup_res:?}"
             )),
         }
     };
 
-    // 10. Update sparse index. If this fails, roll back the DB write so
+    // 10. Store blob only after version row insertion succeeds. This avoids
+    // orphan blobs on immediate version conflicts.
+    if let Err(blob_err) = state.blobs.store_with_hash(&archive_bytes, &checksum) {
+        return Err(rollback_partial_publish("blob store", blob_err.to_string()));
+    }
+
+    // 11. Update sparse index. If this fails, roll back the DB write so
     // retries can safely republish with the same version + leaf index.
     if let Err(index_err) = index::update_index(&db, &state.config.index_dir(), &name) {
         return Err(rollback_partial_publish(
@@ -303,7 +312,7 @@ pub async fn publish(
         ));
     }
 
-    // 11. Append to Merkle tree only after DB + index commit succeeds.
+    // 12. Append to Merkle tree only after DB + index + blob commit succeeds.
     let appended_index = match state.merkle_tree.lock() {
         Ok(mut tree) => tree.append_hash(leaf_hash),
         Err(lock_err) => {

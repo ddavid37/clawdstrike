@@ -778,7 +778,7 @@ fn cmd_mirror_bulk_sync(
             continue;
         };
         if let Some(s) = scope {
-            if !pkg.name.starts_with(s) {
+            if !package_matches_scope_filter(&pkg.name, s) {
                 continue;
             }
         }
@@ -981,6 +981,20 @@ fn fetch_all_search_packages(
 struct BulkPackageEntry {
     name: String,
     version: String,
+}
+
+fn package_matches_scope_filter(package_name: &str, scope_filter: &str) -> bool {
+    let normalized = scope_filter.trim().trim_end_matches('/');
+    if normalized.is_empty() {
+        return false;
+    }
+
+    // Scoped filter `@acme` matches only `@acme/*`, never `@acmeevil/*`.
+    if normalized.starts_with('@') {
+        return package_name == normalized || package_name.starts_with(&format!("{normalized}/"));
+    }
+
+    package_name.starts_with(normalized)
 }
 
 fn trust_level_order(level: &str) -> Option<u8> {
@@ -1205,6 +1219,24 @@ mod tests {
         assert_eq!(calls, 2);
         assert_eq!(all.len(), 4);
         assert_eq!(all[3].name, "d");
+    }
+
+    #[test]
+    fn package_matches_scope_filter_enforces_scoped_boundary() {
+        assert!(package_matches_scope_filter("@acme/foo", "@acme"));
+        assert!(!package_matches_scope_filter("@acmeevil/foo", "@acme"));
+    }
+
+    #[test]
+    fn package_matches_scope_filter_accepts_trailing_slash() {
+        assert!(package_matches_scope_filter("@acme/foo", "@acme/"));
+        assert!(!package_matches_scope_filter("@acmeevil/foo", "@acme/"));
+    }
+
+    #[test]
+    fn package_matches_scope_filter_allows_exact_scoped_package() {
+        assert!(package_matches_scope_filter("@acme/foo", "@acme/foo"));
+        assert!(!package_matches_scope_filter("@acme/foo", "@acme/bar"));
     }
 
     #[test]

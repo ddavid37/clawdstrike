@@ -463,6 +463,16 @@ impl RegistryDb {
         Ok(())
     }
 
+    /// Return whether any version references the given content checksum.
+    pub fn has_versions_with_checksum(&self, checksum: &str) -> Result<bool, RegistryError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM versions WHERE checksum = ?1",
+            params![checksum],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
     // -----------------------------------------------------------------------
     // Registry Keys
     // -----------------------------------------------------------------------
@@ -1373,6 +1383,34 @@ mod tests {
         assert!(db.get_version("pkg", "1.0.0").unwrap().is_some());
         assert!(db.get_version("pkg", "1.1.0").unwrap().is_none());
         assert!(!db.search("pkg", 10, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn has_versions_with_checksum_reports_references() {
+        let db = test_db();
+        db.upsert_package("pkg", Some("Pkg"), "2025-01-01T00:00:00Z")
+            .unwrap();
+        db.insert_version(&VersionRow {
+            name: "pkg".into(),
+            version: "1.0.0".into(),
+            pkg_type: "guard".into(),
+            checksum: "0xaaa".into(),
+            manifest_toml: "".into(),
+            publisher_key: "pk".into(),
+            publisher_sig: "sig".into(),
+            registry_sig: None,
+            dependencies_json: "{}".into(),
+            yanked: false,
+            published_at: "2025-01-01T00:00:00Z".into(),
+            attestation_hash: None,
+            key_id: None,
+            leaf_index: Some(0),
+            download_count: 0,
+        })
+        .unwrap();
+
+        assert!(db.has_versions_with_checksum("0xaaa").unwrap());
+        assert!(!db.has_versions_with_checksum("0xbbb").unwrap());
     }
 
     #[test]
