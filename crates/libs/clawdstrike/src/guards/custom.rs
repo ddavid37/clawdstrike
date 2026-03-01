@@ -106,6 +106,10 @@ impl CustomGuardRegistry {
             })?;
 
         let plugin_manifest = parse_plugin_manifest_toml(&plugin_manifest_content)?;
+        let effective_capabilities =
+            intersect_capabilities(&pkg_manifest.capabilities, &plugin_manifest.capabilities);
+        let effective_resources =
+            clamp_resources(&pkg_manifest.resources, &plugin_manifest.resources);
 
         for guard_entry in &plugin_manifest.guards {
             let entrypoint = guard_entry.entrypoint.as_deref().unwrap_or("guard.wasm");
@@ -175,8 +179,8 @@ impl CustomGuardRegistry {
                 guard_entry.name.clone(),
                 wasm_bytes,
                 guard_entry.handles.clone(),
-                plugin_manifest.capabilities.clone(),
-                plugin_manifest.resources.clone(),
+                effective_capabilities.clone(),
+                effective_resources.clone(),
             );
 
             tracing::info!(
@@ -193,6 +197,88 @@ impl CustomGuardRegistry {
     }
 }
 
+#[cfg(feature = "wasm-plugin-runtime")]
+fn intersect_capabilities(
+    package_caps: &crate::plugins::PluginCapabilities,
+    plugin_caps: &crate::plugins::PluginCapabilities,
+) -> crate::plugins::PluginCapabilities {
+    crate::plugins::PluginCapabilities {
+        network: package_caps.network && plugin_caps.network,
+        subprocess: package_caps.subprocess && plugin_caps.subprocess,
+        filesystem: crate::plugins::PluginFilesystemCapabilities {
+            // filesystem.read is currently treated as a coarse capability in
+            // the runtime hostcall; keep it non-empty only when both manifests
+            // permit read access.
+            read: intersect_read_allowlist(
+                &package_caps.filesystem.read,
+                &plugin_caps.filesystem.read,
+            ),
+            write: package_caps.filesystem.write && plugin_caps.filesystem.write,
+        },
+        secrets: crate::plugins::PluginSecretsCapabilities {
+            access: package_caps.secrets.access && plugin_caps.secrets.access,
+        },
+    }
+}
+
+#[cfg(feature = "wasm-plugin-runtime")]
+fn intersect_read_allowlist(package_read: &[String], plugin_read: &[String]) -> Vec<String> {
+    if package_read.is_empty() || plugin_read.is_empty() {
+        return Vec::new();
+    }
+
+    let package_wildcard = package_read.iter().any(|p| p == "*");
+    let plugin_wildcard = plugin_read.iter().any(|p| p == "*");
+
+    match (package_wildcard, plugin_wildcard) {
+        (true, true) => vec!["*".to_string()],
+        (true, false) => dedup_preserve_order(plugin_read),
+        (false, true) => dedup_preserve_order(package_read),
+        (false, false) => {
+            let package_set: std::collections::HashSet<&str> =
+                package_read.iter().map(String::as_str).collect();
+            let mut seen = std::collections::HashSet::new();
+            let mut out = Vec::new();
+            for entry in plugin_read {
+                let value = entry.as_str();
+                if package_set.contains(value) && seen.insert(value) {
+                    out.push(entry.clone());
+                }
+            }
+            out
+        }
+    }
+}
+
+#[cfg(feature = "wasm-plugin-runtime")]
+fn dedup_preserve_order(values: &[String]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for entry in values {
+        let value = entry.as_str();
+        if seen.insert(value) {
+            out.push(entry.clone());
+        }
+    }
+    out
+}
+
+#[cfg(feature = "wasm-plugin-runtime")]
+fn clamp_resources(
+    package_limits: &crate::plugins::PluginResourceLimits,
+    plugin_limits: &crate::plugins::PluginResourceLimits,
+) -> crate::plugins::PluginResourceLimits {
+    crate::plugins::PluginResourceLimits {
+        max_memory_mb: package_limits
+            .max_memory_mb
+            .min(plugin_limits.max_memory_mb),
+        max_cpu_ms: package_limits.max_cpu_ms.min(plugin_limits.max_cpu_ms),
+        max_timeout_ms: package_limits
+            .max_timeout_ms
+            .min(plugin_limits.max_timeout_ms),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -201,7 +287,10 @@ impl CustomGuardRegistry {
 mod tests {
     use super::*;
     use crate::pkg::manifest::{PackageSection, PkgManifest};
-    use crate::plugins::{PluginCapabilities, PluginResourceLimits, PluginTrust};
+    use crate::plugins::{
+        PluginCapabilities, PluginFilesystemCapabilities, PluginResourceLimits,
+        PluginSecretsCapabilities, PluginTrust,
+    };
 
     /// Compile a minimal WASM guard that always denies.
     fn deny_guard_wasm() -> Vec<u8> {
@@ -436,5 +525,78 @@ sandbox = "wasm"
             "unexpected error: {}",
             err
         );
+    }
+
+    #[test]
+    fn capabilities_intersection_prevents_privilege_escalation() {
+        let package_caps = PluginCapabilities {
+            network: false,
+            subprocess: false,
+            filesystem: PluginFilesystemCapabilities {
+                read: vec!["/allowed".into()],
+                write: false,
+            },
+            secrets: PluginSecretsCapabilities { access: false },
+        };
+        let plugin_caps = PluginCapabilities {
+            network: true,
+            subprocess: true,
+            filesystem: PluginFilesystemCapabilities {
+                read: vec!["/not-allowed".into(), "/allowed".into()],
+                write: true,
+            },
+            secrets: PluginSecretsCapabilities { access: true },
+        };
+
+        let effective = intersect_capabilities(&package_caps, &plugin_caps);
+        assert!(!effective.network);
+        assert!(!effective.subprocess);
+        assert!(!effective.filesystem.write);
+        assert!(!effective.secrets.access);
+        assert_eq!(effective.filesystem.read, vec!["/allowed".to_string()]);
+    }
+
+    #[test]
+    fn capabilities_intersection_honors_wildcard_contracts() {
+        let package_caps = PluginCapabilities {
+            network: true,
+            subprocess: false,
+            filesystem: PluginFilesystemCapabilities {
+                read: vec!["/pkg-only".into()],
+                write: false,
+            },
+            secrets: PluginSecretsCapabilities { access: false },
+        };
+        let plugin_caps = PluginCapabilities {
+            network: true,
+            subprocess: false,
+            filesystem: PluginFilesystemCapabilities {
+                read: vec!["*".into()],
+                write: false,
+            },
+            secrets: PluginSecretsCapabilities { access: false },
+        };
+
+        let effective = intersect_capabilities(&package_caps, &plugin_caps);
+        assert_eq!(effective.filesystem.read, vec!["/pkg-only".to_string()]);
+    }
+
+    #[test]
+    fn resource_limits_are_clamped_to_package_manifest() {
+        let package_limits = PluginResourceLimits {
+            max_memory_mb: 32,
+            max_cpu_ms: 25,
+            max_timeout_ms: 400,
+        };
+        let plugin_limits = PluginResourceLimits {
+            max_memory_mb: 128,
+            max_cpu_ms: 1000,
+            max_timeout_ms: 3000,
+        };
+
+        let effective = clamp_resources(&package_limits, &plugin_limits);
+        assert_eq!(effective.max_memory_mb, 32);
+        assert_eq!(effective.max_cpu_ms, 25);
+        assert_eq!(effective.max_timeout_ms, 400);
     }
 }

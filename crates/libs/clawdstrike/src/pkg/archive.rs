@@ -88,14 +88,13 @@ pub fn unpack(archive_path: &Path, target_dir: &Path) -> Result<Hash> {
     for entry in archive.entries()? {
         let mut entry = entry?;
 
-        // Skip symlinks and hard links entirely to prevent symlink-based
-        // escape attacks.  A malicious archive could plant a symlink inside
-        // target_dir pointing outside it, then write a later entry through
-        // that symlink.  Security packages should never contain symlinks.
+        // Skip anything that isn't a regular file or directory. This blocks
+        // symlinks/hard-links (escape risk) and special entries like device
+        // nodes/FIFOs that packages never need to materialize.
         let entry_type = entry.header().entry_type();
-        if entry_type.is_symlink() || entry_type.is_hard_link() {
+        if !(entry_type.is_file() || entry_type.is_dir()) {
             tracing::warn!(
-                "skipping symlink/hard-link entry in archive: {}",
+                "skipping unsupported non-file archive entry: {}",
                 entry.path().unwrap_or_default().display()
             );
             continue;
@@ -266,6 +265,56 @@ mod tests {
         fs::create_dir_all(&dest).unwrap();
         let err = unpack(&archive_path, &dest).unwrap_err();
         assert!(err.to_string().contains("path traversal"));
+    }
+
+    #[test]
+    fn skips_special_tar_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let archive_path = tmp.path().join("special.cpkg");
+
+        let mut tar_bytes: Vec<u8> = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut tar_bytes);
+
+            // Special entry type that should be ignored during extraction.
+            let mut fifo_header = tar::Header::new_gnu();
+            fifo_header.set_entry_type(tar::EntryType::Fifo);
+            fifo_header.set_size(0);
+            fifo_header.set_mode(0o644);
+            fifo_header.set_cksum();
+            builder
+                .append_data(&mut fifo_header, "named-pipe", std::io::empty())
+                .unwrap();
+
+            // Keep a normal file in the same archive to ensure extraction
+            // continues for valid entries.
+            let data = b"safe";
+            let mut file_header = tar::Header::new_gnu();
+            file_header.set_entry_type(tar::EntryType::Regular);
+            file_header.set_size(data.len() as u64);
+            file_header.set_mode(0o644);
+            file_header.set_cksum();
+            builder
+                .append_data(&mut file_header, "ok.txt", &data[..])
+                .unwrap();
+            builder.finish().unwrap();
+        }
+
+        let mut compressed: Vec<u8> = Vec::new();
+        {
+            let mut encoder =
+                zstd::stream::write::Encoder::new(&mut compressed, ZSTD_LEVEL).unwrap();
+            encoder.write_all(&tar_bytes).unwrap();
+            encoder.finish().unwrap();
+        }
+        fs::write(&archive_path, &compressed).unwrap();
+
+        let dest = tmp.path().join("dest");
+        fs::create_dir_all(&dest).unwrap();
+        unpack(&archive_path, &dest).unwrap();
+
+        assert_eq!(fs::read_to_string(dest.join("ok.txt")).unwrap(), "safe");
+        assert!(!dest.join("named-pipe").exists());
     }
 
     #[cfg(unix)]
