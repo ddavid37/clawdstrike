@@ -49,6 +49,17 @@ fn is_oidc_publish_request(req: &Request<Body>) -> bool {
     is_oidc_auth(req) && req.method() == Method::POST && req.uri().path() == "/api/v1/packages"
 }
 
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 /// Build canonical bytes for caller-auth signatures.
 pub fn caller_signature_message(payload: &str, timestamp_rfc3339: &str) -> String {
     format!("clawdstrike-registry-auth:v1:{payload}:{timestamp_rfc3339}")
@@ -127,11 +138,11 @@ pub async fn require_publish_auth(
 
     let token = extract_bearer_token(&req).ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Constant-time comparison via SHA-256 hash to avoid timing attacks.
+    // Constant-time comparison on SHA-256 hash outputs.
     let token_hash = hush_core::sha256_hex(token.as_bytes());
     let expected_hash = hush_core::sha256_hex(state.config.api_key.as_bytes());
 
-    if token_hash != expected_hash {
+    if !constant_time_eq(token_hash.as_bytes(), expected_hash.as_bytes()) {
         return Err(StatusCode::UNAUTHORIZED);
     }
 
@@ -238,6 +249,13 @@ mod tests {
     fn extract_wrong_scheme() {
         let req = make_request(Some("Basic abc123"));
         assert!(extract_bearer_token(&req).is_none());
+    }
+
+    #[test]
+    fn constant_time_eq_matches_expected_behavior() {
+        assert!(constant_time_eq(b"abcd", b"abcd"));
+        assert!(!constant_time_eq(b"abcd", b"abce"));
+        assert!(!constant_time_eq(b"abcd", b"abc"));
     }
 
     #[test]

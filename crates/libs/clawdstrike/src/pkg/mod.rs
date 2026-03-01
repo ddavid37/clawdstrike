@@ -19,8 +19,22 @@ pub mod version;
 
 /// Normalize package names for filesystem/cache keys.
 ///
-/// `@scope/name` becomes `scope--name`; unscoped names pass through.
+/// Uses collision-free prefixes for scoped vs unscoped names.
+///
+/// - `@scope/name` -> `s--scope--name`
+/// - `plain-name`  -> `u--plain-name`
 pub(crate) fn normalize_package_name(name: &str) -> String {
+    if let Some(rest) = name.strip_prefix('@') {
+        format!("s--{}", rest.replace('/', "--"))
+    } else {
+        format!("u--{name}")
+    }
+}
+
+/// Legacy package-name normalization used by older releases.
+///
+/// This is retained for backward-compatible lookups of pre-existing installs.
+pub(crate) fn legacy_normalize_package_name(name: &str) -> String {
     if let Some(rest) = name.strip_prefix('@') {
         rest.replace('/', "--")
     } else {

@@ -10,7 +10,7 @@ use crate::error::{Error, Result};
 
 use super::archive;
 use super::manifest::parse_pkg_manifest_toml;
-use super::normalize_package_name;
+use super::{legacy_normalize_package_name, normalize_package_name};
 
 /// An installed package record.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -72,6 +72,23 @@ impl PackageStore {
         self.root.join(normalize_package_name(name)).join(version)
     }
 
+    /// Return candidate directory paths for a package version.
+    ///
+    /// The first path is the current collision-free normalization, followed by
+    /// the legacy normalization (if different) for backward compatibility.
+    fn package_dir_candidates(&self, name: &str, version: &str) -> Vec<PathBuf> {
+        let current = self.root.join(normalize_package_name(name)).join(version);
+        let legacy = self
+            .root
+            .join(legacy_normalize_package_name(name))
+            .join(version);
+        if legacy != current {
+            vec![current, legacy]
+        } else {
+            vec![current]
+        }
+    }
+
     /// Install a package from a `.cpkg` archive file.
     ///
     /// Atomically unpacks to a temp dir, validates the manifest, then moves
@@ -111,8 +128,13 @@ impl PackageStore {
 
         let name = &manifest.package.name;
         let version = &manifest.package.version;
-        let dir_name = normalize_package_name(name);
-        let target = self.root.join(&dir_name).join(version);
+        let mut target = self.package_dir(name, version);
+        for candidate in self.package_dir_candidates(name, version) {
+            if candidate.exists() {
+                target = candidate;
+                break;
+            }
+        }
 
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
@@ -187,8 +209,14 @@ impl PackageStore {
 
     /// Look up an installed package by name and version.
     pub fn get(&self, name: &str, version: &str) -> Result<Option<InstalledPackage>> {
-        let dir_name = normalize_package_name(name);
-        let pkg_dir = self.root.join(&dir_name).join(version);
+        let pkg_dir = match self
+            .package_dir_candidates(name, version)
+            .into_iter()
+            .find(|p| p.exists())
+        {
+            Some(path) => path,
+            None => return Ok(None),
+        };
         if !pkg_dir.exists() {
             return Ok(None);
         }
@@ -274,8 +302,11 @@ impl PackageStore {
 
     /// Remove an installed package.
     pub fn remove(&self, name: &str, version: &str) -> Result<()> {
-        let dir_name = normalize_package_name(name);
-        let pkg_dir = self.root.join(&dir_name).join(version);
+        let pkg_dir = self
+            .package_dir_candidates(name, version)
+            .into_iter()
+            .find(|p| p.exists())
+            .ok_or_else(|| Error::PkgError(format!("package {name}@{version} is not installed")))?;
         if !pkg_dir.exists() {
             return Err(Error::PkgError(format!(
                 "package {name}@{version} is not installed"
@@ -284,7 +315,11 @@ impl PackageStore {
         fs::remove_dir_all(&pkg_dir)?;
 
         // Clean up parent dir if empty.
-        let parent = self.root.join(&dir_name);
+        let parent = pkg_dir.parent().map(Path::to_path_buf).ok_or_else(|| {
+            Error::PkgError(format!(
+                "failed to determine parent directory for package {name}@{version}"
+            ))
+        })?;
         if parent.exists() {
             let is_empty = fs::read_dir(&parent)?.next().is_none();
             if is_empty {
@@ -393,10 +428,33 @@ sandbox = "native"
         let installed = store.install_from_file(&archive).unwrap();
 
         assert_eq!(installed.name, "@acme/firewall");
-        assert!(installed.path.to_string_lossy().contains("acme--firewall"));
+        assert!(installed
+            .path
+            .to_string_lossy()
+            .contains("s--acme--firewall"));
 
         let got = store.get("@acme/firewall", "0.1.0").unwrap().unwrap();
         assert_eq!(got.name, "@acme/firewall");
+    }
+
+    #[test]
+    fn scoped_and_unscoped_names_do_not_collide() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = PackageStore::with_root(tmp.path().join("store")).unwrap();
+
+        let scoped = create_test_package(tmp.path(), "@acme/foo", "1.0.0", "guard", "coll-a");
+        let unscoped = create_test_package(tmp.path(), "acme--foo", "1.0.0", "guard", "coll-b");
+
+        let scoped_installed = store.install_from_file(&scoped).unwrap();
+        let unscoped_installed = store.install_from_file(&unscoped).unwrap();
+
+        assert_ne!(scoped_installed.path, unscoped_installed.path);
+
+        let scoped_got = store.get("@acme/foo", "1.0.0").unwrap().unwrap();
+        let unscoped_got = store.get("acme--foo", "1.0.0").unwrap().unwrap();
+        assert_eq!(scoped_got.name, "@acme/foo");
+        assert_eq!(unscoped_got.name, "acme--foo");
+        assert_ne!(scoped_got.content_hash, unscoped_got.content_hash);
     }
 
     #[test]

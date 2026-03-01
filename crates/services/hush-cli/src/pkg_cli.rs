@@ -1125,21 +1125,102 @@ fn cleanup_install_backup(backup: Option<InstallRollbackBackup>) {
 }
 
 fn select_default_registry_version(info: &serde_json::Value) -> Option<String> {
-    if let Some(versions) = info.get("versions").and_then(|v| v.as_array()) {
-        return versions
-            .iter()
-            .find(|entry| {
-                !entry
-                    .get("yanked")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
+    let versions = info.get("versions").and_then(|v| v.as_array());
+    let latest_hint = info.get("latest_version").and_then(|v| v.as_str());
+
+    if let Some(latest) = latest_hint {
+        let hint_allowed = versions.is_none_or(|arr| {
+            arr.iter().any(|entry| {
+                entry.get("version").and_then(|v| v.as_str()) == Some(latest)
+                    && !entry
+                        .get("yanked")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
             })
-            .and_then(|entry| entry.get("version").and_then(|v| v.as_str()))
-            .map(ToOwned::to_owned);
+        });
+        if hint_allowed {
+            return Some(latest.to_string());
+        }
     }
-    info.get("latest_version")
-        .and_then(|v| v.as_str())
-        .map(ToOwned::to_owned)
+
+    if let Some(arr) = versions {
+        let mut best: Option<(String, Option<chrono::DateTime<chrono::FixedOffset>>, usize)> = None;
+        for (idx, entry) in arr.iter().enumerate() {
+            let Some(version) = entry.get("version").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if entry
+                .get("yanked")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            let published_at = entry
+                .get("published_at")
+                .and_then(|v| v.as_str())
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok());
+
+            let replace = match &best {
+                None => true,
+                Some((_, best_ts, best_idx)) => match (published_at, *best_ts) {
+                    (Some(current), Some(existing)) => {
+                        current > existing || (current == existing && idx > *best_idx)
+                    }
+                    (Some(_), None) => true,
+                    (None, Some(_)) => false,
+                    (None, None) => idx > *best_idx,
+                },
+            };
+            if replace {
+                best = Some((version.to_string(), published_at, idx));
+            }
+        }
+        if let Some((version, _, _)) = best {
+            return Some(version);
+        }
+        return None;
+    }
+
+    latest_hint.map(ToOwned::to_owned)
+}
+
+fn copy_dir_recursive_without_store_metadata(src: &Path, dst: &Path) -> Result<(), std::io::Error> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        if entry.file_name() == std::ffi::OsStr::new(".pkg-meta.json") {
+            continue;
+        }
+        let entry_type = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry_type.is_dir() {
+            copy_dir_recursive_without_store_metadata(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn recompute_installed_content_hash(package_dir: &Path) -> Result<hush_core::Hash, String> {
+    let tmp_dir =
+        tempdir_for_download().map_err(|e| format!("cannot create verification temp dir: {e}"))?;
+    let result = (|| {
+        let staged_dir = tmp_dir.join("staged");
+        copy_dir_recursive_without_store_metadata(package_dir, &staged_dir).map_err(|e| {
+            format!(
+                "cannot stage installed package '{}' for hashing: {e}",
+                package_dir.display()
+            )
+        })?;
+        let repacked_archive = tmp_dir.join("verify.cpkg");
+        archive::pack(&staged_dir, &repacked_archive)
+            .map_err(|e| format!("failed to repack installed package for hashing: {e}"))
+    })();
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    result
 }
 
 fn cmd_pkg_install_registry(
@@ -1861,14 +1942,32 @@ fn cmd_pkg_verify(
         return ExitCode::Fail;
     }
 
-    let hash_hex = pkg.content_hash.to_hex();
+    let mut content_ok = true;
+    let mut content_error: Option<String> = None;
+    let recomputed_hash = match recompute_installed_content_hash(&pkg.path) {
+        Ok(h) => h,
+        Err(e) => {
+            content_ok = false;
+            content_error = Some(e);
+            pkg.content_hash
+        }
+    };
+    if content_ok && recomputed_hash != pkg.content_hash {
+        content_ok = false;
+        content_error = Some(format!(
+            "hash mismatch (expected {}..., got {}...)",
+            &pkg.content_hash.to_hex()[..16],
+            &recomputed_hash.to_hex()[..16]
+        ));
+    }
+
+    let hash_hex = recomputed_hash.to_hex();
     let hash_display = if hash_hex.len() > 16 {
         &hash_hex[..16]
     } else {
         &hash_hex
     };
 
-    let mut content_ok = true;
     let mut publisher_ok = false;
     let mut registry_ok = false;
     let mut attestation_error: Option<String> = None;
@@ -1898,7 +1997,13 @@ fn cmd_pkg_verify(
                 hash_display
             );
         } else {
-            let _ = writeln!(stdout, "  x Content integrity    Metadata unreadable");
+            let _ = writeln!(
+                stdout,
+                "  x Content integrity    {}",
+                content_error
+                    .as_deref()
+                    .unwrap_or("unable to verify local package content")
+            );
         }
         let _ = writeln!(stdout, "\nInstalled: {}", installed_at);
         return if content_ok {
@@ -1945,7 +2050,7 @@ fn cmd_pkg_verify(
         .and_then(|r| r.json().ok());
 
     if let Some(ref att) = attestation {
-        match verify_attestation_against_hash(att, &pkg.content_hash, expected_registry_key) {
+        match verify_attestation_against_hash(att, &recomputed_hash, expected_registry_key) {
             Ok(v) => {
                 publisher_ok = v.publisher_verified;
                 registry_ok = v.registry_verified;
@@ -2022,7 +2127,7 @@ fn cmd_pkg_verify(
 
     let achieved_rank = level_rank(achieved);
     let required_rank = level_rank(trust_level);
-    let meets_requirement = achieved_rank >= required_rank;
+    let meets_requirement = achieved_rank >= required_rank && content_ok;
 
     let check = if meets_requirement { "+" } else { "x" };
     let _ = writeln!(stdout, "Trust Level: {} {}\n", check, achieved);
@@ -2030,12 +2135,23 @@ fn cmd_pkg_verify(
     // Print detail lines.
     let mark = |ok: bool| if ok { "+" } else { "x" };
 
-    let _ = writeln!(
-        stdout,
-        "  {} Content integrity    SHA-256: {}...",
-        mark(content_ok),
-        hash_display
-    );
+    if content_ok {
+        let _ = writeln!(
+            stdout,
+            "  {} Content integrity    SHA-256: {}...",
+            mark(content_ok),
+            hash_display
+        );
+    } else {
+        let _ = writeln!(
+            stdout,
+            "  {} Content integrity    {}",
+            mark(content_ok),
+            content_error
+                .as_deref()
+                .unwrap_or("unable to verify local package content")
+        );
+    }
 
     if let Some(ref att) = attestation {
         let pub_key = att.publisher_key.as_str();
@@ -2104,7 +2220,10 @@ fn cmd_pkg_verify(
 
     let _ = writeln!(stdout, "\nInstalled: {}", installed_at);
 
-    if meets_requirement {
+    if !content_ok {
+        let _ = writeln!(stderr, "FAIL: local content integrity check failed");
+        ExitCode::Fail
+    } else if meets_requirement {
         ExitCode::Ok
     } else {
         let _ = writeln!(
@@ -4385,18 +4504,33 @@ sandbox = "native"
     }
 
     #[test]
-    fn select_default_registry_version_skips_yanked_entries() {
+    fn select_default_registry_version_chooses_newest_non_yanked() {
         let stats = serde_json::json!({
             "versions": [
-                { "version": "2.0.0", "yanked": true },
-                { "version": "1.9.9", "yanked": false },
-                { "version": "1.9.8" }
+                { "version": "1.9.8", "yanked": false, "published_at": "2026-01-01T00:00:00Z" },
+                { "version": "1.9.9", "yanked": false, "published_at": "2026-02-01T00:00:00Z" },
+                { "version": "2.0.0", "yanked": true, "published_at": "2026-03-01T00:00:00Z" }
             ],
             "latest_version": "2.0.0"
         });
         assert_eq!(
             select_default_registry_version(&stats).as_deref(),
             Some("1.9.9")
+        );
+    }
+
+    #[test]
+    fn select_default_registry_version_prefers_latest_hint_when_allowed() {
+        let stats = serde_json::json!({
+            "versions": [
+                { "version": "1.0.0", "yanked": false, "published_at": "2026-01-01T00:00:00Z" },
+                { "version": "2.0.0", "yanked": false, "published_at": "2026-02-01T00:00:00Z" }
+            ],
+            "latest_version": "2.0.0"
+        });
+        assert_eq!(
+            select_default_registry_version(&stats).as_deref(),
+            Some("2.0.0")
         );
     }
 
@@ -4451,6 +4585,40 @@ sandbox = "native"
         let restored = std::fs::read(install_path.join("marker.txt")).unwrap();
         assert_eq!(restored, b"old");
         assert!(!backup.backup_path.exists());
+    }
+
+    #[test]
+    fn recompute_installed_content_hash_detects_tampering() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("clawdstrike-pkg.toml"),
+            r#"[package]
+name = "verify-demo"
+version = "1.0.0"
+pkg_type = "guard"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+"#,
+        )
+        .unwrap();
+        std::fs::write(src.join("README.md"), "hello").unwrap();
+        let archive_path = tmp.path().join("verify-demo-1.0.0.cpkg");
+        let archive_hash = clawdstrike::pkg::archive::pack(&src, &archive_path).unwrap();
+
+        let store = PackageStore::with_root(tmp.path().join("store")).unwrap();
+        let installed = store.install_from_file(&archive_path).unwrap();
+        assert_eq!(installed.content_hash, archive_hash);
+
+        let recomputed = recompute_installed_content_hash(&installed.path).unwrap();
+        assert_eq!(recomputed, installed.content_hash);
+
+        std::fs::write(installed.path.join("README.md"), "tampered").unwrap();
+        let tampered = recompute_installed_content_hash(&installed.path).unwrap();
+        assert_ne!(tampered, installed.content_hash);
     }
 
     #[test]
