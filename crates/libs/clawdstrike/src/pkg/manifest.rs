@@ -180,6 +180,15 @@ impl PkgManifest {
                     )));
                 }
             }
+
+            if let Some(max) = &compat.max_version {
+                if !is_strict_semver(max) {
+                    return Err(Error::PkgError(format!(
+                        "clawdstrike.max_version '{}' must be strict semver (x.y.z)",
+                        max
+                    )));
+                }
+            }
         }
 
         // Dependency version constraints must be non-empty and parseable semver requirements.
@@ -405,6 +414,25 @@ sandbox = "native"
 "#;
         let err = parse_pkg_manifest_toml(raw).unwrap_err();
         assert!(err.to_string().contains("min_version"));
+    }
+
+    #[test]
+    fn rejects_invalid_clawdstrike_max_version() {
+        let raw = r#"
+[package]
+name = "my-pkg"
+version = "1.0.0"
+pkg_type = "guard"
+
+[clawdstrike]
+max_version = "abc"
+
+[trust]
+level = "trusted"
+sandbox = "native"
+"#;
+        let err = parse_pkg_manifest_toml(raw).unwrap_err();
+        assert!(err.to_string().contains("max_version"));
     }
 
     #[test]
