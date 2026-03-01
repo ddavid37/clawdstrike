@@ -42,8 +42,6 @@ dirs.workspace = true
 reqwest = { workspace = true, features = ["blocking"] }
 clap = { workspace = true }
 jsonwebtoken = { workspace = true }
-
-[dev-dependencies]
 tempfile = "3"
 
 [lints]

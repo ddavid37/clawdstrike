@@ -273,10 +273,13 @@ impl RegistryDb {
                 params![name],
                 |row| row.get(0),
             )?;
-            // Keep FTS in sync with package metadata updates.
+            // Keep FTS in sync with package metadata updates. Refresh by name
+            // rather than rowid lookup so a missing FTS row cannot create
+            // duplicate entries for the same package.
+            self.conn
+                .execute("DELETE FROM search_index WHERE name = ?1", params![name])?;
             self.conn.execute(
-                "INSERT OR REPLACE INTO search_index (rowid, name, description, keywords)
-                 VALUES ((SELECT rowid FROM search_index WHERE name = ?1), ?1, ?2, '')",
+                "INSERT INTO search_index (name, description, keywords) VALUES (?1, ?2, '')",
                 params![name, effective_description],
             )?;
             Ok(false)
@@ -1094,6 +1097,37 @@ mod tests {
         let updated = db.search("v2-updated", 10, 0).unwrap();
         assert_eq!(updated.len(), 1);
         assert_eq!(updated[0].name, "my-guard");
+    }
+
+    #[test]
+    fn upsert_package_recreates_missing_search_index_row_without_duplicates() {
+        let db = test_db();
+        db.upsert_package("my-guard", Some("v1-desc"), "2025-01-01T00:00:00Z")
+            .unwrap();
+
+        db.conn
+            .execute(
+                "DELETE FROM search_index WHERE name = ?1",
+                params!["my-guard"],
+            )
+            .unwrap();
+
+        db.upsert_package("my-guard", Some("v2-desc"), "2025-01-02T00:00:00Z")
+            .unwrap();
+
+        let fts_count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM search_index WHERE name = ?1",
+                params!["my-guard"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(fts_count, 1);
+
+        let results = db.search("v2-desc", 10, 0).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "my-guard");
     }
 
     #[test]

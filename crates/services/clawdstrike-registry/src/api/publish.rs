@@ -45,38 +45,29 @@ pub struct PublishResponse {
 }
 
 fn extract_embedded_manifest_toml(archive_bytes: &[u8]) -> Result<String, RegistryError> {
-    let scratch = std::env::temp_dir().join(format!(
-        "clawdstrike_registry_publish_{}",
-        uuid::Uuid::new_v4()
-    ));
-    let result = (|| {
-        std::fs::create_dir_all(&scratch).map_err(|e| {
-            RegistryError::Internal(format!(
-                "failed to create publish scratch dir {}: {e}",
-                scratch.display()
-            ))
+    let scratch = tempfile::Builder::new()
+        .prefix("clawdstrike_registry_publish_")
+        .tempdir()
+        .map_err(|e| {
+            RegistryError::Internal(format!("failed to create publish scratch dir: {e}"))
         })?;
 
-        let archive_path = scratch.join("upload.cpkg");
-        std::fs::write(&archive_path, archive_bytes).map_err(|e| {
-            RegistryError::BadRequest(format!("failed to stage uploaded archive bytes: {e}"))
-        })?;
+    let archive_path = scratch.path().join("upload.cpkg");
+    std::fs::write(&archive_path, archive_bytes).map_err(|e| {
+        RegistryError::BadRequest(format!("failed to stage uploaded archive bytes: {e}"))
+    })?;
 
-        let unpack_dir = scratch.join("unpacked");
-        clawdstrike::pkg::archive::unpack(&archive_path, &unpack_dir).map_err(|e| {
-            RegistryError::BadRequest(format!("invalid .cpkg archive payload: {e}"))
-        })?;
+    let unpack_dir = scratch.path().join("unpacked");
+    clawdstrike::pkg::archive::unpack(&archive_path, &unpack_dir)
+        .map_err(|e| RegistryError::BadRequest(format!("invalid .cpkg archive payload: {e}")))?;
 
-        let manifest_path = unpack_dir.join("clawdstrike-pkg.toml");
-        std::fs::read_to_string(&manifest_path).map_err(|e| {
-            RegistryError::BadRequest(format!(
-                "uploaded archive missing clawdstrike-pkg.toml ({}): {e}",
-                manifest_path.display()
-            ))
-        })
-    })();
-    let _ = std::fs::remove_dir_all(&scratch);
-    result
+    let manifest_path = unpack_dir.join("clawdstrike-pkg.toml");
+    std::fs::read_to_string(&manifest_path).map_err(|e| {
+        RegistryError::BadRequest(format!(
+            "uploaded archive missing clawdstrike-pkg.toml ({}): {e}",
+            manifest_path.display()
+        ))
+    })
 }
 
 fn manifests_match(
@@ -228,13 +219,20 @@ pub async fn publish(
         .leaf_hash()
         .map_err(|e| RegistryError::Internal(format!("failed to compute leaf hash: {e}")))?;
 
-    // Lock the tree first to reserve the next leaf index. We only append after
-    // the DB write succeeds to avoid phantom leaves on failed inserts.
-    let mut tree = state
-        .merkle_tree
+    // Serialize publishes on the DB mutex so leaf index reservation stays
+    // deterministic without holding the Merkle tree lock across DB I/O.
+    let db = state
+        .db
         .lock()
-        .map_err(|e| RegistryError::Internal(format!("merkle_tree lock poisoned: {e}")))?;
-    let leaf_index = tree.tree_size();
+        .map_err(|e| RegistryError::Internal(format!("db lock poisoned: {e}")))?;
+
+    let leaf_index = {
+        let tree = state
+            .merkle_tree
+            .lock()
+            .map_err(|e| RegistryError::Internal(format!("merkle_tree lock poisoned: {e}")))?;
+        tree.tree_size()
+    };
 
     // 8a. Create publish attestation with reserved leaf_index.
     let (attestation_hash, key_id) = {
@@ -265,38 +263,37 @@ pub async fn publish(
 
     // 9. Upsert package + insert version (under lock). If this fails, no tree
     // append occurs, preserving DB/log consistency.
-    {
-        let db = state
-            .db
-            .lock()
-            .map_err(|e| RegistryError::Internal(format!("db lock poisoned: {e}")))?;
+    db.upsert_package(&name, manifest.package.description.as_deref(), &now)?;
 
-        db.upsert_package(&name, manifest.package.description.as_deref(), &now)?;
+    db.insert_version(&VersionRow {
+        name: name.clone(),
+        version: version.clone(),
+        pkg_type: manifest.package.pkg_type.to_string(),
+        checksum: checksum.clone(),
+        manifest_toml: embedded_manifest_toml,
+        publisher_key: req.publisher_key.clone(),
+        publisher_sig: req.publisher_sig.clone(),
+        registry_sig: Some(registry_sig_hex.clone()),
+        dependencies_json: deps_json,
+        yanked: false,
+        published_at: now,
+        attestation_hash: Some(attestation_hash.clone()),
+        key_id: Some(key_id.clone()),
+        leaf_index: Some(leaf_index),
+        download_count: 0,
+    })?;
 
-        db.insert_version(&VersionRow {
-            name: name.clone(),
-            version: version.clone(),
-            pkg_type: manifest.package.pkg_type.to_string(),
-            checksum: checksum.clone(),
-            manifest_toml: embedded_manifest_toml,
-            publisher_key: req.publisher_key.clone(),
-            publisher_sig: req.publisher_sig.clone(),
-            registry_sig: Some(registry_sig_hex.clone()),
-            dependencies_json: deps_json,
-            yanked: false,
-            published_at: now,
-            attestation_hash: Some(attestation_hash.clone()),
-            key_id: Some(key_id.clone()),
-            leaf_index: Some(leaf_index),
-            download_count: 0,
-        })?;
-
-        // 10. Update sparse index.
-        index::update_index(&db, &state.config.index_dir(), &name)?;
-    }
+    // 10. Update sparse index.
+    index::update_index(&db, &state.config.index_dir(), &name)?;
 
     // 11. Append to Merkle tree only after DB + index commit succeeds.
-    let appended_index = tree.append_hash(leaf_hash);
+    let appended_index = {
+        let mut tree = state
+            .merkle_tree
+            .lock()
+            .map_err(|e| RegistryError::Internal(format!("merkle_tree lock poisoned: {e}")))?;
+        tree.append_hash(leaf_hash)
+    };
     if appended_index != leaf_index {
         return Err(RegistryError::Internal(format!(
             "reserved leaf index mismatch: expected {leaf_index}, got {appended_index}"
