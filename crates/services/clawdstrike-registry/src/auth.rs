@@ -26,11 +26,11 @@ fn extract_bearer_token(req: &Request<Body>) -> Option<String> {
         .get("Authorization")
         .and_then(|v| v.to_str().ok())?;
 
-    if header.len() > 7 {
-        let prefix = &header[..7];
-        if prefix.eq_ignore_ascii_case("Bearer ") {
-            return Some(header[7..].to_string());
-        }
+    let mut parts = header.split_ascii_whitespace();
+    let scheme = parts.next()?;
+    let token = parts.next()?;
+    if parts.next().is_none() && scheme.eq_ignore_ascii_case("Bearer") {
+        return Some(token.to_string());
     }
 
     None
@@ -249,6 +249,18 @@ mod tests {
     fn extract_wrong_scheme() {
         let req = make_request(Some("Basic abc123"));
         assert!(extract_bearer_token(&req).is_none());
+    }
+
+    #[test]
+    fn extract_rejects_missing_token() {
+        let req = make_request(Some("Bearer "));
+        assert!(extract_bearer_token(&req).is_none());
+    }
+
+    #[test]
+    fn extract_accepts_extra_internal_spacing() {
+        let req = make_request(Some("Bearer     my-key"));
+        assert_eq!(extract_bearer_token(&req).as_deref(), Some("my-key"));
     }
 
     #[test]
