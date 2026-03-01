@@ -67,3 +67,11 @@ export {
 
 // Watch
 export { runWatch } from './watch.js';
+
+// Testing
+export { testRule, event } from './testing.js';
+export type { TestResult, TestRuleOptions } from './testing.js';
+
+// Replay
+export { replay } from './replay.js';
+export type { ReplayResult, ReplayOptions } from './replay.js';

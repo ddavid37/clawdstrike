@@ -55,6 +55,27 @@ def _parse_source(val: Any) -> tuple[str, ...]:
     return (str(val),)
 
 
+def _desugar_sequence(items: list[dict]) -> list[dict]:
+    """Transform a sequence shorthand into standard condition dicts.
+
+    Each item auto-wires its ``after`` to the previous item's ``bind``
+    unless explicitly overridden.
+    """
+    if not items:
+        raise CorrelationError("sequence must have at least one item")
+
+    conditions: list[dict] = []
+    for i, item in enumerate(items):
+        cond = dict(item)
+        if "after" not in cond or cond["after"] is None:
+            if i > 0:
+                cond["after"] = items[i - 1]["bind"]
+            else:
+                cond.pop("after", None)
+        conditions.append(cond)
+    return conditions
+
+
 def parse_rule(yaml_str: str) -> CorrelationRule:
     """Parse and validate a correlation rule from a YAML string."""
     try:
@@ -75,7 +96,20 @@ def parse_rule(yaml_str: str) -> CorrelationRule:
     if window is None:
         raise CorrelationError(f"invalid duration: {window_str}")
 
-    raw_conditions = raw.get("conditions", [])
+    has_sequence = "sequence" in raw and raw["sequence"] is not None
+    has_conditions = "conditions" in raw and raw["conditions"] is not None
+
+    if has_sequence and has_conditions:
+        raise CorrelationError("'sequence' and 'conditions' are mutually exclusive")
+
+    if has_sequence:
+        raw_seq = raw["sequence"]
+        if not isinstance(raw_seq, list):
+            raise CorrelationError("sequence must be a list")
+        raw_conditions = _desugar_sequence(raw_seq)
+    else:
+        raw_conditions = raw.get("conditions", [])
+
     if not isinstance(raw_conditions, list):
         raise CorrelationError("conditions must be a list")
 

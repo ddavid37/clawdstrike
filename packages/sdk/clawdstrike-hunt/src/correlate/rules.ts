@@ -17,13 +17,25 @@ interface RawCondition {
   bind: string;
 }
 
+interface RawSequenceItem {
+  bind: string;
+  source: string | string[];
+  action_type?: string;
+  verdict?: string;
+  target_pattern?: string;
+  not_target_pattern?: string;
+  after?: string;
+  within?: string;
+}
+
 interface RawRule {
   schema: string;
   name: string;
   severity: string;
   description: string;
   window: string;
-  conditions: RawCondition[];
+  conditions?: RawCondition[];
+  sequence?: RawSequenceItem[];
   output: {
     title: string;
     evidence: string[];
@@ -36,6 +48,33 @@ function parseSeverity(s: string): RuleSeverity {
     return lower as RuleSeverity;
   }
   throw new ParseError(`invalid severity '${s}'`);
+}
+
+/**
+ * Transform a sequence shorthand into standard conditions.
+ * Each item auto-wires its `after` to the previous item's `bind` unless overridden.
+ */
+function desugarSequence(items: RawSequenceItem[]): RawCondition[] {
+  if (items.length === 0) {
+    throw new ParseError("sequence must have at least one item");
+  }
+
+  const conditions: RawCondition[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const cond: RawCondition = {
+      bind: item.bind,
+      source: item.source,
+      action_type: item.action_type,
+      verdict: item.verdict,
+      target_pattern: item.target_pattern,
+      not_target_pattern: item.not_target_pattern,
+      within: item.within,
+      after: item.after ?? (i > 0 ? items[i - 1].bind : undefined),
+    };
+    conditions.push(cond);
+  }
+  return conditions;
 }
 
 /**
@@ -72,12 +111,18 @@ export function parseRule(yamlStr: string): CorrelationRule {
     throw new ParseError("missing or invalid 'output' field");
   }
 
+  if (raw.sequence && raw.conditions) {
+    throw new ParseError("'sequence' and 'conditions' are mutually exclusive");
+  }
+
   const windowMs = parseHumanDuration(raw.window);
   if (windowMs === undefined) {
     throw new ParseError(`invalid duration: ${raw.window}`);
   }
 
-  const conditions: RuleCondition[] = (raw.conditions || []).map((c: RawCondition) => {
+  const rawConditions = raw.sequence ? desugarSequence(raw.sequence) : (raw.conditions || []);
+
+  const conditions: RuleCondition[] = rawConditions.map((c: RawCondition) => {
     const source = Array.isArray(c.source) ? c.source : [c.source];
     let withinMs: number | undefined;
     if (c.within !== undefined) {

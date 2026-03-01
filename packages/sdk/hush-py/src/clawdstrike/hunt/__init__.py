@@ -37,6 +37,8 @@ from clawdstrike.hunt.report import (
     sign_report,
     verify_report,
 )
+from clawdstrike.hunt.testing import TestResult, event, test_rule
+from clawdstrike.hunt.replay import ReplayResult, replay
 from clawdstrike.hunt.timeline import merge_timeline, parse_envelope
 from clawdstrike.hunt.types import (
     Alert,
@@ -115,6 +117,13 @@ __all__ = [
     "evidence_from_events",
     "evidence_from_ioc_matches",
     "collect_evidence",
+    # testing
+    "test_rule",
+    "event",
+    "TestResult",
+    # replay
+    "replay",
+    "ReplayResult",
     # watch (lazy import — requires nats-py)
     "run_watch",
 ]

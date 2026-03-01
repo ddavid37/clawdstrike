@@ -675,6 +675,215 @@ output:
 # ---------------------------------------------------------------------------
 
 
+class TestSequenceShorthand:
+    def test_parse_two_step_sequence(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "Two step sequence"
+severity: high
+description: "test"
+window: 30s
+sequence:
+  - bind: file_access
+    source: receipt
+    action_type: file
+  - bind: egress_event
+    source: receipt
+    action_type: egress
+output:
+  title: "test"
+  evidence:
+    - file_access
+    - egress_event
+"""
+        rule = parse_rule(yaml_str)
+        assert len(rule.conditions) == 2
+        assert rule.conditions[0].after is None
+        assert rule.conditions[0].bind == "file_access"
+        assert rule.conditions[1].after == "file_access"
+        assert rule.conditions[1].bind == "egress_event"
+
+    def test_parse_three_step_sequence(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "Three step"
+severity: high
+description: "test"
+window: 60s
+sequence:
+  - bind: step_a
+    source: receipt
+    action_type: file
+  - bind: step_b
+    source: receipt
+    action_type: egress
+  - bind: step_c
+    source: receipt
+    action_type: egress
+output:
+  title: "test"
+  evidence:
+    - step_a
+    - step_b
+    - step_c
+"""
+        rule = parse_rule(yaml_str)
+        assert len(rule.conditions) == 3
+        assert rule.conditions[0].after is None
+        assert rule.conditions[1].after == "step_a"
+        assert rule.conditions[2].after == "step_b"
+
+    def test_explicit_after_override(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "Override after"
+severity: medium
+description: "test"
+window: 60s
+sequence:
+  - bind: step_a
+    source: receipt
+    action_type: file
+  - bind: step_b
+    source: receipt
+    action_type: egress
+  - bind: step_c
+    source: receipt
+    action_type: egress
+    after: step_a
+output:
+  title: "test"
+  evidence:
+    - step_a
+    - step_b
+    - step_c
+"""
+        rule = parse_rule(yaml_str)
+        assert rule.conditions[2].after == "step_a"
+
+    def test_within_preserved(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "Within in sequence"
+severity: high
+description: "test"
+window: 60s
+sequence:
+  - bind: step_a
+    source: receipt
+    action_type: file
+  - bind: step_b
+    source: receipt
+    action_type: egress
+    within: 10s
+output:
+  title: "test"
+  evidence:
+    - step_a
+    - step_b
+"""
+        rule = parse_rule(yaml_str)
+        assert rule.conditions[1].within == timedelta(seconds=10)
+
+    def test_empty_sequence_raises(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "Empty sequence"
+severity: low
+description: "test"
+window: 10s
+sequence: []
+output:
+  title: "test"
+  evidence: []
+"""
+        with pytest.raises(CorrelationError, match="sequence must have at least one item"):
+            parse_rule(yaml_str)
+
+    def test_sequence_and_conditions_mutually_exclusive(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "Both"
+severity: low
+description: "test"
+window: 10s
+sequence:
+  - bind: a
+    source: receipt
+conditions:
+  - bind: b
+    source: receipt
+output:
+  title: "test"
+  evidence:
+    - a
+"""
+        with pytest.raises(CorrelationError, match="mutually exclusive"):
+            parse_rule(yaml_str)
+
+    def test_single_item_sequence(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "Single"
+severity: low
+description: "test"
+window: 30s
+sequence:
+  - bind: only
+    source: receipt
+    action_type: file
+output:
+  title: "test"
+  evidence:
+    - only
+"""
+        rule = parse_rule(yaml_str)
+        assert len(rule.conditions) == 1
+        assert rule.conditions[0].after is None
+        assert rule.conditions[0].bind == "only"
+
+    def test_end_to_end_sequence(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "E2E sequence"
+severity: high
+description: "test"
+window: 30s
+sequence:
+  - bind: file_read
+    source: receipt
+    action_type: file
+    verdict: allow
+  - bind: net_egress
+    source: receipt
+    action_type: egress
+    within: 30s
+output:
+  title: "Sequence matched"
+  evidence:
+    - file_read
+    - net_egress
+"""
+        rule = parse_rule(yaml_str)
+        ts1 = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        ts2 = datetime(2025, 6, 15, 12, 0, 5, tzinfo=timezone.utc)
+
+        events = [
+            _make_event(EventSourceType.RECEIPT, "file", NormalizedVerdict.ALLOW, "read /etc/passwd", ts1),
+            _make_event(EventSourceType.RECEIPT, "egress", NormalizedVerdict.ALLOW, "evil.com:443", ts2),
+        ]
+
+        alerts = correlate([rule], events)
+        assert len(alerts) == 1
+        assert alerts[0].title == "Sequence matched"
+        assert len(alerts[0].evidence) == 2
+
+
+# ---------------------------------------------------------------------------
+# correlate() convenience function
+# ---------------------------------------------------------------------------
+
+
 class TestCorrelateFunction:
     def test_processes_events_and_returns_alerts(self) -> None:
         rule = parse_rule(SINGLE_CONDITION_RULE)

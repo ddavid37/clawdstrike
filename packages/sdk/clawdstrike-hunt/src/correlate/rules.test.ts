@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parseRule, validateRule } from "./rules.js";
+import { correlate } from "./engine.js";
+import type { TimelineEvent } from "../types.js";
 
 const EXAMPLE_RULE = `
 schema: clawdstrike.hunt.correlation.v1
@@ -229,5 +231,232 @@ output:
     - evt
 `;
     expect(() => parseRule(yaml)).toThrow("reuses bind name 'evt'");
+  });
+});
+
+function makeEvent(
+  source: string,
+  actionType: string,
+  verdict: string,
+  summary: string,
+  ts: Date,
+): TimelineEvent {
+  return {
+    timestamp: ts,
+    source: source as TimelineEvent["source"],
+    kind: "guard_decision",
+    verdict: verdict as TimelineEvent["verdict"],
+    summary,
+    actionType,
+  };
+}
+
+describe("sequence shorthand", () => {
+  it("parses a 2-step sequence into conditions", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "Two step sequence"
+severity: high
+description: "test"
+window: 30s
+sequence:
+  - bind: file_access
+    source: receipt
+    action_type: file
+  - bind: egress_event
+    source: receipt
+    action_type: egress
+output:
+  title: "test"
+  evidence:
+    - file_access
+    - egress_event
+`;
+    const rule = parseRule(yaml);
+    expect(rule.conditions).toHaveLength(2);
+    expect(rule.conditions[0].after).toBeUndefined();
+    expect(rule.conditions[0].bind).toBe("file_access");
+    expect(rule.conditions[1].after).toBe("file_access");
+    expect(rule.conditions[1].bind).toBe("egress_event");
+  });
+
+  it("parses a 3-step sequence with auto-wired after", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "Three step"
+severity: high
+description: "test"
+window: 60s
+sequence:
+  - bind: step_a
+    source: receipt
+    action_type: file
+  - bind: step_b
+    source: receipt
+    action_type: egress
+  - bind: step_c
+    source: receipt
+    action_type: egress
+output:
+  title: "test"
+  evidence:
+    - step_a
+    - step_b
+    - step_c
+`;
+    const rule = parseRule(yaml);
+    expect(rule.conditions).toHaveLength(3);
+    expect(rule.conditions[0].after).toBeUndefined();
+    expect(rule.conditions[1].after).toBe("step_a");
+    expect(rule.conditions[2].after).toBe("step_b");
+  });
+
+  it("explicit after override in sequence item", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "Override after"
+severity: medium
+description: "test"
+window: 60s
+sequence:
+  - bind: step_a
+    source: receipt
+    action_type: file
+  - bind: step_b
+    source: receipt
+    action_type: egress
+  - bind: step_c
+    source: receipt
+    action_type: egress
+    after: step_a
+output:
+  title: "test"
+  evidence:
+    - step_a
+    - step_b
+    - step_c
+`;
+    const rule = parseRule(yaml);
+    expect(rule.conditions[2].after).toBe("step_a");
+  });
+
+  it("within preserved in sequence items", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "Within in sequence"
+severity: high
+description: "test"
+window: 60s
+sequence:
+  - bind: step_a
+    source: receipt
+    action_type: file
+  - bind: step_b
+    source: receipt
+    action_type: egress
+    within: 10s
+output:
+  title: "test"
+  evidence:
+    - step_a
+    - step_b
+`;
+    const rule = parseRule(yaml);
+    expect(rule.conditions[1].within).toBe(10_000);
+  });
+
+  it("empty sequence throws error", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "Empty sequence"
+severity: low
+description: "test"
+window: 10s
+sequence: []
+output:
+  title: "test"
+  evidence: []
+`;
+    expect(() => parseRule(yaml)).toThrow("sequence must have at least one item");
+  });
+
+  it("sequence and conditions both present throws error", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "Both"
+severity: low
+description: "test"
+window: 10s
+sequence:
+  - bind: a
+    source: receipt
+conditions:
+  - bind: b
+    source: receipt
+output:
+  title: "test"
+  evidence:
+    - a
+`;
+    expect(() => parseRule(yaml)).toThrow("mutually exclusive");
+  });
+
+  it("single item sequence has no after", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "Single sequence"
+severity: low
+description: "test"
+window: 30s
+sequence:
+  - bind: only
+    source: receipt
+    action_type: file
+output:
+  title: "test"
+  evidence:
+    - only
+`;
+    const rule = parseRule(yaml);
+    expect(rule.conditions).toHaveLength(1);
+    expect(rule.conditions[0].after).toBeUndefined();
+    expect(rule.conditions[0].bind).toBe("only");
+  });
+
+  it("end-to-end: sequence rule fires alerts through engine", () => {
+    const yaml = `
+schema: clawdstrike.hunt.correlation.v1
+name: "E2E sequence"
+severity: high
+description: "test"
+window: 30s
+sequence:
+  - bind: file_read
+    source: receipt
+    action_type: file
+    verdict: allow
+  - bind: net_egress
+    source: receipt
+    action_type: egress
+    within: 30s
+output:
+  title: "Sequence matched"
+  evidence:
+    - file_read
+    - net_egress
+`;
+    const rule = parseRule(yaml);
+    const ts1 = new Date("2025-06-15T12:00:00Z");
+    const ts2 = new Date("2025-06-15T12:00:05Z");
+
+    const events: TimelineEvent[] = [
+      makeEvent("receipt", "file", "allow", "read /etc/passwd", ts1),
+      makeEvent("receipt", "egress", "allow", "evil.com:443", ts2),
+    ];
+
+    const alerts = correlate([rule], events);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].title).toBe("Sequence matched");
+    expect(alerts[0].evidence).toHaveLength(2);
   });
 });
