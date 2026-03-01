@@ -15,6 +15,11 @@
 
 `hunt report` is documented as a planned command in [`hunt/report.md`](report.md), but it is not implemented in the current CLI.
 
+## Testing
+
+For process-level E2E coverage (real CLI + real NATS + mock MCP), see
+[`hunt/testing.md`](testing.md).
+
 ## Quick Examples
 
 ```bash

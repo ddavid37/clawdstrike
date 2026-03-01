@@ -6,6 +6,9 @@ CLI command -- a threat-hunting toolkit for AI agent ecosystems.
 > Note: This roadmap includes planned features and historical design options.
 > For current implemented CLI behavior, use the command reference pages under `docs/src/hunt/*.md`.
 
+> Status update: process-level `hunt` command E2E coverage is now implemented in
+> `crates/services/hush-cli/tests/hunt_e2e.rs` and is run as a required CI gate.
+
 The command ports and extends the Python `agent-scan` tool into Rust, integrates
 with the Spine/NATS attestation infrastructure, and adds correlation, watch-mode,
 and IOC capabilities that do not exist in the original Python codebase.
