@@ -49,15 +49,18 @@ pub async fn get_attestation(
 
     let registry_key = if v.registry_sig.is_some() {
         if let Some(ref key_id) = v.key_id {
-            let key_mgr = state
-                .key_manager
-                .lock()
-                .map_err(|e| RegistryError::Internal(format!("key_manager lock poisoned: {e}")))?;
-            key_mgr
-                .all_keys()
-                .into_iter()
-                .find(|k| k.key_id == *key_id)
-                .map(|k| k.public_key.clone())
+            if let Some(key) = db.get_registry_key(key_id)? {
+                Some(key.public_key)
+            } else {
+                let key_mgr = state.key_manager.lock().map_err(|e| {
+                    RegistryError::Internal(format!("key_manager lock poisoned: {e}"))
+                })?;
+                key_mgr
+                    .all_keys()
+                    .into_iter()
+                    .find(|k| k.key_id == *key_id)
+                    .map(|k| k.public_key.clone())
+            }
         } else {
             Some(state.registry_keypair.public_key().to_hex())
         }

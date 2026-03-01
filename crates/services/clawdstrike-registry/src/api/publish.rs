@@ -283,35 +283,43 @@ pub async fn publish(
         download_count: 0,
     })?;
 
+    let rollback_partial_publish = |stage: &str, cause: String| -> RegistryError {
+        let rollback_result = db.rollback_published_version(&name, &version);
+        let reindex_result = index::update_index(&db, &state.config.index_dir(), &name);
+        match (rollback_result, reindex_result) {
+            (Ok(()), Ok(())) => RegistryError::Internal(format!(
+                "publish failed during {stage}; rolled back DB/index state: {cause}"
+            )),
+            (rollback_res, reindex_res) => RegistryError::Internal(format!(
+                "publish failed during {stage} ({cause}); rollback status: db={rollback_res:?}, index={reindex_res:?}"
+            )),
+        }
+    };
+
     // 10. Update sparse index. If this fails, roll back the DB write so
     // retries can safely republish with the same version + leaf index.
     if let Err(index_err) = index::update_index(&db, &state.config.index_dir(), &name) {
-        match db.rollback_published_version(&name, &version) {
-            Ok(()) => {
-                return Err(RegistryError::Internal(format!(
-                    "failed to update sparse index; rolled back publish state: {index_err}"
-                )));
-            }
-            Err(rollback_err) => {
-                return Err(RegistryError::Internal(format!(
-                    "failed to update sparse index ({index_err}); rollback failed ({rollback_err})"
-                )));
-            }
-        }
+        return Err(rollback_partial_publish(
+            "index update",
+            index_err.to_string(),
+        ));
     }
 
     // 11. Append to Merkle tree only after DB + index commit succeeds.
-    let appended_index = {
-        let mut tree = state
-            .merkle_tree
-            .lock()
-            .map_err(|e| RegistryError::Internal(format!("merkle_tree lock poisoned: {e}")))?;
-        tree.append_hash(leaf_hash)
+    let appended_index = match state.merkle_tree.lock() {
+        Ok(mut tree) => tree.append_hash(leaf_hash),
+        Err(lock_err) => {
+            return Err(rollback_partial_publish(
+                "transparency append (merkle lock)",
+                lock_err.to_string(),
+            ));
+        }
     };
     if appended_index != leaf_index {
-        return Err(RegistryError::Internal(format!(
-            "reserved leaf index mismatch: expected {leaf_index}, got {appended_index}"
-        )));
+        return Err(rollback_partial_publish(
+            "transparency append (leaf index reservation)",
+            format!("expected {leaf_index}, got {appended_index}"),
+        ));
     }
     drop(db);
 

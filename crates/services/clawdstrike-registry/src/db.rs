@@ -485,6 +485,47 @@ impl RegistryDb {
         Ok(())
     }
 
+    /// Get a registry key by key ID.
+    pub fn get_registry_key(
+        &self,
+        key_id: &str,
+    ) -> Result<Option<crate::keys::RegistryKeyInfo>, RegistryError> {
+        let row = self
+            .conn
+            .query_row(
+                "SELECT key_id, public_key, created_at, valid_until, status FROM registry_keys WHERE key_id = ?1",
+                params![key_id],
+                |row| {
+                    let status_raw: String = row.get(4)?;
+                    let status = match status_raw.as_str() {
+                        "active" => crate::keys::KeyStatus::Active,
+                        "deprecated" => crate::keys::KeyStatus::Deprecated,
+                        "revoked" => crate::keys::KeyStatus::Revoked,
+                        _ => {
+                            return Err(rusqlite::Error::FromSqlConversionFailure(
+                                4,
+                                rusqlite::types::Type::Text,
+                                Box::new(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    format!("invalid key status '{status_raw}'"),
+                                )),
+                            ));
+                        }
+                    };
+
+                    Ok(crate::keys::RegistryKeyInfo {
+                        key_id: row.get(0)?,
+                        public_key: row.get(1)?,
+                        created_at: row.get(2)?,
+                        valid_until: row.get(3)?,
+                        status,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
+    }
+
     /// Update the attestation hash for a specific version.
     #[allow(dead_code)]
     pub fn set_attestation_hash(
@@ -1332,6 +1373,25 @@ mod tests {
         assert!(db.get_version("pkg", "1.0.0").unwrap().is_some());
         assert!(db.get_version("pkg", "1.1.0").unwrap().is_none());
         assert!(!db.search("pkg", 10, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn get_registry_key_reads_persisted_record() {
+        let db = test_db();
+        let key = crate::keys::RegistryKeyInfo {
+            key_id: "kid-test".into(),
+            public_key: "pk-test".into(),
+            created_at: "2026-01-01T00:00:00Z".into(),
+            valid_until: Some("2026-12-31T00:00:00Z".into()),
+            status: crate::keys::KeyStatus::Deprecated,
+        };
+        db.upsert_registry_key(&key).unwrap();
+
+        let loaded = db.get_registry_key("kid-test").unwrap().unwrap();
+        assert_eq!(loaded.key_id, "kid-test");
+        assert_eq!(loaded.public_key, "pk-test");
+        assert_eq!(loaded.valid_until.as_deref(), Some("2026-12-31T00:00:00Z"));
+        assert_eq!(loaded.status, crate::keys::KeyStatus::Deprecated);
     }
 
     #[test]
