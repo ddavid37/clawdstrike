@@ -831,18 +831,31 @@ function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
     );
   }
 
+  // Prompt-injection and jailbreak guards require WASM.  If the WASM backend
+  // is unavailable (e.g. @clawdstrike/wasm not installed), skip them with a
+  // warning rather than crashing — the remaining guards still provide value.
   if (!isGuardDisabled(guardConfigs.prompt_injection)) {
-    const promptInjectionConfig = toPromptInjectionConfig(
-      isPlainObject(guardConfigs.prompt_injection) ? guardConfigs.prompt_injection : {},
-    );
-    guards.push(new PromptInjectionGuard(promptInjectionConfig ?? {}));
+    try {
+      const promptInjectionConfig = toPromptInjectionConfig(
+        isPlainObject(guardConfigs.prompt_injection) ? guardConfigs.prompt_injection : {},
+      );
+      guards.push(new PromptInjectionGuard(promptInjectionConfig ?? {}));
+    } catch {
+      // biome-ignore lint/suspicious/noConsole: guard init diagnostic
+      console.warn("[clawdstrike] PromptInjectionGuard skipped — WASM backend unavailable");
+    }
   }
 
   if (!isGuardDisabled(guardConfigs.jailbreak)) {
-    const jailbreakConfig = toJailbreakConfig(
-      isPlainObject(guardConfigs.jailbreak) ? guardConfigs.jailbreak : {},
-    );
-    guards.push(new JailbreakGuard(jailbreakConfig ?? {}));
+    try {
+      const jailbreakConfig = toJailbreakConfig(
+        isPlainObject(guardConfigs.jailbreak) ? guardConfigs.jailbreak : {},
+      );
+      guards.push(new JailbreakGuard(jailbreakConfig ?? {}));
+    } catch {
+      // biome-ignore lint/suspicious/noConsole: guard init diagnostic
+      console.warn("[clawdstrike] JailbreakGuard skipped — WASM backend unavailable");
+    }
   }
 
   return guards;

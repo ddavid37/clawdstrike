@@ -245,4 +245,24 @@ guards:
     const decision = await cs.checkNetwork("api.example.com:0");
     expect(decision.status).toBe("allow");
   });
+
+  it("skips prompt_injection guard when WASM is unavailable instead of fail-closing checks", async () => {
+    const policy = `
+version: "1.2.0"
+name: "prompt injection skip without wasm"
+guards:
+  forbidden_path:
+    enabled: true
+  prompt_injection:
+    enabled: true
+`;
+
+    const cs = await Clawdstrike.fromPolicy(policy);
+    const decision = await cs.check("custom", {
+      customType: "untrusted_text",
+      customData: { text: "hello world" },
+    });
+
+    expect(decision.status).toBe("allow");
+  });
 });

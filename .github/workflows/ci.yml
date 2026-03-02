@@ -407,7 +407,7 @@ jobs:
             | grep -v '^packages/sdk/hush-py/hush-native/' \
             | grep -Ev '(^|/)tests/|_test\.rs$|_tests\.rs$|integration_tests\.rs$' \
             | grep -Ev '^crates/libs/hunt-(correlate|query|scan)/src/(lib|error)\.rs$' \
-            | grep -Ev '^crates/libs/hush-core/src/lib\.rs$' \
+            | grep -Ev '^crates/libs/(hush-core|clawdstrike)/src/lib\.rs$' \
             | grep -Ev '^crates/services/hush-cli/src/tests\.rs$' \
             > changed_rust_files.coverage.txt || true
 
@@ -458,15 +458,31 @@ jobs:
           cd crates/libs/hush-wasm
           wasm-pack build --target web --release
 
+      - name: Verify committed Node.js WASM artifacts are in sync
+        run: |
+          cd crates/libs/hush-wasm
+          wasm-pack build --target nodejs --release --out-dir pkg-node
+
+          for f in hush_wasm.js hush_wasm.d.ts hush_wasm_bg.wasm.d.ts; do
+            if ! cmp -s "$f" "pkg-node/$f"; then
+              echo "ERROR: $f is out of sync with wasm-pack --target nodejs output"
+              echo "Run: cd crates/libs/hush-wasm && ./build.sh"
+              exit 1
+            fi
+          done
+
       - name: Check bundle size
         run: |
           SIZE=$(wc -c < crates/libs/hush-wasm/pkg/hush_wasm_bg.wasm)
-          echo "Bundle size: $SIZE bytes"
-          if [ $SIZE -gt 512000 ]; then
-            echo "ERROR: Bundle exceeds 500KB limit"
+          echo "Bundle size: $SIZE bytes ($(( SIZE / 1024 ))KB)"
+          # Limit raised from 512KB after adding clawdstrike detection modules
+          # (regex patterns for jailbreak/injection detection) to WASM.
+          # Current baseline ~1.6MB; 1.75MiB cap leaves ~10% headroom.
+          if [ $SIZE -gt 1835008 ]; then
+            echo "ERROR: Bundle exceeds 1.75MiB limit"
             exit 1
           fi
-          echo "Bundle size is within 500KB limit"
+          echo "Bundle size is within 1.75MiB limit"
 
   proptest:
     name: Property Tests
