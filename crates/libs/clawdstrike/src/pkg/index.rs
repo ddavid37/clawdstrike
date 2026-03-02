@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -16,6 +17,8 @@ use crate::error::{Error, Result};
 
 /// Default registry base URL.
 pub const DEFAULT_REGISTRY_URL: &str = "https://registry.clawdstrike.dev";
+/// Maximum accepted sparse-index response body size (8 MiB).
+const MAX_INDEX_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 
 /// A sparse-index client that fetches and caches package metadata from a remote
 /// registry.
@@ -123,7 +126,7 @@ impl RegistryIndex {
                 request = request.header("If-None-Match", etag);
             }
 
-            let response = request.send().map_err(|e| {
+            let mut response = request.send().map_err(|e| {
                 Error::PkgError(format!(
                     "failed to fetch index for '{}': {}",
                     package_name, e
@@ -140,12 +143,20 @@ impl RegistryIndex {
             let body = if status == reqwest::StatusCode::NOT_MODIFIED {
                 None
             } else {
-                Some(response.text().map_err(|e| {
-                    Error::PkgError(format!(
-                        "failed to read index body for '{}': {}",
-                        package_name, e
-                    ))
-                })?)
+                if response
+                    .content_length()
+                    .is_some_and(|len| len > MAX_INDEX_RESPONSE_BYTES)
+                {
+                    return Err(Error::PkgError(format!(
+                        "index body for '{}' exceeds limit ({} bytes)",
+                        package_name, MAX_INDEX_RESPONSE_BYTES
+                    )));
+                }
+                Some(read_utf8_body_limited(
+                    &mut response,
+                    MAX_INDEX_RESPONSE_BYTES,
+                    &package_name,
+                )?)
             };
 
             Ok((status, etag, body))
@@ -216,6 +227,35 @@ fn build_blocking_client() -> Result<reqwest::blocking::Client> {
         .user_agent(format!("clawdstrike-pkg/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| Error::PkgError(format!("failed to build HTTP client: {}", e)))
+}
+
+fn read_utf8_body_limited<R: Read>(
+    mut reader: R,
+    max_bytes: u64,
+    package_name: &str,
+) -> Result<String> {
+    let mut bytes = Vec::new();
+    let mut limited = reader.by_ref().take(max_bytes + 1);
+    limited.read_to_end(&mut bytes).map_err(|e| {
+        Error::PkgError(format!(
+            "failed to read index body for '{}': {}",
+            package_name, e
+        ))
+    })?;
+
+    if bytes.len() as u64 > max_bytes {
+        return Err(Error::PkgError(format!(
+            "index body for '{}' exceeds limit ({} bytes)",
+            package_name, max_bytes
+        )));
+    }
+
+    String::from_utf8(bytes).map_err(|e| {
+        Error::PkgError(format!(
+            "index body for '{}' is not valid UTF-8: {}",
+            package_name, e
+        ))
+    })
 }
 
 fn run_blocking_http<T, F>(f: F) -> Result<T>
@@ -433,5 +473,18 @@ mod tests {
         });
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn read_utf8_body_limited_rejects_oversized_payload() {
+        let bytes = vec![b'a'; 11];
+        let err = read_utf8_body_limited(bytes.as_slice(), 10, "demo").unwrap_err();
+        assert!(err.to_string().contains("exceeds limit"));
+    }
+
+    #[test]
+    fn read_utf8_body_limited_accepts_valid_utf8() {
+        let body = read_utf8_body_limited(br#"{"name":"demo"}"#.as_slice(), 64, "demo").unwrap();
+        assert_eq!(body, r#"{"name":"demo"}"#);
     }
 }

@@ -76,15 +76,19 @@ pub fn cmd_mirror(
             from,
             to,
             output_dir,
-        } => cmd_mirror_sync(
-            &name,
-            version.as_deref(),
-            &from,
-            to.as_deref(),
-            output_dir,
-            stdout,
-            stderr,
-        ),
+        } => {
+            let cfg = RegistryConfig::load(None);
+            cmd_mirror_sync(
+                &name,
+                version.as_deref(),
+                &from,
+                to.as_deref(),
+                output_dir,
+                cfg.registry_public_key.as_deref(),
+                stdout,
+                stderr,
+            )
+        }
         MirrorCommands::BulkSync {
             scope,
             min_trust,
@@ -399,12 +403,10 @@ fn cmd_mirror_sync(
     from: &str,
     to: Option<&str>,
     output_dir: Option<PathBuf>,
+    expected_registry_key: Option<&str>,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> ExitCode {
-    let cfg = RegistryConfig::load(None);
-    let expected_registry_key = cfg.registry_public_key.as_deref();
-
     let client = match build_client() {
         Ok(c) => c,
         Err(e) => {
@@ -641,13 +643,14 @@ fn republish_to_registry(
         }
     };
 
-    let (archive_path, manifest_toml, _tmp_dir) = match write_archive_and_extract_manifest(bytes) {
-        Ok(v) => v,
-        Err(e) => {
-            let _ = writeln!(stderr, "Error: cannot parse mirrored package manifest: {e}");
-            return ExitCode::RuntimeError;
-        }
-    };
+    let (archive_path, manifest_toml, tmp_dir_guard) =
+        match write_archive_and_extract_manifest(bytes) {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = writeln!(stderr, "Error: cannot parse mirrored package manifest: {e}");
+                return ExitCode::RuntimeError;
+            }
+        };
 
     let signature = match sign_package(&archive_path, &keypair) {
         Ok(sig) => sig,
@@ -665,7 +668,7 @@ fn republish_to_registry(
         "manifest_toml": manifest_toml,
     });
 
-    match client
+    let result = match client
         .post(&upload_url)
         .bearer_auth(auth_token)
         .json(&body)
@@ -688,15 +691,41 @@ fn republish_to_registry(
             let _ = writeln!(stderr, "Error: publish failed: {e}");
             ExitCode::RuntimeError
         }
+    };
+    // Keep guard alive for the full republish operation; dropping removes temp files.
+    drop(tmp_dir_guard);
+    result
+}
+
+struct TempDirGuard {
+    path: PathBuf,
+}
+
+impl TempDirGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
     }
 }
 
-fn write_archive_and_extract_manifest(bytes: &[u8]) -> Result<(PathBuf, String, PathBuf), String> {
+impl Drop for TempDirGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+fn write_archive_and_extract_manifest(
+    bytes: &[u8],
+) -> Result<(PathBuf, String, TempDirGuard), String> {
     let nonce: u64 = rand::Rng::random(&mut rand::rng());
-    let tmp_dir = std::env::temp_dir().join(format!("clawdstrike_mirror_republish_{nonce:x}"));
-    std::fs::create_dir_all(&tmp_dir)
-        .map_err(|e| format!("failed to create temp dir {}: {e}", tmp_dir.display()))?;
-    let archive_path = tmp_dir.join("mirror.cpkg");
+    let tmp_dir_path = std::env::temp_dir().join(format!("clawdstrike_mirror_republish_{nonce:x}"));
+    std::fs::create_dir_all(&tmp_dir_path)
+        .map_err(|e| format!("failed to create temp dir {}: {e}", tmp_dir_path.display()))?;
+    let tmp_dir = TempDirGuard::new(tmp_dir_path);
+    let archive_path = tmp_dir.path().join("mirror.cpkg");
     std::fs::write(&archive_path, bytes).map_err(|e| {
         format!(
             "failed to write temp archive {}: {e}",
@@ -704,7 +733,7 @@ fn write_archive_and_extract_manifest(bytes: &[u8]) -> Result<(PathBuf, String, 
         )
     })?;
 
-    let unpack_dir = tmp_dir.join("unpacked");
+    let unpack_dir = tmp_dir.path().join("unpacked");
     archive::unpack(&archive_path, &unpack_dir)
         .map_err(|e| format!("failed to unpack mirrored archive: {e}"))?;
     let manifest_path = unpack_dir.join("clawdstrike-pkg.toml");
@@ -900,6 +929,7 @@ fn cmd_mirror_bulk_sync(
             from,
             None,
             Some(output_dir.to_path_buf()),
+            expected_registry_key,
             stdout,
             stderr,
         );
@@ -1171,6 +1201,41 @@ mod tests {
         assert_eq!(code, ExitCode::ConfigError);
         let err = String::from_utf8_lossy(&stderr);
         assert!(err.contains("invalid trust level 'verfied'"));
+    }
+
+    #[test]
+    fn required_registry_key_for_signed_trust_is_optional() {
+        let cfg = RegistryConfig::from_toml_str(
+            r#"
+[registry]
+public_key = "deadbeef"
+"#,
+            "",
+        );
+        let key = required_registry_public_key_for_trust(&cfg, "signed").unwrap();
+        assert!(key.is_none());
+    }
+
+    #[test]
+    fn required_registry_key_for_verified_trust_is_mandatory() {
+        let cfg = RegistryConfig::from_toml_str("", "");
+        let err = required_registry_public_key_for_trust(&cfg, "verified").unwrap_err();
+        assert!(err.contains("required for verified/certified trust"));
+    }
+
+    #[test]
+    fn temp_dir_guard_removes_directory_on_drop() {
+        let parent = tempfile::tempdir().unwrap();
+        let path = parent.path().join("mirror-temp");
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(path.join("file.txt"), b"data").unwrap();
+
+        {
+            let _guard = TempDirGuard::new(path.clone());
+            assert!(path.exists());
+        }
+
+        assert!(!path.exists());
     }
 
     fn entry(name: &str) -> MirrorSearchEntry {

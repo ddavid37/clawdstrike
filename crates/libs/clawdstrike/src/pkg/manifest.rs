@@ -191,6 +191,15 @@ impl PkgManifest {
             }
         }
 
+        if self.resources.max_memory_mb < 1
+            || self.resources.max_cpu_ms < 1
+            || self.resources.max_timeout_ms < 1
+        {
+            return Err(Error::PkgError(
+                "package manifest.resources values must be positive integers".to_string(),
+            ));
+        }
+
         // Dependency version constraints must be non-empty and parseable semver requirements.
         for (dep_name, constraint) in &self.dependencies {
             let trimmed = constraint.trim();
@@ -433,6 +442,27 @@ sandbox = "native"
 "#;
         let err = parse_pkg_manifest_toml(raw).unwrap_err();
         assert!(err.to_string().contains("max_version"));
+    }
+
+    #[test]
+    fn rejects_non_positive_resource_limits() {
+        let raw = r#"
+[package]
+name = "my-pkg"
+version = "1.0.0"
+pkg_type = "guard"
+
+[resources]
+max_memory_mb = 0
+max_cpu_ms = 200
+max_timeout_ms = 10000
+
+[trust]
+level = "trusted"
+sandbox = "native"
+"#;
+        let err = parse_pkg_manifest_toml(raw).unwrap_err();
+        assert!(err.to_string().contains("resources"));
     }
 
     #[test]
