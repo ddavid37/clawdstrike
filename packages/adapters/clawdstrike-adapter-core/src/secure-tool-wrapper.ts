@@ -102,7 +102,10 @@ export function secureToolSet<TTools extends Record<string, ExecuteOrCallToolLik
       continue;
     }
 
-    const wrappedTool = { ...(tool as object) } as ExecuteOrCallToolLike;
+    const wrappedTool = Object.create(
+      Object.getPrototypeOf(tool),
+      Object.getOwnPropertyDescriptors(tool as object),
+    ) as ExecuteOrCallToolLike;
     if (hasExecute) {
       wrappedTool.execute = wrapExecuteWithInterceptor(
         toolName,

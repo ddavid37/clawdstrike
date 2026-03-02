@@ -194,6 +194,21 @@ class TestSignVerify:
         )
         assert not verify_report(broken)
 
+    def test_malformed_proof_json_shape_fails(self) -> None:
+        report = build_report("Proof Shape", _sample_items())
+
+        from clawdstrike.hunt.types import HuntReport
+        malformed = HuntReport(
+            title=report.title,
+            generated_at=report.generated_at,
+            evidence=report.evidence,
+            merkle_root=report.merkle_root,
+            merkle_proofs=("[]",) + report.merkle_proofs[1:],
+            signature=report.signature,
+            signer=report.signer,
+        )
+        assert not verify_report(malformed)
+
 
 # ---------------------------------------------------------------------------
 # Evidence helpers

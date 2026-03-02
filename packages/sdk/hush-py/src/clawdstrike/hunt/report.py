@@ -183,11 +183,13 @@ def verify_report(report: HuntReport) -> bool:
             proof_dict = json.loads(report.merkle_proofs[i])
         except (json.JSONDecodeError, IndexError):
             return False
+        if not isinstance(proof_dict, dict):
+            return False
 
         from clawdstrike.merkle import MerkleProof
         try:
             audit_path = [bytes.fromhex(h) for h in proof_dict.get("auditPath", [])]
-        except ValueError:
+        except (TypeError, ValueError):
             return False
 
         proof = MerkleProof(

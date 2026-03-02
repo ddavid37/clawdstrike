@@ -139,4 +139,27 @@ describe("secureToolSet", () => {
     expect(Object.prototype.hasOwnProperty.call(secured.executeOnly, "call")).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(secured.callOnly, "execute")).toBe(false);
   });
+
+  it("preserves prototype methods for class-based tools", async () => {
+    class ClassTool {
+      prefix = "class-tool";
+
+      async execute(input: string): Promise<string> {
+        return `${this.prefix}:${input}`;
+      }
+
+      describe(): string {
+        return this.prefix;
+      }
+    }
+
+    const tools = {
+      klass: new ClassTool(),
+    };
+    const secured = secureToolSet(tools, createInterceptor(), { framework: "test" });
+
+    await expect(secured.klass.execute("x")).resolves.toBe("class-tool:x");
+    expect(typeof secured.klass.describe).toBe("function");
+    expect(secured.klass.describe()).toBe("class-tool");
+  });
 });

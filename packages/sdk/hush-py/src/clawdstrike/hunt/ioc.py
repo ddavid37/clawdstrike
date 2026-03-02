@@ -408,6 +408,9 @@ class IocDatabase:
 
         db = cls()
         for obj in objects:
+            if not isinstance(obj, dict):
+                continue
+
             sdo_type = obj.get("type", "")
             if sdo_type != "indicator":
                 continue

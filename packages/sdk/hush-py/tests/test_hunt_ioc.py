@@ -269,6 +269,21 @@ class TestIocDatabaseStixLoad:
         with pytest.raises(IocError, match="objects"):
             IocDatabase.load_stix_bundle(str(p))
 
+    def test_stix_non_object_entries_are_ignored(self, tmp_path) -> None:
+        bundle = {
+            "type": "bundle",
+            "id": "bundle--mixed",
+            "objects": [
+                "not-an-object",
+                123,
+                {"type": "indicator", "pattern": "[domain-name:value = 'evil.example.com']"},
+            ],
+        }
+        p = tmp_path / "stix_mixed.json"
+        p.write_text(json.dumps(bundle))
+        db = IocDatabase.load_stix_bundle(str(p))
+        assert len(db) == 1
+
 
 # ---------------------------------------------------------------------------
 # Event matching
