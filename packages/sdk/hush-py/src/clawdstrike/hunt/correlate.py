@@ -47,12 +47,16 @@ _SEVERITY_MAP: dict[str, RuleSeverity] = {
 }
 
 
-def _parse_source(val: Any) -> tuple[str, ...]:
-    if isinstance(val, str):
+def _parse_source(val: Any, condition_index: int) -> tuple[str, ...]:
+    if isinstance(val, str) and val.strip():
         return (val,)
     if isinstance(val, list):
-        return tuple(str(s) for s in val)
-    return (str(val),)
+        if val and all(isinstance(s, str) and s.strip() for s in val):
+            return tuple(val)
+    raise CorrelationError(
+        f"condition {condition_index} has invalid 'source' "
+        "(expected string or list of strings)"
+    )
 
 
 def _desugar_sequence(items: list[dict]) -> list[dict]:
@@ -68,6 +72,11 @@ def _desugar_sequence(items: list[dict]) -> list[dict]:
     for i, item in enumerate(items):
         if not isinstance(item, dict):
             raise CorrelationError(f"sequence item {i} must be a mapping")
+        bind = item.get("bind")
+        if not isinstance(bind, str) or not bind.strip():
+            raise CorrelationError(
+                f"sequence item {i} has invalid 'bind' (expected string)"
+            )
         cond = dict(item)
         if "after" not in cond or cond["after"] is None:
             if i > 0:
@@ -121,6 +130,12 @@ def parse_rule(yaml_str: str) -> CorrelationRule:
     for idx, rc in enumerate(raw_conditions):
         if not isinstance(rc, dict):
             raise CorrelationError(f"condition {idx} must be a mapping")
+        bind = rc.get("bind")
+        if not isinstance(bind, str) or not bind.strip():
+            raise CorrelationError(
+                f"condition {idx} has invalid 'bind' (expected string)"
+            )
+        source = _parse_source(rc.get("source"), idx)
         within: timedelta | None = None
         if "within" in rc and rc["within"] is not None:
             within = parse_human_duration(str(rc["within"]))
@@ -131,8 +146,8 @@ def parse_rule(yaml_str: str) -> CorrelationRule:
 
         conditions.append(
             RuleCondition(
-                bind=str(rc.get("bind", "")),
-                source=_parse_source(rc.get("source", [])),
+                bind=bind,
+                source=source,
                 action_type=rc.get("action_type"),
                 verdict=rc.get("verdict"),
                 target_pattern=rc.get("target_pattern"),

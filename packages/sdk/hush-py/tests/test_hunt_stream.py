@@ -77,6 +77,63 @@ class TestStream:
         """stream should be an async generator function."""
         assert inspect.isasyncgenfunction(stream)
 
+    @pytest.mark.asyncio
+    async def test_stream_passes_max_window_to_process_event(self, monkeypatch) -> None:
+        import clawdstrike.hunt.stream as stream_mod
+
+        fake_event = _make_event()
+        engine_calls: list[tuple[TimelineEvent, timedelta | None]] = []
+        evict_calls = 0
+
+        class _FakeEngine:
+            def __init__(self, _rules) -> None:
+                pass
+
+            def process_event(
+                self,
+                event: TimelineEvent,
+                max_window: timedelta | None = None,
+            ) -> list[Alert]:
+                engine_calls.append((event, max_window))
+                return []
+
+            def evict(self, _max_window: timedelta | None = None) -> None:
+                nonlocal evict_calls
+                evict_calls += 1
+
+        class _FakeMsg:
+            def __init__(self, data: bytes) -> None:
+                self.data = data
+
+        class _FakeSub:
+            def __init__(self, items: list[bytes]) -> None:
+                async def _iter():
+                    for item in items:
+                        yield _FakeMsg(item)
+                self.messages = _iter()
+
+        class _FakeNc:
+            async def subscribe(self, _subject: str):
+                return _FakeSub([json.dumps({"kind": "event"}).encode()])
+
+            async def drain(self) -> None:
+                return None
+
+        class _FakeNats:
+            @staticmethod
+            async def connect(*_args, **_kwargs):
+                return _FakeNc()
+
+        monkeypatch.setitem(sys.modules, "nats", _FakeNats)
+        monkeypatch.setattr(stream_mod, "CorrelationEngine", _FakeEngine)
+        monkeypatch.setattr(stream_mod, "parse_envelope", lambda _env: fake_event)
+
+        async for _ in stream_mod.stream(_make_config()):
+            pass
+
+        assert engine_calls == [(fake_event, timedelta(seconds=60))]
+        assert evict_calls == 0
+
 
 class TestStreamAll:
     """Tests for the stream_all function."""
@@ -103,6 +160,66 @@ class TestStreamAll:
     def test_stream_all_is_async_generator_function(self) -> None:
         """stream_all should be an async generator function."""
         assert inspect.isasyncgenfunction(stream_all)
+
+    @pytest.mark.asyncio
+    async def test_stream_all_passes_max_window_to_process_event(self, monkeypatch) -> None:
+        import clawdstrike.hunt.stream as stream_mod
+
+        fake_event = _make_event()
+        engine_calls: list[tuple[TimelineEvent, timedelta | None]] = []
+        evict_calls = 0
+
+        class _FakeEngine:
+            def __init__(self, _rules) -> None:
+                pass
+
+            def process_event(
+                self,
+                event: TimelineEvent,
+                max_window: timedelta | None = None,
+            ) -> list[Alert]:
+                engine_calls.append((event, max_window))
+                return []
+
+            def evict(self, _max_window: timedelta | None = None) -> None:
+                nonlocal evict_calls
+                evict_calls += 1
+
+        class _FakeMsg:
+            def __init__(self, data: bytes) -> None:
+                self.data = data
+
+        class _FakeSub:
+            def __init__(self, items: list[bytes]) -> None:
+                async def _iter():
+                    for item in items:
+                        yield _FakeMsg(item)
+                self.messages = _iter()
+
+        class _FakeNc:
+            async def subscribe(self, _subject: str):
+                return _FakeSub([json.dumps({"kind": "event"}).encode()])
+
+            async def drain(self) -> None:
+                return None
+
+        class _FakeNats:
+            @staticmethod
+            async def connect(*_args, **_kwargs):
+                return _FakeNc()
+
+        monkeypatch.setitem(sys.modules, "nats", _FakeNats)
+        monkeypatch.setattr(stream_mod, "CorrelationEngine", _FakeEngine)
+        monkeypatch.setattr(stream_mod, "parse_envelope", lambda _env: fake_event)
+
+        items = []
+        async for item in stream_mod.stream_all(_make_config()):
+            items.append(item)
+
+        assert len(items) == 1
+        assert items[0].type == "event"
+        assert engine_calls == [(fake_event, timedelta(seconds=60))]
+        assert evict_calls == 0
 
     @pytest.mark.asyncio
     async def test_stream_all_skips_non_object_json_payloads(self, monkeypatch) -> None:

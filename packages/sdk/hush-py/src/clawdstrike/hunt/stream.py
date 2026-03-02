@@ -77,8 +77,7 @@ async def stream(config: WatchConfig) -> AsyncIterator[Alert]:
             if event is None:
                 continue
 
-            engine.evict(config.max_window)
-            alerts = engine.process_event(event)
+            alerts = engine.process_event(event, config.max_window)
             for alert in alerts:
                 yield alert
     finally:
@@ -131,8 +130,7 @@ async def stream_all(config: WatchConfig) -> AsyncIterator[StreamItem]:
 
             yield StreamEventItem(type="event", event=event)
 
-            engine.evict(config.max_window)
-            alerts = engine.process_event(event)
+            alerts = engine.process_event(event, config.max_window)
             for alert in alerts:
                 yield StreamAlertItem(type="alert", alert=alert)
     finally:

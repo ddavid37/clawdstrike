@@ -349,6 +349,57 @@ output:
         with pytest.raises(CorrelationError, match="sequence item 1 must be a mapping"):
             parse_rule(yaml_str)
 
+    def test_reject_condition_missing_bind(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "Missing bind"
+severity: low
+description: "test"
+window: 10s
+conditions:
+  - source: receipt
+output:
+  title: "test"
+  evidence: []
+"""
+        with pytest.raises(CorrelationError, match="condition 0 has invalid 'bind'"):
+            parse_rule(yaml_str)
+
+    def test_reject_condition_missing_source(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "Missing source"
+severity: low
+description: "test"
+window: 10s
+conditions:
+  - bind: evt
+output:
+  title: "test"
+  evidence:
+    - evt
+"""
+        with pytest.raises(CorrelationError, match="condition 0 has invalid 'source'"):
+            parse_rule(yaml_str)
+
+    def test_reject_condition_invalid_source_entry(self) -> None:
+        yaml_str = """\
+schema: clawdstrike.hunt.correlation.v1
+name: "Bad source list"
+severity: low
+description: "test"
+window: 10s
+conditions:
+  - bind: evt
+    source: [receipt, 123]
+output:
+  title: "test"
+  evidence:
+    - evt
+"""
+        with pytest.raises(CorrelationError, match="condition 0 has invalid 'source'"):
+            parse_rule(yaml_str)
+
 
 # ---------------------------------------------------------------------------
 # Load from files

@@ -63,8 +63,7 @@ export async function* stream(
       const event = parseEnvelope(envelope);
       if (!event) continue;
 
-      engine.evict(options.maxWindow);
-      const alerts = engine.processEvent(event);
+      const alerts = engine.processEvent(event, options.maxWindow);
       for (const alert of alerts) {
         yield alert;
       }
@@ -124,8 +123,7 @@ export async function* streamAll(
 
       yield { type: 'event' as const, event };
 
-      engine.evict(options.maxWindow);
-      const alerts = engine.processEvent(event);
+      const alerts = engine.processEvent(event, options.maxWindow);
       for (const alert of alerts) {
         yield { type: 'alert' as const, alert };
       }

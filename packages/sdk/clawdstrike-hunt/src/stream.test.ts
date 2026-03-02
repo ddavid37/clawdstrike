@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { StreamItem, StreamOptions } from './stream.js';
 import type { TimelineEvent, Alert } from './types.js';
 import { EventSourceType, TimelineEventKind, NormalizedVerdict, RuleSeverity } from './types.js';
@@ -47,6 +47,104 @@ describe('stream module', () => {
       const err = e as Error;
       expect(err).toBeInstanceOf(Error);
     }
+  });
+
+  it('stream passes maxWindow to processEvent and avoids explicit wall-clock eviction', async () => {
+    vi.resetModules();
+
+    const processEvent = vi.fn(() => []);
+    const evict = vi.fn();
+    const flush = vi.fn(() => []);
+    class MockEngine {
+      processEvent = processEvent;
+      evict = evict;
+      flush = flush;
+      constructor(_rules: unknown[]) {}
+    }
+
+    const parseEnvelope = vi.fn(() => ({ timestamp: new Date('2025-01-01T00:00:00Z') }));
+    const sub = {
+      [Symbol.asyncIterator]: async function* () {
+        yield {
+          data: new TextEncoder().encode(JSON.stringify({ kind: 'event' })),
+        };
+      },
+      unsubscribe: vi.fn(),
+    };
+    const nc = {
+      subscribe: vi.fn(() => sub),
+      drain: vi.fn(async () => undefined),
+    };
+    const connect = vi.fn(async () => nc);
+
+    vi.doMock('./correlate/engine.js', () => ({ CorrelationEngine: MockEngine }));
+    vi.doMock('./timeline.js', () => ({ parseEnvelope }));
+    vi.doMock('nats', () => ({ connect }));
+
+    const { stream } = await import('./stream.js');
+    const alerts: Alert[] = [];
+    for await (const alert of stream({ natsUrl: 'nats://localhost:4222', rules: [], maxWindow: 30_000 })) {
+      alerts.push(alert);
+    }
+
+    expect(alerts).toHaveLength(0);
+    expect(processEvent).toHaveBeenCalledTimes(1);
+    expect(processEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ timestamp: expect.any(Date) }),
+      30_000,
+    );
+    expect(evict).not.toHaveBeenCalled();
+  });
+
+  it('streamAll passes maxWindow to processEvent and avoids explicit wall-clock eviction', async () => {
+    vi.resetModules();
+
+    const processEvent = vi.fn(() => []);
+    const evict = vi.fn();
+    const flush = vi.fn(() => []);
+    class MockEngine {
+      processEvent = processEvent;
+      evict = evict;
+      flush = flush;
+      constructor(_rules: unknown[]) {}
+    }
+
+    const parseEnvelope = vi.fn(() => ({
+      timestamp: new Date('2025-01-01T00:00:00Z'),
+      summary: 'ok',
+    }));
+    const sub = {
+      [Symbol.asyncIterator]: async function* () {
+        yield {
+          data: new TextEncoder().encode(JSON.stringify({ kind: 'event' })),
+        };
+      },
+      unsubscribe: vi.fn(),
+    };
+    const nc = {
+      subscribe: vi.fn(() => sub),
+      drain: vi.fn(async () => undefined),
+    };
+    const connect = vi.fn(async () => nc);
+
+    vi.doMock('./correlate/engine.js', () => ({ CorrelationEngine: MockEngine }));
+    vi.doMock('./timeline.js', () => ({ parseEnvelope }));
+    vi.doMock('nats', () => ({ connect }));
+
+    const { streamAll } = await import('./stream.js');
+    const items: StreamItem[] = [];
+    for await (const item of streamAll({ natsUrl: 'nats://localhost:4222', rules: [], maxWindow: 30_000 })) {
+      items.push(item);
+    }
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.type).toBe('event');
+    expect(processEvent).toHaveBeenCalledTimes(1);
+    expect(processEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ timestamp: expect.any(Date) }),
+      30_000,
+    );
+    expect(evict).not.toHaveBeenCalled();
   });
 
   it('StreamItem alert type has correct structure', () => {
