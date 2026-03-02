@@ -18,6 +18,9 @@ members = [
     "crates/services/cloud-api",
     "packages/sdk/hush-py/hush-native",
     "crates/libs/hush-ffi",
+    "crates/libs/clawdstrike-guard-sdk",
+    "crates/libs/clawdstrike-guard-sdk-macros",
+    "crates/services/clawdstrike-registry",
     "crates/libs/hunt-scan",
     "crates/libs/hunt-query",
     "crates/libs/hunt-correlate",
@@ -118,9 +121,15 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 
 # Compression
 flate2 = "1.1"
+tar = "0.4"
+zstd = "0.13"
 
 # URL parsing
 url = "2.5"
+
+# Version solving
+semver = "1"
+pubgrub = "0.3"
 
 # Parsing
 shell-words = "1.1"

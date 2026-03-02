@@ -102,6 +102,8 @@ pub mod marketplace_feed;
 #[cfg(feature = "full")]
 pub mod pipeline;
 #[cfg(feature = "full")]
+pub mod pkg;
+#[cfg(feature = "full")]
 mod placeholders;
 #[cfg(feature = "full")]
 pub mod plugins;
@@ -111,6 +113,8 @@ pub mod policy;
 pub mod policy_bundle;
 #[cfg(feature = "full")]
 pub mod posture;
+#[cfg(feature = "full")]
+mod semver_utils;
 #[cfg(feature = "full")]
 pub mod spine_bridge;
 #[cfg(feature = "full")]
@@ -149,6 +153,8 @@ pub mod ipfs;
 
 #[cfg(feature = "full")]
 pub use pipeline::{EvaluationPath, EvaluationStage};
+#[cfg(feature = "full")]
+pub use pkg::PackagePolicyResolver;
 #[cfg(feature = "wasm-plugin-runtime")]
 pub use plugins::{
     execute_wasm_guard_bytes, execute_wasm_guard_module, validate_wasm_guard_module,
