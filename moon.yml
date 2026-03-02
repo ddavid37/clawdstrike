@@ -158,6 +158,8 @@ tasks:
   ts-typecheck:
     command: "npm run typecheck --if-present -w packages/sdk/hush-ts -w packages/policy/clawdstrike-policy -w packages/adapters/clawdstrike-adapter-core"
     platform: "node"
+    deps:
+      - "~:ts-build-adapter-core"
     inputs:
       - "packages/sdk/hush-ts/src/**/*"
       - "packages/sdk/hush-ts/tsconfig*.json"
@@ -208,6 +210,7 @@ tasks:
     platform: "system"
     deps:
       - "~:rust-build-cli"
+      - "~:ts-build-adapter-core"
     inputs:
       - "scripts/run-parity.sh"
       - "@group(rust-sources)"
@@ -223,7 +226,7 @@ tasks:
     command: "noop"
     deps:
       - "~:rust-build"
-      - "wasm:build"
+      - "wasm:size-check"
       - "~:ts-build"
       - "cloud-dashboard:build"
 
