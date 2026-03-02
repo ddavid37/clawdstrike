@@ -37,13 +37,15 @@ impl<W: IoWrite> SizeLimitedWriter<W> {
 
 impl<W: IoWrite> IoWrite for SizeLimitedWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if self.written.saturating_add(buf.len() as u64) > self.max_bytes {
+        if self.written >= self.max_bytes {
             return Err(IoError::other(format!(
                 "uncompressed archive size exceeds limit ({} bytes)",
                 self.max_bytes
             )));
         }
-        let written = self.inner.write(buf)?;
+        let remaining = (self.max_bytes - self.written) as usize;
+        let chunk = &buf[..buf.len().min(remaining)];
+        let written = self.inner.write(chunk)?;
         self.written = self.written.saturating_add(written as u64);
         Ok(written)
     }
@@ -85,6 +87,8 @@ pub fn pack(source_dir: &Path, output_path: &Path) -> Result<Hash> {
         let out_file = fs::File::create(output_path)?;
         let out_buf = std::io::BufWriter::new(out_file);
         let encoder = zstd::stream::write::Encoder::new(out_buf, ZSTD_LEVEL)?;
+        // Tar bytes flow into `limited` before being compressed by the encoder,
+        // so this enforces a cap on the uncompressed tar stream size.
         let mut limited = SizeLimitedWriter::new(encoder, MAX_UNCOMPRESSED_SIZE);
 
         {
@@ -281,6 +285,31 @@ mod tests {
         let mut writer = SizeLimitedWriter::new(Vec::<u8>::new(), 4);
         writer.write_all(b"abcd").unwrap();
         let err = writer.write_all(b"ef").unwrap_err();
+        assert!(err.to_string().contains("exceeds limit"));
+    }
+
+    #[test]
+    fn size_limited_writer_allows_partial_write_up_to_limit() {
+        struct OneByteWriter;
+
+        impl IoWrite for OneByteWriter {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                if buf.is_empty() {
+                    return Ok(0);
+                }
+                Ok(1)
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let mut writer = SizeLimitedWriter::new(OneByteWriter, 4);
+        writer.write_all(b"abc").unwrap();
+        let wrote = writer.write(b"zzzz").unwrap();
+        assert_eq!(wrote, 1);
+        let err = writer.write(b"z").unwrap_err();
         assert!(err.to_string().contains("exceeds limit"));
     }
 

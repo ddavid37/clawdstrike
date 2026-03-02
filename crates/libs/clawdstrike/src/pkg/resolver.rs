@@ -7,8 +7,9 @@ use std::path::Path;
 
 use crate::error::{Error, Result};
 use crate::policy::{LocalPolicyResolver, PolicyLocation, PolicyResolver, ResolvedPolicySource};
+use crate::semver_utils::is_strict_semver;
 
-use super::{normalize_relative_path_for_key, store::PackageStore};
+use super::{manifest::is_valid_pkg_name, normalize_relative_path_for_key, store::PackageStore};
 
 /// Default policy file path within a policy-pack package.
 const DEFAULT_POLICY_PATH: &str = "policies/main.yaml";
@@ -79,6 +80,8 @@ fn parse_pkg_ref(reference: &str) -> Result<PkgRef> {
 
         let (version, sub_path) = split_version_and_sub_path(rest, reference)?;
 
+        validate_pkg_ref_name_and_version(name, &version, reference)?;
+
         Ok(PkgRef {
             name: name.to_string(),
             version,
@@ -101,12 +104,30 @@ fn parse_pkg_ref(reference: &str) -> Result<PkgRef> {
 
         let (version, sub_path) = split_version_and_sub_path(rest, reference)?;
 
+        validate_pkg_ref_name_and_version(name, &version, reference)?;
+
         Ok(PkgRef {
             name: name.to_string(),
             version,
             sub_path,
         })
     }
+}
+
+fn validate_pkg_ref_name_and_version(name: &str, version: &str, reference: &str) -> Result<()> {
+    if !is_valid_pkg_name(name) {
+        return Err(Error::PkgError(format!(
+            "pkg reference has invalid package name: {reference}"
+        )));
+    }
+
+    if !is_strict_semver(version) {
+        return Err(Error::PkgError(format!(
+            "pkg reference has invalid version (strict semver required): {reference}"
+        )));
+    }
+
+    Ok(())
 }
 
 fn split_version_and_sub_path(rest: &str, reference: &str) -> Result<(String, Option<String>)> {
@@ -397,6 +418,18 @@ mod tests {
     fn rejects_trailing_slash_empty_subpath_scoped() {
         let err = parse_pkg_ref("pkg:@scope/name@1.0.0/").unwrap_err();
         assert!(err.to_string().contains("empty sub-path"));
+    }
+
+    #[test]
+    fn rejects_invalid_package_name() {
+        let err = parse_pkg_ref("pkg:BadName@1.0.0").unwrap_err();
+        assert!(err.to_string().contains("invalid package name"));
+    }
+
+    #[test]
+    fn rejects_invalid_version_format() {
+        let err = parse_pkg_ref("pkg:name@latest").unwrap_err();
+        assert!(err.to_string().contains("strict semver"));
     }
 
     // -----------------------------------------------------------------------

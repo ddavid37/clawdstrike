@@ -131,7 +131,7 @@ fn is_valid_scope_name(scope: &str) -> bool {
 }
 
 /// Validate package name: unscoped or `@scope/name`.
-fn is_valid_pkg_name(name: &str) -> bool {
+pub(crate) fn is_valid_pkg_name(name: &str) -> bool {
     if let Some(rest) = name.strip_prefix('@') {
         // scoped: @scope/name
         let mut parts = rest.splitn(2, '/');
