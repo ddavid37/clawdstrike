@@ -6,9 +6,8 @@ import type {
 } from "@clawdstrike/adapter-core";
 import { createSecurityContext } from "@clawdstrike/adapter-core";
 
-import { ClawdstrikeBlockedError } from "@clawdstrike/adapter-core";
-
 import { createLangChainInterceptor } from "./interceptor.js";
+import { ClawdstrikeViolationError } from "./errors.js";
 import type { LangChainClawdstrikeConfig } from "./types.js";
 
 export interface ClawdstrikeCallbackHandlerOptions {
@@ -71,7 +70,7 @@ export class ClawdstrikeCallbackHandler {
     this.pending.set(runId, { toolName, input: parsedInput, context });
 
     if (!result.proceed) {
-      throw new ClawdstrikeBlockedError(toolName, result.decision);
+      throw new ClawdstrikeViolationError(toolName, result.decision);
     }
   }
 

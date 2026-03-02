@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AdapterConfig } from "./adapter.js";
+import type { AdapterConfig, ToolCallTranslationInput } from "./adapter.js";
 import { BaseToolInterceptor } from "./base-tool-interceptor.js";
+import { createSecurityContext } from "./context.js";
 import { resolveInterceptor } from "./resolve-interceptor.js";
 
 describe("resolveInterceptor", () => {
@@ -19,7 +20,7 @@ describe("resolveInterceptor", () => {
     expect(resolveInterceptor(interceptor)).toBe(interceptor);
   });
 
-  it("throws when translateToolCall is provided with a pre-built ToolInterceptor source", () => {
+  it("keeps plain ToolInterceptor sources usable when translateToolCall is provided", () => {
     const interceptor = {
       beforeExecute: vi.fn(async () => ({
         proceed: true,
@@ -30,11 +31,11 @@ describe("resolveInterceptor", () => {
       onError: vi.fn(async () => undefined),
     };
 
-    expect(() =>
+    expect(
       resolveInterceptor(interceptor, {
         translateToolCall: vi.fn(() => null),
       }),
-    ).toThrow("translateToolCall requires a ClawdstrikeLike source");
+    ).toBe(interceptor);
   });
 
   it("passes AdapterConfig through to ClawdstrikeLike.createInterceptor", () => {
@@ -119,5 +120,44 @@ describe("resolveInterceptor", () => {
 
     const resolved = resolveInterceptor(engine);
     expect(resolved).toBeInstanceOf(BaseToolInterceptor);
+  });
+
+  it("reconfigures BaseToolInterceptor sources when AdapterConfig is provided", async () => {
+    const engine = {
+      evaluate: vi.fn(async () => ({ status: "allow" as const })),
+    };
+
+    const base = new BaseToolInterceptor(engine, {});
+    const translateToolCall = vi.fn((input: ToolCallTranslationInput) => ({
+      eventId: "evt-1",
+      eventType: "remote.session.connect" as const,
+      timestamp: "2025-01-01T00:00:00.000Z",
+      sessionId: input.sessionId,
+      data: {
+        type: "cua" as const,
+        cuaAction: "navigate",
+      },
+      metadata: { source: "test" },
+    }));
+
+    const resolved = resolveInterceptor(base, { translateToolCall });
+    expect(resolved).toBeInstanceOf(BaseToolInterceptor);
+    expect(resolved).not.toBe(base);
+
+    await resolved.beforeExecute(
+      "computer_use",
+      { action: "navigate" },
+      createSecurityContext({
+        sessionId: "sess-1",
+        metadata: { framework: "openai" },
+      }),
+    );
+
+    expect(translateToolCall).toHaveBeenCalled();
+    expect(engine.evaluate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "remote.session.connect",
+      }),
+    );
   });
 });

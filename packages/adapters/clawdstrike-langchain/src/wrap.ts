@@ -1,5 +1,7 @@
 import type {
+  AdapterConfig,
   Decision,
+  PolicyEngineLike,
   SecurityContext,
   ToolInterceptor,
 } from "@clawdstrike/adapter-core";
@@ -9,6 +11,8 @@ import {
   type SecuritySource,
   wrapExecuteWithInterceptor,
 } from "@clawdstrike/adapter-core";
+
+import { createLangChainInterceptor } from "./interceptor.js";
 
 type LangChainInvokeLike<TInput = unknown, TOutput = unknown> = {
   invoke: (input: TInput, config?: unknown) => Promise<TOutput> | TOutput;
@@ -27,6 +31,13 @@ export interface WrapToolOptions {
   context?: SecurityContext;
   getContext?: (toolName: string, input: unknown) => SecurityContext;
 }
+
+/**
+ * @deprecated Use SecuritySource from @clawdstrike/adapter-core.
+ */
+export type ClawdstrikeLike = {
+  createInterceptor?: (config?: AdapterConfig) => Partial<ToolInterceptor> | ToolInterceptor;
+};
 
 /**
  * Secure a single LangChain tool using a Clawdstrike instance or PolicyEngineLike.
@@ -67,7 +78,10 @@ export function secureTools<TTool extends LangChainToolLike>(
   return wrapTools(tools, interceptor, options);
 }
 
-function wrapTool<TTool extends LangChainToolLike>(
+/**
+ * @deprecated Use secureTool(tool, source) instead.
+ */
+export function wrapTool<TTool extends LangChainToolLike>(
   tool: TTool,
   interceptor: ToolInterceptor,
   options?: WrapToolOptions,
@@ -80,7 +94,10 @@ function wrapTool<TTool extends LangChainToolLike>(
   return wrapToolWithContext(tool, interceptor, context, options?.getContext);
 }
 
-function wrapTools<TTool extends LangChainToolLike>(
+/**
+ * @deprecated Use secureTools(tools, source) instead.
+ */
+export function wrapTools<TTool extends LangChainToolLike>(
   tools: readonly TTool[],
   interceptor: ToolInterceptor,
   options?: WrapToolOptions,
@@ -93,11 +110,64 @@ function wrapTools<TTool extends LangChainToolLike>(
   return tools.map((tool) => wrapToolWithContext(tool, interceptor, context, options?.getContext));
 }
 
+/**
+ * @deprecated Use secureTool(tool, source) with a source that supports createInterceptor(config).
+ */
+export function wrapToolWithConfig<TTool extends LangChainToolLike>(
+  tool: TTool,
+  engine: PolicyEngineLike,
+  config: AdapterConfig = {},
+  options?: WrapToolOptions,
+): TTool {
+  const interceptor = createLangChainInterceptor(engine, config);
+  const context =
+    options?.context ??
+    createSecurityContext({
+      metadata: { framework: "langchain" },
+    });
+
+  return wrapToolWithContext(tool, interceptor, context, options?.getContext, {
+    engine,
+    config,
+    options,
+  });
+}
+
+/**
+ * @deprecated Use secureTools(tools, source) with a source that supports createInterceptor(config).
+ */
+export function wrapToolsWithConfig<TTool extends LangChainToolLike>(
+  tools: readonly TTool[],
+  engine: PolicyEngineLike,
+  config: AdapterConfig = {},
+  options?: WrapToolOptions,
+): TTool[] {
+  const interceptor = createLangChainInterceptor(engine, config);
+  const context =
+    options?.context ??
+    createSecurityContext({
+      metadata: { framework: "langchain" },
+    });
+
+  return tools.map((tool) =>
+    wrapToolWithContext(tool, interceptor, context, options?.getContext, {
+      engine,
+      config,
+      options,
+    }),
+  );
+}
+
 function wrapToolWithContext<TTool extends LangChainToolLike>(
   tool: TTool,
   interceptor: ToolInterceptor,
   context: SecurityContext,
   getContext?: (toolName: string, input: unknown) => SecurityContext,
+  withConfigSupport?: {
+    engine: PolicyEngineLike;
+    config: AdapterConfig;
+    options?: WrapToolOptions;
+  },
 ): TTool {
   const toolName = typeof tool.name === "string" && tool.name.length > 0 ? tool.name : "tool";
   const hasInvoke = typeof tool.invoke === "function";
@@ -153,6 +223,15 @@ function wrapToolWithContext<TTool extends LangChainToolLike>(
       }
       if (prop === "getLastDecision") {
         return () => lastDecision;
+      }
+      if (prop === "withConfig" && withConfigSupport) {
+        return (overrides: Partial<AdapterConfig>) =>
+          wrapToolWithConfig(
+            tool,
+            withConfigSupport.engine,
+            { ...withConfigSupport.config, ...overrides },
+            withConfigSupport.options,
+          );
       }
 
       const value = Reflect.get(target, prop, receiver) as unknown;

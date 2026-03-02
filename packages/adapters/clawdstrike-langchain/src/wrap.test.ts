@@ -3,7 +3,7 @@ import type { PolicyEngineLike, ToolInterceptor } from "@clawdstrike/adapter-cor
 import { ClawdstrikeBlockedError } from "@clawdstrike/adapter-core";
 import { describe, expect, it, vi } from "vitest";
 
-import { secureTool, secureTools } from "./wrap.js";
+import { secureTool, secureTools, wrapTool, wrapToolWithConfig } from "./wrap.js";
 
 describe("secureTool", () => {
   it("wraps invoke() and allows execution when policy allows", async () => {
@@ -106,5 +106,34 @@ describe("secureTools", () => {
     const [wa, wb] = secureTools([a, b], engine);
     await expect(wa.invoke({})).resolves.toBe("a");
     await expect(wb.invoke({})).resolves.toBe("b");
+  });
+});
+
+describe("legacy wrappers", () => {
+  it("wrapTool remains usable for interceptor-first integrations", async () => {
+    const interceptor: ToolInterceptor = {
+      beforeExecute: async () => ({
+        proceed: true,
+        decision: { status: "allow" },
+        duration: 0,
+      }),
+      afterExecute: async (_name, _input, output) => ({ output, modified: false }),
+      onError: async () => undefined,
+    };
+    const tool = { name: "echo", invoke: vi.fn(async (input: string) => input) };
+    const wrapped = wrapTool(tool, interceptor);
+    await expect(wrapped.invoke("ok")).resolves.toBe("ok");
+  });
+
+  it("wrapToolWithConfig exposes withConfig compatibility helper", async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({ status: "allow" }),
+    };
+    const tool = { name: "echo", invoke: vi.fn(async (input: string) => input) };
+    const wrapped = wrapToolWithConfig(tool, engine);
+    const withConfig = (wrapped as { withConfig?: (config: unknown) => typeof wrapped }).withConfig;
+    expect(typeof withConfig).toBe("function");
+    const updated = withConfig?.({ blockOnViolation: false });
+    await expect(updated?.invoke("ok")).resolves.toBe("ok");
   });
 });

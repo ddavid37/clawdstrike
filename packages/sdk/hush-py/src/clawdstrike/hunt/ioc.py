@@ -379,12 +379,6 @@ class IocDatabase:
         )
 
         start_idx = 1 if is_header else 0
-        if not is_header:
-            entry = _parse_csv_line(first)
-            if entry is not None:
-                db.add_entry(entry)
-            start_idx = 1
-
         for line in lines[start_idx:]:
             if not line.strip():
                 continue

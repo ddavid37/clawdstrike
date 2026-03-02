@@ -35,16 +35,6 @@ export function resolveInterceptor(
   source: SecuritySource,
   config?: AdapterConfig,
 ): ToolInterceptor {
-  if (
-    config?.translateToolCall !== undefined &&
-    isToolInterceptor(source) &&
-    !isClawdstrikeLike(source)
-  ) {
-    throw new Error(
-      "translateToolCall requires a ClawdstrikeLike source with createInterceptor(config)",
-    );
-  }
-
   if (isClawdstrikeLike(source) && config !== undefined) {
     const interceptor = source.createInterceptor?.(config);
     if (!interceptor) {
@@ -53,7 +43,7 @@ export function resolveInterceptor(
     return withDefaultOnError(interceptor);
   }
   if (isToolInterceptor(source)) {
-    return source;
+    return withAdapterConfig(source, config);
   }
   if (isClawdstrikeLike(source)) {
     const interceptor = source.createInterceptor?.();
@@ -63,6 +53,30 @@ export function resolveInterceptor(
     return withDefaultOnError(interceptor);
   }
   return new BaseToolInterceptor(source as PolicyEngineLike, config ?? {});
+}
+
+type BaseInterceptorRuntimeState = {
+  engine: PolicyEngineLike;
+  config: AdapterConfig;
+};
+
+function withAdapterConfig(source: ToolInterceptor, config?: AdapterConfig): ToolInterceptor {
+  if (!(source instanceof BaseToolInterceptor) || config === undefined) {
+    return source;
+  }
+
+  const state = source as unknown as BaseInterceptorRuntimeState;
+  if (
+    typeof state.engine !== "object" ||
+    state.engine === null ||
+    typeof state.engine.evaluate !== "function" ||
+    typeof state.config !== "object" ||
+    state.config === null
+  ) {
+    return source;
+  }
+
+  return new BaseToolInterceptor(state.engine, { ...state.config, ...config });
 }
 
 function withDefaultOnError(interceptor: Partial<ToolInterceptor>): ToolInterceptor {
