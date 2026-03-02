@@ -41,6 +41,27 @@ pub struct TrustedPublishersListResponse {
     pub trusted_publishers: Vec<TrustedPublisherResponse>,
 }
 
+fn encode_signed_field(value: &str) -> String {
+    format!("{}:{value}", value.len())
+}
+
+pub(crate) fn add_trusted_publisher_signed_payload(
+    package_name: &str,
+    provider: &str,
+    repository: &str,
+    workflow: Option<&str>,
+    environment: Option<&str>,
+) -> String {
+    format!(
+        "trusted-publisher:add:v2:name={};provider={};repository={};workflow={};environment={}",
+        encode_signed_field(package_name),
+        encode_signed_field(provider),
+        encode_signed_field(repository),
+        encode_signed_field(workflow.unwrap_or("")),
+        encode_signed_field(environment.unwrap_or("")),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -74,11 +95,12 @@ pub async fn add_trusted_publisher(
         .lock()
         .map_err(|e| RegistryError::Internal(format!("db lock poisoned: {e}")))?;
 
-    let payload = format!(
-        "trusted-publisher:add:{name}:{provider}:{}:{}:{}",
-        req.repository,
-        req.workflow.as_deref().unwrap_or(""),
-        req.environment.as_deref().unwrap_or("")
+    let payload = add_trusted_publisher_signed_payload(
+        &name,
+        &provider,
+        &req.repository,
+        req.workflow.as_deref(),
+        req.environment.as_deref(),
     );
     let caller_key = crate::auth::verify_signed_caller(&headers, &payload)?;
 
@@ -178,5 +200,31 @@ pub async fn remove_trusted_publisher(
         Err(RegistryError::NotFound(format!(
             "trusted publisher with id {id} not found"
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::add_trusted_publisher_signed_payload;
+
+    #[test]
+    fn add_payload_distinguishes_fields_with_colons() {
+        // These two tuples collide under the legacy colon-delimited payload format.
+        let payload_a =
+            add_trusted_publisher_signed_payload("pkg:owner", "github", "acme/repo", None, None);
+        let payload_b =
+            add_trusted_publisher_signed_payload("pkg", "owner", "github:acme/repo", None, None);
+
+        assert_ne!(payload_a, payload_b);
+    }
+
+    #[test]
+    fn add_payload_treats_absent_optional_fields_as_empty() {
+        let with_none =
+            add_trusted_publisher_signed_payload("pkg", "github", "acme/repo", None, None);
+        let with_empty =
+            add_trusted_publisher_signed_payload("pkg", "github", "acme/repo", Some(""), Some(""));
+
+        assert_eq!(with_none, with_empty);
     }
 }

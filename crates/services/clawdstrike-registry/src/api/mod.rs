@@ -358,7 +358,13 @@ mod tests {
         .unwrap();
         assert_eq!(not_modified.status(), StatusCode::NOT_MODIFIED);
 
-        let add_tp_payload = format!("trusted-publisher:add:{scoped_pkg}:github:acme/repo::");
+        let add_tp_payload = trusted_publishers::add_trusted_publisher_signed_payload(
+            scoped_pkg,
+            "github",
+            "acme/repo",
+            None,
+            None,
+        );
         let (created, tp) = trusted_publishers::add_trusted_publisher(
             State(state.clone()),
             Path(scoped_pkg.to_string()),
@@ -567,7 +573,13 @@ mod tests {
             .await
             .unwrap();
 
-        let add_payload = format!("trusted-publisher:add:{package}:github:acme/repo::");
+        let add_payload = trusted_publishers::add_trusted_publisher_signed_payload(
+            package,
+            "github",
+            "acme/repo",
+            None,
+            None,
+        );
         let err = trusted_publishers::add_trusted_publisher(
             State(state.clone()),
             Path(package.to_string()),
@@ -589,7 +601,13 @@ mod tests {
         let (state, _tmp) = test_state();
         let caller = Keypair::from_seed(&[60u8; 32]);
         let package = "brand-new-unscoped";
-        let add_payload = format!("trusted-publisher:add:{package}:github:acme/repo::");
+        let add_payload = trusted_publishers::add_trusted_publisher_signed_payload(
+            package,
+            "github",
+            "acme/repo",
+            None,
+            None,
+        );
 
         let (status, created) = trusted_publishers::add_trusted_publisher(
             State(state.clone()),
@@ -622,7 +640,13 @@ mod tests {
             .await
             .unwrap();
 
-        let add_payload = format!("trusted-publisher:add:{package}:github:acme/repo::");
+        let add_payload = trusted_publishers::add_trusted_publisher_signed_payload(
+            package,
+            "github",
+            "acme/repo",
+            None,
+            None,
+        );
         let (created_status, created) = trusted_publishers::add_trusted_publisher(
             State(state.clone()),
             Path(package.to_string()),

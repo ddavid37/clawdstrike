@@ -1960,6 +1960,27 @@ struct CallerAuthHeaders {
     ts: String,
 }
 
+fn encode_signed_field(value: &str) -> String {
+    format!("{}:{value}", value.len())
+}
+
+fn add_trusted_publisher_signed_payload(
+    package_name: &str,
+    provider: &str,
+    repository: &str,
+    workflow: Option<&str>,
+    environment: Option<&str>,
+) -> String {
+    format!(
+        "trusted-publisher:add:v2:name={};provider={};repository={};workflow={};environment={}",
+        encode_signed_field(package_name),
+        encode_signed_field(provider),
+        encode_signed_field(repository),
+        encode_signed_field(workflow.unwrap_or("")),
+        encode_signed_field(environment.unwrap_or("")),
+    )
+}
+
 fn build_caller_auth_headers(
     cfg: &RegistryConfig,
     payload: &str,
@@ -2833,11 +2854,8 @@ fn cmd_trusted_publisher_add(
         body["environment"] = serde_json::Value::String(env.to_string());
     }
 
-    let payload = format!(
-        "trusted-publisher:add:{package}:{provider_norm}:{repo}:{}:{}",
-        workflow.unwrap_or(""),
-        environment.unwrap_or("")
-    );
+    let payload =
+        add_trusted_publisher_signed_payload(package, &provider_norm, repo, workflow, environment);
     let caller = match build_caller_auth_headers(&cfg, &payload, stderr) {
         Ok(c) => c,
         Err(code) => return code,
