@@ -209,20 +209,19 @@ pub async fn publish(
         .leaf_hash()
         .map_err(|e| RegistryError::Internal(format!("failed to compute leaf hash: {e}")))?;
 
-    // Serialize publishes on the DB mutex so leaf index reservation stays
-    // deterministic without holding the Merkle tree lock across DB I/O.
+    // Serialize publishes on the DB mutex.
     let db = state
         .db
         .lock()
         .map_err(|e| RegistryError::Internal(format!("db lock poisoned: {e}")))?;
 
-    let leaf_index = {
-        let tree = state
-            .merkle_tree
-            .lock()
-            .map_err(|e| RegistryError::Internal(format!("merkle_tree lock poisoned: {e}")))?;
-        tree.tree_size()
-    };
+    // Hold the Merkle lock from reservation through append so tree_size and
+    // append_hash happen atomically with respect to other publishers.
+    let mut merkle_tree = state
+        .merkle_tree
+        .lock()
+        .map_err(|e| RegistryError::Internal(format!("merkle_tree lock poisoned: {e}")))?;
+    let leaf_index = merkle_tree.tree_size();
 
     // 8a. Counter-sign and create publish attestation with the same active key.
     let (registry_sig_hex, registry_key_hex, key_id, attestation_hash) = {
@@ -310,21 +309,14 @@ pub async fn publish(
     }
 
     // 12. Append to Merkle tree only after DB + index + blob commit succeeds.
-    let appended_index = match state.merkle_tree.lock() {
-        Ok(mut tree) => tree.append_hash(leaf_hash),
-        Err(lock_err) => {
-            return Err(rollback_partial_publish(
-                "transparency append (merkle lock)",
-                lock_err.to_string(),
-            ));
-        }
-    };
+    let appended_index = merkle_tree.append_hash(leaf_hash);
     if appended_index != leaf_index {
         return Err(rollback_partial_publish(
             "transparency append (leaf index reservation)",
             format!("expected {leaf_index}, got {appended_index}"),
         ));
     }
+    drop(merkle_tree);
     drop(db);
 
     tracing::info!(name = %name, version = %version, checksum = %checksum, leaf_index = leaf_index, "Package published");

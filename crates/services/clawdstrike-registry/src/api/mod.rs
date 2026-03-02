@@ -920,6 +920,44 @@ mod tests {
             .contains("caller is not authorized to administer unscoped package 'demo'"));
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_publishes_assign_unique_leaf_indices() {
+        let (state, _tmp) = test_state();
+        let publisher = Keypair::from_seed(&[54u8; 32]);
+
+        let (req_a, _bytes_a) = publish_request("pkg-a", "1.0.0", &publisher);
+        let (req_b, _bytes_b) = publish_request("pkg-b", "1.0.0", &publisher);
+
+        let task_a = {
+            let state = state.clone();
+            tokio::spawn(async move {
+                publish::publish(State(state), HeaderMap::new(), Json(req_a)).await
+            })
+        };
+        let task_b = {
+            let state = state.clone();
+            tokio::spawn(async move {
+                publish::publish(State(state), HeaderMap::new(), Json(req_b)).await
+            })
+        };
+
+        let res_a = task_a.await.unwrap().unwrap();
+        let res_b = task_b.await.unwrap().unwrap();
+        assert_eq!(res_a.0.version, "1.0.0");
+        assert_eq!(res_b.0.version, "1.0.0");
+
+        let db = state.db.lock().unwrap();
+        let row_a = db.get_version("pkg-a", "1.0.0").unwrap().unwrap();
+        let row_b = db.get_version("pkg-b", "1.0.0").unwrap().unwrap();
+        let mut indices = vec![row_a.leaf_index.unwrap(), row_b.leaf_index.unwrap()];
+        indices.sort_unstable();
+        assert_eq!(indices, vec![0, 1]);
+        drop(db);
+
+        let tree_size = state.merkle_tree.lock().unwrap().tree_size();
+        assert_eq!(tree_size, 2);
+    }
+
     #[tokio::test]
     async fn search_total_reports_full_match_count_with_pagination() {
         let (state, _tmp) = test_state();

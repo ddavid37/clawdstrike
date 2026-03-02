@@ -158,6 +158,21 @@ fn build_fts_literal_query(query: &str) -> Option<String> {
     )
 }
 
+/// Escape a user string for literal matching inside SQLite `LIKE` patterns.
+fn escape_sqlite_like_literal(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '%' | '_' | '\\' => {
+                escaped.push('\\');
+                escaped.push(ch);
+            }
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
 impl RegistryDb {
     /// Open (or create) the registry database at the given path.
     pub fn open(path: &Path) -> Result<Self, RegistryError> {
@@ -1113,11 +1128,11 @@ impl RegistryDb {
 
     /// List all packages in an organization's scope.
     pub fn list_org_packages(&self, org_name: &str) -> Result<Vec<PackageRow>, RegistryError> {
-        let prefix = format!("@{}/", org_name);
+        let escaped_org_name = escape_sqlite_like_literal(org_name);
         let mut stmt = self.conn.prepare(
-            "SELECT name, description, created_at, updated_at, total_downloads FROM packages WHERE name LIKE ?1 ORDER BY name ASC",
+            "SELECT name, description, created_at, updated_at, total_downloads FROM packages WHERE name LIKE ?1 ESCAPE '\\' ORDER BY name ASC",
         )?;
-        let pattern = format!("{}%", prefix);
+        let pattern = format!("@{escaped_org_name}/%");
         let rows = stmt
             .query_map(params![pattern], |row| {
                 Ok(PackageRow {
@@ -1144,9 +1159,10 @@ impl RegistryDb {
 
     /// Count packages in an organization's scope.
     pub fn count_org_packages(&self, org_name: &str) -> Result<i64, RegistryError> {
-        let pattern = format!("@{}/%", org_name);
+        let escaped_org_name = escape_sqlite_like_literal(org_name);
+        let pattern = format!("@{escaped_org_name}/%");
         let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM packages WHERE name LIKE ?1",
+            "SELECT COUNT(*) FROM packages WHERE name LIKE ?1 ESCAPE '\\'",
             params![pattern],
             |row| row.get(0),
         )?;
@@ -1700,6 +1716,30 @@ mod tests {
 
         let count = db.count_org_packages("acme").unwrap();
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn list_org_packages_escapes_like_wildcards_in_org_name() {
+        let db = test_db();
+        db.upsert_package(
+            "@acme%_co/guard-a",
+            Some("matches exact scoped org"),
+            "2025-01-01T00:00:00Z",
+        )
+        .unwrap();
+        db.upsert_package(
+            "@acmeXXco/guard-b",
+            Some("must not match escaped wildcard pattern"),
+            "2025-01-02T00:00:00Z",
+        )
+        .unwrap();
+
+        let packages = db.list_org_packages("acme%_co").unwrap();
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].name, "@acme%_co/guard-a");
+
+        let count = db.count_org_packages("acme%_co").unwrap();
+        assert_eq!(count, 1);
     }
 
     #[test]
