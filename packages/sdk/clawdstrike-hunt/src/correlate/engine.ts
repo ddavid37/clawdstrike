@@ -72,8 +72,12 @@ export class CorrelationEngine {
    * Process a single event against all loaded rules.
    * Returns any alerts that were generated.
    */
-  processEvent(event: TimelineEvent): Alert[] {
-    this.evictExpiredAt(event.timestamp);
+  processEvent(event: TimelineEvent, maxWindow?: number): Alert[] {
+    if (maxWindow !== undefined) {
+      this.evictExpiredAtCapped(event.timestamp, maxWindow);
+    } else {
+      this.evictExpiredAt(event.timestamp);
+    }
 
     const alerts: Alert[] = [];
     for (let ri = 0; ri < this._rules.length; ri++) {
@@ -114,8 +118,8 @@ export class CorrelationEngine {
     this.evictExpiredAt(new Date());
   }
 
-  private evictExpiredCapped(maxWindow: number): void {
-    const nowMs = Date.now();
+  private evictExpiredAtCapped(now: Date, maxWindow: number): void {
+    const nowMs = now.getTime();
     for (const [ri, windows] of this.windows) {
       const rule = this._rules[ri];
       const effective = Math.min(maxWindow, rule.window);
@@ -129,6 +133,10 @@ export class CorrelationEngine {
         this.windows.set(ri, filtered);
       }
     }
+  }
+
+  private evictExpiredCapped(maxWindow: number): void {
+    this.evictExpiredAtCapped(new Date(), maxWindow);
   }
 
   /**

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 // We can't easily test the full NATS integration without a running server,
 // but we can verify the module structure and error handling.
@@ -29,5 +29,55 @@ describe("watch module", () => {
       // Either WatchError (nats not installed) or connection error
       expect(err).toBeInstanceOf(Error);
     }
+  });
+
+  it("passes maxWindow to processEvent and avoids explicit wall-clock eviction", async () => {
+    vi.resetModules();
+
+    const processEvent = vi.fn(() => []);
+    const evict = vi.fn();
+    const flush = vi.fn(() => []);
+    class MockEngine {
+      processEvent = processEvent;
+      evict = evict;
+      flush = flush;
+      constructor(_rules: unknown[]) {}
+    }
+
+    const parseEnvelope = vi.fn(() => ({ timestamp: new Date("2025-01-01T00:00:00Z") }));
+    const sub = {
+      [Symbol.asyncIterator]: async function* () {
+        yield {
+          data: new TextEncoder().encode(JSON.stringify({ kind: "event" })),
+        };
+      },
+      unsubscribe: vi.fn(),
+    };
+    const nc = {
+      subscribe: vi.fn(() => sub),
+      drain: vi.fn(async () => undefined),
+    };
+    const connect = vi.fn(async () => nc);
+
+    vi.doMock("./correlate/engine.js", () => ({ CorrelationEngine: MockEngine }));
+    vi.doMock("./timeline.js", () => ({ parseEnvelope }));
+    vi.doMock("nats", () => ({ connect }));
+
+    const { runWatch } = await import("./watch.js");
+    await runWatch(
+      {
+        natsUrl: "nats://localhost:4222",
+        rules: [],
+        maxWindow: 30_000,
+      },
+      () => undefined,
+    );
+
+    expect(processEvent).toHaveBeenCalledTimes(1);
+    expect(processEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ timestamp: expect.any(Date) }),
+      30_000,
+    );
+    expect(evict).not.toHaveBeenCalled();
   });
 });

@@ -449,6 +449,45 @@ output:
     );
     expect(alerts).toHaveLength(0);
   });
+
+  it("processEvent uses event-time capped eviction when maxWindow is provided", () => {
+    const rule = parseRule(`
+schema: clawdstrike.hunt.correlation.v1
+name: "Event-time cap"
+severity: low
+description: "test"
+window: 1h
+conditions:
+  - source: receipt
+    action_type: file
+    bind: step_a
+  - source: receipt
+    action_type: egress
+    after: step_a
+    within: 1h
+    bind: step_b
+output:
+  title: "test"
+  evidence:
+    - step_a
+    - step_b
+`);
+
+    const engine = new CorrelationEngine([rule]);
+    const ts1 = new Date("2025-06-15T12:00:00Z");
+    const ts2 = new Date("2025-06-15T12:00:45Z");
+
+    engine.processEvent(
+      makeEvent("receipt", "file", "allow", "read /tmp/data", ts1),
+      30_000
+    );
+    const alerts = engine.processEvent(
+      makeEvent("receipt", "egress", "allow", "egress", ts2),
+      30_000
+    );
+
+    expect(alerts).toHaveLength(0);
+  });
 });
 
 describe("correlate", () => {
