@@ -8,11 +8,13 @@ tasks:
     command: "bash build.sh"
     platform: "system"
     inputs:
+      - "build.sh"
       - "src/**/*"
       - "Cargo.toml"
+      - "/Cargo.toml"
       - "/Cargo.lock"
       - "/crates/libs/hush-core/src/**/*"
-      - "/crates/libs/clawdstrike/src/**/*"
+      - "/crates/libs/hush-core/Cargo.toml"
     outputs:
       - "pkg"
       - "pkg-node"

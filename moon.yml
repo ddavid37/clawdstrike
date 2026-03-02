@@ -211,6 +211,11 @@ tasks:
     inputs:
       - "scripts/run-parity.sh"
       - "@group(rust-sources)"
+      - "packages/adapters/clawdstrike-hush-cli-engine/src/**/*"
+      - "packages/adapters/clawdstrike-hush-cli-engine/package.json"
+      - "packages/adapters/clawdstrike-hush-cli-engine/package-lock.json"
+      - "packages/adapters/clawdstrike-hush-cli-engine/tsconfig*.json"
+      - "packages/adapters/clawdstrike-hush-cli-engine/vitest.config.*"
 
   # ── Aggregates ─────────────────────────────────────────
 
