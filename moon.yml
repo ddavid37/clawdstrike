@@ -55,12 +55,14 @@ tasks:
     inputs:
       - "apps/desktop/src-tauri/**/*.rs"
       - "apps/desktop/src-tauri/Cargo.toml"
+      - "@group(rust-sources)"
 
   rust-check-tauri-agent:
     command: "cargo check --manifest-path apps/agent/src-tauri/Cargo.toml"
     inputs:
       - "apps/agent/src-tauri/**/*.rs"
       - "apps/agent/src-tauri/Cargo.toml"
+      - "@group(rust-sources)"
 
   rust-check-tauri:
     command: "noop"
@@ -168,16 +170,34 @@ tasks:
     command: "npx biome check"
     platform: "node"
     inputs:
-      - "packages/**/*.ts"
-      - "packages/**/*.tsx"
+      - "apps/desktop/src/**/*.ts"
+      - "apps/desktop/src/**/*.tsx"
+      - "apps/desktop/*.ts"
+      - "apps/desktop/*.js"
+      - "apps/desktop/*.json"
+      - "apps/cloud-dashboard/src/**/*.ts"
+      - "apps/cloud-dashboard/src/**/*.tsx"
+      - "packages/sdk/hush-ts/src/**/*.ts"
+      - "packages/sdk/clawdstrike/**/*.ts"
+      - "packages/policy/clawdstrike-policy/src/**/*.ts"
+      - "packages/adapters/*/src/**/*.ts"
       - "biome.json"
 
   ts-fmt:
     command: "npx biome check --write"
     platform: "node"
     inputs:
-      - "packages/**/*.ts"
-      - "packages/**/*.tsx"
+      - "apps/desktop/src/**/*.ts"
+      - "apps/desktop/src/**/*.tsx"
+      - "apps/desktop/*.ts"
+      - "apps/desktop/*.js"
+      - "apps/desktop/*.json"
+      - "apps/cloud-dashboard/src/**/*.ts"
+      - "apps/cloud-dashboard/src/**/*.tsx"
+      - "packages/sdk/hush-ts/src/**/*.ts"
+      - "packages/sdk/clawdstrike/**/*.ts"
+      - "packages/policy/clawdstrike-policy/src/**/*.ts"
+      - "packages/adapters/*/src/**/*.ts"
       - "biome.json"
     local: true
 
