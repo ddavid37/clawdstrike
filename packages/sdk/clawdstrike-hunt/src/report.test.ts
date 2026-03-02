@@ -154,6 +154,22 @@ describe("signReport and verifyReport", () => {
     const valid = await verifyReport(broken);
     expect(valid).toBe(false);
   });
+
+  it("returns false for malformed merkle root instead of throwing", async () => {
+    const items = sampleItems();
+    const report = buildReport("Bad Root", items);
+    const malformed = { ...report, merkleRoot: "zz-not-hex" };
+
+    await expect(verifyReport(malformed)).resolves.toBe(false);
+  });
+
+  it("returns false for malformed proof payloads", async () => {
+    const items = sampleItems();
+    const report = buildReport("Bad Proof", items);
+    const malformed = { ...report, merkleProofs: ["not json", ...report.merkleProofs.slice(1)] };
+
+    await expect(verifyReport(malformed)).resolves.toBe(false);
+  });
 });
 
 describe("evidence conversion helpers", () => {

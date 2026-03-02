@@ -74,6 +74,35 @@ describe("wrapExecuteWithInterceptor", () => {
     expect(result).toBe("safe object");
     expect(execute).toHaveBeenCalledWith({ text: "safe object" });
   });
+
+  it("routes replacement-result afterExecute failures through onError", async () => {
+    const execute = vi.fn(async () => "unused");
+    const onError = vi.fn(async () => undefined);
+    const interceptor = createInterceptor({
+      beforeExecute: async () => ({
+        proceed: true,
+        duration: 0,
+        decision: { status: "allow" },
+        replacementResult: { ok: true },
+      }),
+      afterExecute: async () => {
+        throw new Error("after failed");
+      },
+      onError,
+    });
+
+    const wrapped = wrapExecuteWithInterceptor(
+      "echo",
+      execute,
+      interceptor,
+      createSecurityContext(),
+    );
+
+    await expect(wrapped({ text: "input" })).rejects.toThrow("after failed");
+    expect(execute).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0]?.[0]).toBe("echo");
+  });
 });
 
 describe("secureToolSet", () => {

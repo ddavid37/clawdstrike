@@ -37,13 +37,19 @@ export function wrapExecuteWithInterceptor<TInput, TOutput>(
           : input;
 
     if (interceptResult.replacementResult !== undefined) {
-      const processed = await interceptor.afterExecute(
-        toolName,
-        nextInput,
-        interceptResult.replacementResult as TOutput,
-        context,
-      );
-      return processed.output as TOutput;
+      try {
+        const processed = await interceptor.afterExecute(
+          toolName,
+          nextInput,
+          interceptResult.replacementResult as TOutput,
+          context,
+        );
+        return processed.output as TOutput;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        await interceptor.onError(toolName, nextInput, err, context);
+        throw err;
+      }
     }
 
     try {

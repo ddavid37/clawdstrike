@@ -55,28 +55,11 @@ export function resolveInterceptor(
   return new BaseToolInterceptor(source as PolicyEngineLike, config ?? {});
 }
 
-type BaseInterceptorRuntimeState = {
-  engine: PolicyEngineLike;
-  config: AdapterConfig;
-};
-
 function withAdapterConfig(source: ToolInterceptor, config?: AdapterConfig): ToolInterceptor {
   if (!(source instanceof BaseToolInterceptor) || config === undefined) {
     return source;
   }
-
-  const state = source as unknown as BaseInterceptorRuntimeState;
-  if (
-    typeof state.engine !== "object" ||
-    state.engine === null ||
-    typeof state.engine.evaluate !== "function" ||
-    typeof state.config !== "object" ||
-    state.config === null
-  ) {
-    return source;
-  }
-
-  return new BaseToolInterceptor(state.engine, { ...state.config, ...config });
+  return source.withConfig(config);
 }
 
 function withDefaultOnError(interceptor: Partial<ToolInterceptor>): ToolInterceptor {

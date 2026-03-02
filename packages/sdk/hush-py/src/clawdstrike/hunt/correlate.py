@@ -257,7 +257,6 @@ class _CompiledPatterns:
 class _WindowState:
     started_at: datetime
     bound_events: dict[str, list[TimelineEvent]]
-    preexisting_count: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -461,7 +460,6 @@ class CorrelationEngine:
                 ws = _WindowState(
                     started_at=event.timestamp,
                     bound_events={cond.bind: [event]},
-                    preexisting_count=pre_existing_count,
                 )
                 self._windows.setdefault(ri, []).append(ws)
             else:
@@ -517,6 +515,8 @@ class CorrelationEngine:
 
             for wi in reversed(completed):
                 windows.pop(wi)
+            if not windows:
+                self._windows.pop(ri, None)
 
         return alerts
 

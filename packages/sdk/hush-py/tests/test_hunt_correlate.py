@@ -760,6 +760,20 @@ class TestFlush:
         alerts = engine.flush()
         assert len(alerts) == 0, "incomplete window should not produce alert"
 
+    def test_process_event_cleans_up_empty_rule_window_bucket(self) -> None:
+        rule = parse_rule(SINGLE_CONDITION_RULE)
+        engine = CorrelationEngine([rule])
+
+        ts = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        event = _make_event(
+            EventSourceType.RECEIPT, "file", NormalizedVerdict.DENY,
+            "/tmp/forbidden", ts,
+        )
+
+        alerts = engine.process_event(event)
+        assert len(alerts) == 1
+        assert 0 not in engine._windows
+
     def test_multiple_rules_same_event(self) -> None:
         rule1 = parse_rule(SINGLE_CONDITION_RULE)
         yaml_str = """\

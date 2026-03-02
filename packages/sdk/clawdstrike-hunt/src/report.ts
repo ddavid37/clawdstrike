@@ -83,13 +83,32 @@ export async function signReport(
  * Verify a report's signature and Merkle proofs.
  */
 export async function verifyReport(report: HuntReport): Promise<boolean> {
-  const rootBytes = fromHex(report.merkleRoot);
+  let rootBytes: Uint8Array;
+  try {
+    rootBytes = fromHex(report.merkleRoot);
+  } catch {
+    return false;
+  }
+  if (rootBytes.length !== 32) {
+    return false;
+  }
 
   // Verify signature if present.
   if (report.signature !== undefined && report.signer !== undefined) {
-    const sig = fromHex(report.signature);
-    const pubKey = fromHex(report.signer);
-    const valid = await verifySignature(rootBytes, sig, pubKey);
+    let sig: Uint8Array;
+    let pubKey: Uint8Array;
+    try {
+      sig = fromHex(report.signature);
+      pubKey = fromHex(report.signer);
+    } catch {
+      return false;
+    }
+    let valid: boolean;
+    try {
+      valid = await verifySignature(rootBytes, sig, pubKey);
+    } catch {
+      return false;
+    }
     if (!valid) return false;
   } else if (
     (report.signature !== undefined && report.signer === undefined) ||
@@ -101,7 +120,7 @@ export async function verifyReport(report: HuntReport): Promise<boolean> {
 
   // Verify each evidence item's Merkle proof.
   if (report.merkleProofs.length !== report.evidence.length) {
-    throw new ReportError("proof count does not match evidence count");
+    return false;
   }
 
   for (let i = 0; i < report.evidence.length; i++) {
@@ -111,14 +130,22 @@ export async function verifyReport(report: HuntReport): Promise<boolean> {
     const leafBytes = new TextEncoder().encode(canonical);
     const leafHash = hashLeaf(leafBytes);
 
-    const proofJson = JSON.parse(report.merkleProofs[i]) as {
-      treeSize: number;
-      leafIndex: number;
-      auditPath: string[];
-    };
-
-    const proof = MerkleProof.fromJSON(proofJson);
-    if (!proof.verify(leafHash, rootBytes)) {
+    let proof: MerkleProof;
+    try {
+      const proofJson = JSON.parse(report.merkleProofs[i]) as {
+        treeSize: number;
+        leafIndex: number;
+        auditPath: string[];
+      };
+      proof = MerkleProof.fromJSON(proofJson);
+    } catch {
+      return false;
+    }
+    try {
+      if (!proof.verify(leafHash, rootBytes)) {
+        return false;
+      }
+    } catch {
       return false;
     }
   }
