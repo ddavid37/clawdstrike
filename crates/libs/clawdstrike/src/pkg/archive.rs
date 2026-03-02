@@ -11,6 +11,8 @@ use crate::error::{Error, Result};
 
 /// Maximum uncompressed archive size (100 MB) to prevent zip bombs.
 const MAX_UNCOMPRESSED_SIZE: u64 = 100 * 1024 * 1024;
+/// Maximum compressed archive size accepted for unpack.
+const MAX_COMPRESSED_SIZE: u64 = MAX_UNCOMPRESSED_SIZE + (1024 * 1024);
 
 /// Compression level for zstd.
 const ZSTD_LEVEL: i32 = 3;
@@ -115,6 +117,13 @@ pub fn pack(source_dir: &Path, output_path: &Path) -> Result<Hash> {
 ///
 /// Returns the SHA-256 content hash of the compressed archive bytes.
 pub fn unpack(archive_path: &Path, target_dir: &Path) -> Result<Hash> {
+    let compressed_size = fs::metadata(archive_path)?.len();
+    if compressed_size > MAX_COMPRESSED_SIZE {
+        return Err(Error::PkgError(format!(
+            "compressed archive size ({} bytes) exceeds limit ({} bytes)",
+            compressed_size, MAX_COMPRESSED_SIZE
+        )));
+    }
     let compressed = fs::read(archive_path)?;
     let hash = hush_core::sha256(&compressed);
 
@@ -355,6 +364,17 @@ mod tests {
         fs::create_dir_all(&dest).unwrap();
         let err = unpack(&archive_path, &dest).unwrap_err();
         assert!(err.to_string().contains("path traversal"));
+    }
+
+    #[test]
+    fn rejects_oversized_compressed_archive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let archive_path = tmp.path().join("oversized.cpkg");
+        let file = fs::File::create(&archive_path).unwrap();
+        file.set_len(MAX_COMPRESSED_SIZE + 1).unwrap();
+
+        let err = unpack(&archive_path, &tmp.path().join("dest")).unwrap_err();
+        assert!(err.to_string().contains("compressed archive size"));
     }
 
     #[test]

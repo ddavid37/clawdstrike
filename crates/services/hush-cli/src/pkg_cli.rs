@@ -1511,7 +1511,20 @@ fn cmd_pkg_install_registry(
     };
 
     if !requested_identity_matches_install(name, version_segment, &installed) {
-        let _ = store.remove(&installed.name, &installed.version);
+        if let Err(e) = store.remove(&installed.name, &installed.version) {
+            let backup_hint = rollback_backup.as_ref().map_or(String::new(), |backup| {
+                format!(
+                    " Rollback backup retained at {}.",
+                    backup.backup_path.display()
+                )
+            });
+            let _ = writeln!(
+                stderr,
+                "Error: failed to roll back mismatched install removal ({}@{}): {}.{}",
+                installed.name, installed.version, e, backup_hint
+            );
+            return ExitCode::RuntimeError;
+        }
         if let Some(backup) = rollback_backup.take() {
             if let Err(e) = restore_install_from_backup(&backup) {
                 let _ = writeln!(stderr, "Error: failed to restore previous install: {e}");
@@ -1545,7 +1558,20 @@ fn cmd_pkg_install_registry(
         );
         if !trust_ok {
             // Remove the installed package since trust verification failed.
-            let _ = store.remove(&installed.name, &installed.version);
+            if let Err(e) = store.remove(&installed.name, &installed.version) {
+                let backup_hint = rollback_backup.as_ref().map_or(String::new(), |backup| {
+                    format!(
+                        " Rollback backup retained at {}.",
+                        backup.backup_path.display()
+                    )
+                });
+                let _ = writeln!(
+                    stderr,
+                    "Error: trust verification failed and package rollback removal failed ({}@{}): {}.{}",
+                    installed.name, installed.version, e, backup_hint
+                );
+                return ExitCode::RuntimeError;
+            }
             let mut restored_previous = false;
             if let Some(backup) = rollback_backup.take() {
                 if let Err(e) = restore_install_from_backup(&backup) {

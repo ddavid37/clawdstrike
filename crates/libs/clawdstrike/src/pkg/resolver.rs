@@ -280,10 +280,9 @@ impl PolicyResolver for PackagePolicyResolver {
         Ok(ResolvedPolicySource {
             key: format!("pkg:{}@{}/{}", pkg_ref.name, pkg_ref.version, key_sub_path),
             yaml,
-            location: PolicyLocation::Package {
-                name: pkg_ref.name,
-                version: pkg_ref.version,
-            },
+            // Use file location context so nested relative `extends` paths resolve
+            // within the installed package directory rather than the process CWD.
+            location: PolicyLocation::File(policy_path),
         })
     }
 }
@@ -477,10 +476,7 @@ mod tests {
         assert!(resolved.yaml.contains("name: test-pack"));
         assert_eq!(
             resolved.location,
-            PolicyLocation::Package {
-                name: "test-pack".to_string(),
-                version: "1.0.0".to_string(),
-            }
+            PolicyLocation::File(pkg_dir.join("policies/main.yaml"))
         );
     }
 
@@ -512,6 +508,39 @@ mod tests {
             "pkg:@acme/policies@2.0.0/rulesets/strict.yaml"
         );
         assert!(resolved.yaml.contains("name: acme-strict"));
+    }
+
+    #[test]
+    fn resolves_relative_extends_paths_within_installed_package() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store_root = tmp.path().join("store");
+        let store = PackageStore::with_root(store_root.clone()).unwrap();
+
+        let pkg_dir = fake_install(&store_root, "extend-pack", "1.0.0");
+        let policies_dir = pkg_dir.join("policies");
+        std::fs::create_dir_all(&policies_dir).unwrap();
+        std::fs::write(
+            policies_dir.join("main.yaml"),
+            "version: \"1.2.0\"\nname: child\nextends: ./base.yaml\n",
+        )
+        .unwrap();
+        std::fs::write(
+            policies_dir.join("base.yaml"),
+            "version: \"1.2.0\"\nname: base\n",
+        )
+        .unwrap();
+
+        let resolver = PackagePolicyResolver::new(store);
+        let child = resolver
+            .resolve(
+                "pkg:extend-pack@1.0.0/policies/main.yaml",
+                &PolicyLocation::None,
+            )
+            .unwrap();
+        let base = resolver.resolve("./base.yaml", &child.location).unwrap();
+
+        assert!(base.key.ends_with("policies/base.yaml"));
+        assert!(base.yaml.contains("name: base"));
     }
 
     #[test]
