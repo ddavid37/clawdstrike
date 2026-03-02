@@ -23,10 +23,12 @@ Toolchains are pinned in `mise.toml` (Rust `1.93`, Node `24`, Python `3.12`).
 - Offline (vendored) Rust tests: `CARGO_NET_OFFLINE=true scripts/cargo-offline.sh test --workspace --all-targets`
 
 TypeScript packages are built/tested per-package (no root JS workspace):
+
 - Example: `npm --prefix packages/sdk/hush-ts ci && npm --prefix packages/sdk/hush-ts test`
 - Desktop: `npm --prefix apps/desktop ci && npm --prefix apps/desktop run tauri:dev`
 
 Docs:
+
 - `mdbook build docs` / `mdbook test docs`
 
 ## Coding Style & Naming Conventions
@@ -47,3 +49,4 @@ Docs:
 - Branches typically use `feature/<name>` or `fix/<name>`.
 - PRs: keep scope tight, link issues (“Closes #123”), update docs for public API changes, and include screenshots for `apps/desktop` UI changes.
 - Security reports: follow `SECURITY.md` (no public issues for vulnerabilities).
+
